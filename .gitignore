@@ -1,0 +1,12 @@
+.DS_Store
+
+.idea/
+.venv/
+
+.kotlin/
+.gradle/
+local.properties
+build/
+
+.elide/
+.intellijPlatform/

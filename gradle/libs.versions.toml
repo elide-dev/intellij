@@ -1,0 +1,36 @@
+[versions]
+buildconfig = "5.6.8"
+buildTimeTracker = "4.3.0"
+
+intellij-platform = "2.5.0"
+intellij-target-ide = "2025.1"
+intellij-sinceBuild = "251"
+
+kotlin = "2.2.20"
+kotlinx-coroutines = "1.10.2"
+
+serialization = "1.9.0"
+
+logback = "1.5.18"
+slf4j = "2.0.16"
+
+[libraries]
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
+
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
+
+junit-parameters = { group = "org.junit.jupiter", name = "junit-jupiter-params" }
+
+logback = { group = "ch.qos.logback", name = "logback-classic", version.ref = "logback" }
+slf4j = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }
+
+[plugins]
+buildConfig = { id = "com.github.gmazzo.buildconfig", version.ref = "buildconfig" }
+buildTimeTracker = { id = "com.asarkar.gradle.build-time-tracker", version.ref = "buildTimeTracker" }
+
+intellij-platform = { id = "org.jetbrains.intellij.platform", version.ref = "intellij-platform" }
+
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-atomicfu = { id = "org.jetbrains.kotlin.plugin.atomicfu", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
