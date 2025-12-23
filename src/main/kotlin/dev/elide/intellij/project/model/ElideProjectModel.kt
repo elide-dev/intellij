@@ -54,6 +54,17 @@ object ElideProjectModel {
     )
     val projectNode = DataNode(ProjectKeys.PROJECT, projectData, null)
 
+    val rootModule = ModuleData(
+      /* id = */ projectData.id,
+      /* owner = */ Constants.SYSTEM_ID,
+      /* moduleTypeId = */ "JAVA_MODULE",
+      /* externalName = */ projectData.externalName,
+      /* moduleFileDirectoryPath = */ projectPath.resolve(".idea").toCanonicalPath(),
+      /* externalConfigPath = */ projectPath.resolve(Constants.MANIFEST_NAME).toCanonicalPath(),
+    )
+
+    projectNode.createChild(ProjectKeys.MODULE, rootModule)
+
     // add project library data from classpath info
     val libraries = classpaths.mapValues { (_, value) ->
       value.entries.distinct().map { buildLibraryData(it, projectPath) }.toList()
