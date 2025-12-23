@@ -5,7 +5,9 @@ buildTimeTracker = "4.3.0"
 intellij-platform = "2.5.0"
 intellij-target-ide = "2025.1"
 intellij-sinceBuild = "251"
-intellij-untilBuild = "253"
+intellij-untilBuild = "253.*"
+
+pkl-plugin = "0.35.1"
 
 kotlin = "2.2.20"
 kotlinx-coroutines = "1.10.2"
