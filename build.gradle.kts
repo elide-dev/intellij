@@ -4,14 +4,102 @@
  * Licensed under the MIT license (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at
  *
- * https://opensource.org/license/mit/
+ *   https://opensource.org/license/mit/
  *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
  * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
  * License for the specific language governing permissions and limitations under the License.
  */
 
+import org.jetbrains.intellij.platform.gradle.CustomPluginRepositoryType
+
 plugins {
-  alias(libs.plugins.kotlin.jvm) apply false
-  alias(libs.plugins.buildTimeTracker)
+  alias(libs.plugins.kotlin.jvm)
+  alias(libs.plugins.kotlin.serialization)
+  alias(libs.plugins.intellij.platform)
+  id("java")
+}
+
+// plugin version is separate from the overall Elide version
+version = layout.projectDirectory.file(".version").asFile.readText().trim()
+
+kotlin {
+  jvmToolchain {
+    languageVersion = JavaLanguageVersion.of(21)
+  }
+}
+
+repositories {
+  // because we need to declare custom repositories for intellij artifacts, and Gradle will only select repositories at
+  // the settings-level *or* the project-level, we need to repeat repository configurations from the root settings
+  intellijPlatform {
+    defaultRepositories()
+    customPluginRepository("https://plugins.elide.dev/intellij", CustomPluginRepositoryType.SIMPLE)
+  }
+
+  maven {
+    name = "elide-snapshots"
+    url = uri("https://maven.elide.dev")
+    content {
+      includeGroup("dev.elide")
+      includeGroup("org.pkl-lang")
+    }
+  }
+
+  maven {
+    name = "oss-snapshots"
+    url = uri("https://oss.sonatype.org/content/repositories/snapshots")
+    content { includeGroup("dev.elide") }
+  }
+
+  mavenLocal()
+  mavenCentral()
+  google()
+}
+
+dependencies {
+  implementation(libs.kotlinx.serialization.json)
+
+  intellijPlatform {
+    create("IC", libs.versions.intellij.target.ide.get())
+    bundledPlugin("com.intellij.java")
+    bundledPlugin("org.jetbrains.kotlin")
+    plugin("pkl-intellij", "0.32.0", "org.pkl")
+    testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
+  }
+}
+
+intellijPlatform {
+  pluginConfiguration {
+    id = "dev.elide"
+
+    ideaVersion {
+      sinceBuild = libs.versions.intellij.sinceBuild.get()
+      untilBuild = libs.versions.intellij.untilBuild.get()
+    }
+
+    changeNotes = "Initial release."
+  }
+
+  pluginVerification {
+    ides {
+      recommended()
+    }
+  }
+
+  signing {
+    certificateChain = providers.environmentVariable("ELIDE_JB_CERT_CHAIN")
+    privateKey = providers.environmentVariable("ELIDE_JB_KEY")
+    password = providers.environmentVariable("ELIDE_JB_KEY_PASSWORD")
+  }
+
+  publishing {
+    token = providers.environmentVariable("ELIDE_JB_TOKEN")
+  }
+}
+
+tasks.processResources {
+  from(layout.projectDirectory.dir("src/main/pkl")) {
+    into("/elide/pkl/")
+  }
 }
