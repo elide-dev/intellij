@@ -20,13 +20,14 @@ import com.intellij.openapi.projectRoots.ProjectJdkTable
 import com.intellij.openapi.roots.DependencyScope
 import com.intellij.openapi.util.io.toCanonicalPath
 import dev.elide.intellij.Constants
-import dev.elide.intellij.project.model.ElidePackageManifest.SourceSet
-import dev.elide.intellij.project.model.ElidePackageManifest.SourceSet.SourceSetType
+import elide.tooling.project.manifest.ElidePackageManifest.SourceSet
+import elide.tooling.project.manifest.ElidePackageManifest.SourceSet.SourceSetType
 import java.nio.file.Path
 import kotlin.io.path.absolutePathString
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.nameWithoutExtension
 import kotlin.io.path.pathString
+import elide.tooling.project.manifest.ElidePackageManifest
 
 object ElideProjectModel {
   private const val SUFFIX_JAR = "jar"

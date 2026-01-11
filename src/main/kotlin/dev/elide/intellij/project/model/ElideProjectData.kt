@@ -1,8 +1,9 @@
 package dev.elide.intellij.project.model
 
 import com.intellij.openapi.externalSystem.model.Key
-import dev.elide.intellij.project.model.ElidePackageManifest.JvmSettings
-import dev.elide.intellij.project.model.ElidePackageManifest.KotlinSettings
+import elide.tooling.project.manifest.ElidePackageManifest
+import elide.tooling.project.manifest.ElidePackageManifest.JvmSettings
+import elide.tooling.project.manifest.ElidePackageManifest.KotlinSettings
 
 data class ElideProjectData(
   var kotlinSettings: KotlinSettings? = null,

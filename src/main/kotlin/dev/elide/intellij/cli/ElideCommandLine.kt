@@ -18,7 +18,7 @@ import dev.elide.intellij.Constants
 import dev.elide.intellij.InvalidElideHomeException
 import dev.elide.intellij.project.model.ElideClasspath
 import dev.elide.intellij.project.model.ElideClasspathUsage
-import dev.elide.intellij.project.model.ElidePackageManifest
+import elide.tooling.project.manifest.ElidePackageManifest
 import dev.elide.intellij.service.ElideDistributionResolver
 import java.nio.file.Path
 import kotlinx.coroutines.Dispatchers

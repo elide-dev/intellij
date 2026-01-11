@@ -23,7 +23,7 @@ import com.intellij.openapi.externalSystem.util.Order
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.modules
 import dev.elide.intellij.project.model.ElideEntrypointInfo
-import dev.elide.intellij.project.model.ElidePackageManifest
+import elide.tooling.project.manifest.ElidePackageManifest
 import dev.elide.intellij.project.model.ElideProjectData
 import dev.elide.intellij.project.model.ElideProjectInfo
 import dev.elide.intellij.service.elideProjectIndex

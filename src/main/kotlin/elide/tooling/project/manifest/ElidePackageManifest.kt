@@ -1,0 +1,910 @@
+/*
+ * Copyright (c) 2024-2025 Elide Technologies, Inc.
+ *
+ * Licensed under the MIT license (the "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *
+ *   https://opensource.org/license/mit/
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+ * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under the License.
+ */
+@file:Suppress("unused")
+
+package elide.tooling.project.manifest
+
+import dev.elide.intellij.project.model.ProjectEcosystem
+import java.net.URI
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import elide.tooling.project.manifest.ElidePackageManifest.*
+import elide.tooling.project.manifest.flags.ProjectFlagDefinition
+import elide.tooling.project.manifest.web.Browsers
+
+// Default Java target version for JVM projects
+private const val DEFAULT_JAVA_TARGET = 21u
+
+// Optimization level strings.
+private const val OPTIMIZATION_LEVEL_AUTO = "auto"
+private const val OPTIMIZATION_LEVEL_BUILD = "b"
+private const val OPTIMIZATION_LEVEL_SIZE = "s"
+private const val OPTIMIZATION_LEVEL_ZERO = "0"
+private const val OPTIMIZATION_LEVEL_ONE = "1"
+private const val OPTIMIZATION_LEVEL_TWO = "2"
+private const val OPTIMIZATION_LEVEL_THREE = "3"
+private const val OPTIMIZATION_LEVEL_FOUR = "4"
+
+@Serializable
+data class ElidePackageManifest(
+  val name: String? = null,
+  val version: String? = null,
+  val description: String? = null,
+  val entrypoint: List<String>? = null,
+  val workspaces: List<String> = emptyList(),
+  val scripts: Map<String, String> = emptyMap(),
+  val artifacts: Map<String, Artifact> = emptyMap(),
+  val dependencies: DependencyResolution = DependencyResolution(),
+  val javascript: JavaScriptSettings? = null,
+  val typescript: TypeScriptSettings? = null,
+  val jvm: JvmSettings? = null,
+  val kotlin: KotlinSettings? = null,
+  val python: PythonSettings? = null,
+  val ruby: RubySettings? = null,
+  val pkl: PklSettings? = null,
+  val nativeImage: NativeImageSettings? = null,
+  val dev: DevSettings? = null,
+  val toolchain: ToolchainSettings? = null,
+  val sources: Map<String, SourceSet> = emptyMap(),
+  val tests: TestingSettings? = null,
+  val lockfile: LockfileSettings? = null,
+  val web: WebSettings? = null,
+  val secrets: SecretSettings? = null,
+  val engine: RuntimeEngineSettings? = null,
+  val server: ServerSettings? = null,
+  val execTasks: List<ExecTask> = emptyList(),
+) {
+  companion object {
+    private var ManifestJson = Json { ignoreUnknownKeys = true }
+
+    @JvmStatic fun parse(input: String): ElidePackageManifest {
+      return runCatching { Json.decodeFromString<ElidePackageManifest>(input) }
+        .getOrElse { throw IllegalStateException("Failed to parse Elide project manifest: ${it.message}", it) }
+    }
+  }
+
+
+  val ecosystem: ProjectEcosystem get() = ProjectEcosystem.Elide
+
+  @Serializable sealed interface Artifact {
+    val from: List<String>
+    val dependsOn: List<String>
+  }
+
+  /** Type of exec task - either running a Java main class or an external executable */
+  @Serializable enum class ExecTaskType {
+    JAVA,        // Run a Java main class with classpath
+    EXECUTABLE,  // Run an external executable/binary
+  }
+
+  /** Maven build phase for exec task ordering */
+  @Serializable enum class BuildPhase {
+    GENERATE_SOURCES,      // before compilation
+    PROCESS_RESOURCES,     // resource processing
+    COMPILE,               // during/after compilation
+    PROCESS_CLASSES,       // after compilation
+    TEST_COMPILE,          // test compilation
+    TEST,                  // test execution
+    PACKAGE,               // packaging
+  }
+
+  /** Classpath scope for Java exec tasks */
+  @Serializable enum class ClasspathScope {
+    COMPILE,
+    RUNTIME,
+    TEST,
+  }
+
+  /** Exec task parsed from Maven exec-maven-plugin */
+  @Serializable data class ExecTask(
+    val id: String,
+    val type: ExecTaskType,
+    val phase: BuildPhase = BuildPhase.COMPILE,
+    val mainClass: String? = null,      // For JAVA type
+    val executable: String? = null,     // For EXECUTABLE type
+    val args: List<String> = emptyList(),
+    val env: Map<String, String> = emptyMap(),
+    val classpathScope: ClasspathScope = ClasspathScope.COMPILE,
+    val systemProperties: Map<String, String> = emptyMap(),
+    val workingDirectory: String? = null,
+  )
+
+  @Serializable data class JarResource(
+    val path: String,
+  )
+
+  @Serializable data class ProjectSourceSpec(
+    val platform: String? = null,
+    val project: String? = null,
+    val subpath: String? = null,
+  )
+
+  @Serializable data class LspSettings(
+    val delegates: List<String>? = null,
+  )
+
+  @Serializable data class McpResource(
+    val path: String,
+    val name: String,
+    val description: String = "",
+    val mimeType: String? = null,
+  )
+
+  @Serializable data class McpSettings(
+    val resources: List<McpResource>? = null,
+    val advice: Boolean = true,
+    val registerElide: Boolean = true,
+  )
+
+  @Serializable data class DevServerSettings(
+    val host: String = "0.0.0.0",
+    val port: Int = 8080,
+  )
+
+  @Serializable data class DevSettings(
+    val source: ProjectSourceSpec? = null,
+    val lsp: LspSettings? = null,
+    val mcp: McpSettings? = null,
+    val server: DevServerSettings? = null,
+    val flags: List<ProjectFlagDefinition.FlagInfo> = emptyList(),
+  )
+
+  @Serializable class NativeToolchainSettings
+
+  @Serializable class JvmToolchainSettings
+
+  @Serializable data class EngineSettings(
+    val version: String? = null,
+  )
+
+  @Serializable data class ToolchainSettings(
+    val native: NativeToolchainSettings? = null,
+    val jvm: JvmToolchainSettings? = null,
+    val engines: Map<String, EngineSettings>? = null,
+  )
+
+  @Serializable data class Jar(
+    val name: String? = null,
+    val sources: List<String> = emptyList(),
+    val resources: Map<String, JarResource> = emptyMap(),
+    val manifest: Map<String, String> = emptyMap(),
+    val manifestFile: String? = null,
+    val excludes: List<String> = emptyList(),
+    val options: JarOptions = JarOptions(),
+    override val from: List<String> = emptyList(),
+    override val dependsOn: List<String> = emptyList(),
+  ) : Artifact
+
+  @Serializable data class JarOptions(
+    val compress: Boolean = true,
+    val defaultManifestProperties: Boolean = true,
+    val entrypoint: String? = null,
+  )
+
+  @Serializable data class ContainerImage(
+    val image: String? = null,
+    val base: String? = null,
+    val tags: List<String> = emptyList(),
+    override val from: List<String> = emptyList(),
+    override val dependsOn: List<String> = emptyList(),
+  ) : Artifact
+
+  /** Javadoc JAR artifact - generates and packages Javadoc documentation */
+  @Serializable data class JavadocJar(
+    val groups: Map<String, List<String>> = emptyMap(),  // title -> packages
+    val links: List<String> = emptyList(),               // external doc links
+    val excludes: List<String> = emptyList(),
+    val windowTitle: String? = null,
+    val docTitle: String? = null,
+    override val from: List<String> = emptyList(),
+    override val dependsOn: List<String> = emptyList(),
+  ) : Artifact
+
+  /** Source JAR artifact - packages source files */
+  @Serializable data class SourceJar(
+    val classifier: String? = null,      // e.g., "sources" or "no-tzdb-sources"
+    val excludes: List<String> = emptyList(),
+    val includes: List<String> = emptyList(),
+    override val from: List<String> = emptyList(),
+    override val dependsOn: List<String> = emptyList(),
+  ) : Artifact
+
+  /** Assembly archive artifact - creates distribution archives (tar.gz, zip) */
+  @Serializable data class Assembly(
+    val id: String,
+    val formats: List<String> = listOf("tar.gz", "zip"),
+    val baseDirectory: String? = null,
+    val fileSets: List<AssemblyFileSet> = emptyList(),
+    val descriptorPath: String? = null,  // path to assembly descriptor XML
+    override val from: List<String> = emptyList(),
+    override val dependsOn: List<String> = emptyList(),
+  ) : Artifact
+
+  /** File set within an assembly descriptor */
+  @Serializable data class AssemblyFileSet(
+    val directory: String? = null,
+    val outputDirectory: String? = null,
+    val includes: List<String> = emptyList(),
+    val excludes: List<String> = emptyList(),
+  )
+
+  @JvmRecord @Serializable data class SourceSet(
+    val type: SourceSetType = SourceSetType.Main,
+    val synthetic: Boolean = false,
+    val paths: List<String>,
+  ) {
+    enum class SourceSetType {
+      Main,
+      Test,
+      Integration,
+      Example,
+      Docs,
+      Infra,
+      Other
+      ;
+
+      companion object {
+        fun parse(spec: String): SourceSetType = when (spec) {
+          "main" -> Main
+          "test" -> Test
+          "integration" -> Integration
+          "example" -> Example
+          "docs" -> Docs
+          "infra" -> Infra
+          else -> Other
+        }
+      }
+    }
+
+    companion object {
+      @JvmStatic fun parse(str: String): SourceSet {
+        return SourceSet(paths = listOf(str))
+      }
+    }
+  }
+
+  @Serializable data class WebSettings(
+    val debug: Boolean = false,
+    val css: CssSettings = CssSettings(),
+    val browsers: Browsers = Browsers.Defaults,
+  )
+
+  @Serializable data class CssTarget(
+    val browser: String,
+    val version: String? = null,
+  )
+
+  @Serializable data class CssSettings(
+    val minify: Boolean = true,
+    val targets: List<CssTarget> = emptyList(),
+  )
+
+  sealed interface DependencyEcosystemConfig {
+    sealed interface PackageSpec
+    sealed interface RepositorySpec
+  }
+
+  @JvmRecord @Serializable data class NpmDependencies(
+    val packages: List<NpmPackage> = emptyList(),
+    val devPackages: List<NpmPackage> = emptyList(),
+    val repositories: Map<String, NpmRepository> = emptyMap(),
+    val from: List<String> = emptyList(),
+  ) : DependencyEcosystemConfig {
+    fun hasPackages(): Boolean = packages.isNotEmpty() || devPackages.isNotEmpty()
+  }
+
+  @JvmRecord @Serializable data class NpmPackage(
+    val name: String,
+    val version: String?,
+  ) : DependencyEcosystemConfig.PackageSpec {
+    companion object {
+      @JvmStatic fun parse(str: String): NpmPackage {
+        val version = str.substringAfterLast('@')
+        val name = str.substringBeforeLast('@')
+        return NpmPackage(
+          name = name,
+          version = version.ifEmpty { null },
+        )
+      }
+    }
+  }
+
+  @JvmRecord @Serializable data class NpmRepository(
+    val name: String,
+    val url: String,
+  ) : DependencyEcosystemConfig.RepositorySpec
+
+  @JvmRecord @Serializable data class GradleCatalog(
+    val name: String? = null,
+    val path: String,
+  ) : Comparable<GradleCatalog> {
+    companion object {
+      @JvmStatic fun parse(str: String): GradleCatalog = GradleCatalog(
+        name = str.substringBefore("."),
+        path = str,
+      )
+    }
+
+    override fun compareTo(other: GradleCatalog): Int = path.compareTo(other.path)
+  }
+
+  @JvmRecord @Serializable data class MavenPackage(
+    val group: String = "",
+    val name: String = "",
+    val version: String? = "",
+    val classifier: String? = "",
+    val repository: String? = "",
+    val path: String? = "",
+    val coordinate: String,
+  ) : DependencyEcosystemConfig.PackageSpec, Comparable<MavenPackage> {
+    companion object {
+      @JvmStatic fun parse(str: String): MavenPackage {
+        return when (str.count { it == ':' }) {
+          0 -> error("Maven package missing group or artifact: '$str'")
+          1 -> MavenPackage(
+            group = str.substringBefore(':'),
+            name = str.substringAfter(':'),
+            coordinate = str,
+            repository = if ('@' in str) str.substringAfterLast('@') else "",
+          )
+
+          2 -> MavenPackage(
+            group = str.substringBefore(':'),
+            name = str.substringAfter(':').substringBefore(':'),
+            version = str.substringAfterLast(':'),
+            coordinate = str,
+            repository = if ('@' in str) str.substringAfterLast('@') else "",
+          )
+
+          3 -> str.split(':').let { split ->
+            MavenPackage(
+              group = split.first(),
+              name = split[1],
+              classifier = split[2],
+              version = str.substringAfterLast(':'),
+              coordinate = str,
+              repository = if ('@' in str) str.substringAfterLast('@') else "",
+            )
+          }
+
+          else -> error("Too many separators in Maven coordinate: '$str'")
+        }
+      }
+    }
+
+    override fun compareTo(other: MavenPackage): Int = coordinate.compareTo(other.coordinate)
+
+    override fun equals(other: Any?): Boolean {
+      if (this === other) return true
+      if (javaClass != other?.javaClass) return false
+
+      other as MavenPackage
+
+      if (group != other.group) return false
+      if (name != other.name) return false
+      if (version != other.version) return false
+      if (coordinate != other.coordinate) return false
+      if (repository != other.repository) return false
+
+      return true
+    }
+
+    override fun hashCode(): Int {
+      var result = group.ifBlank { null }?.hashCode() ?: 0
+      result = 31 * result + (name.ifBlank { null }?.hashCode() ?: 0)
+      result = 31 * result + (version?.ifBlank { null }?.hashCode() ?: 0)
+      result = 31 * result + coordinate.hashCode()
+      result = 31 * result + (repository?.ifBlank { null }?.hashCode() ?: 0)
+      return result
+    }
+  }
+
+  @Serializable data class MavenRepository(
+    val url: String,
+    var name: String? = null,
+    val description: String? = null,
+  ) : DependencyEcosystemConfig.RepositorySpec {
+    companion object {
+      @JvmStatic fun parse(str: String): MavenRepository {
+        return try {
+          URI.create(str)
+        } catch (_: IllegalArgumentException) {
+          error("Invalid URI for Maven repository: '$str'")
+        }.let {
+          MavenRepository(
+            url = str,
+          )
+        }
+      }
+    }
+  }
+
+  @JvmRecord @Serializable data class MavenCoordinates(
+    val group: String,
+    val name: String,
+    val classifier: String? = null,
+  )
+
+  @JvmRecord @Serializable data class MavenDependencies(
+    val coordinates: MavenCoordinates? = null,
+    val packages: List<MavenPackage> = emptyList(),
+    val modules: List<MavenPackage> = emptyList(),
+    val devPackages: List<MavenPackage> = emptyList(),
+    val testPackages: List<MavenPackage> = emptyList(),
+    val compileOnly: List<MavenPackage> = emptyList(),
+    val runtimeOnly: List<MavenPackage> = emptyList(),
+    val processors: List<MavenPackage> = emptyList(),
+    val exclusions: List<MavenPackage> = emptyList(),
+    val catalogs: List<GradleCatalog> = emptyList(),
+    val repositories: Map<String, MavenRepository> = emptyMap(),
+    val enableDefaultRepositories: Boolean = true,
+    val from: List<String> = emptyList(),
+  ) : DependencyEcosystemConfig {
+    fun hasPackages(): Boolean = (
+            packages.isNotEmpty() ||
+                    devPackages.isNotEmpty() ||
+                    testPackages.isNotEmpty() ||
+                    modules.isNotEmpty() ||
+                    compileOnly.isNotEmpty() ||
+                    runtimeOnly.isNotEmpty()
+            )
+
+    fun allPackages(): Sequence<MavenPackage> = sequence {
+      yieldAll(packages.asSequence())
+      yieldAll(modules.asSequence())
+      yieldAll(compileOnly.asSequence())
+      yieldAll(runtimeOnly.asSequence())
+      yieldAll(testPackages.asSequence())
+      yieldAll(devPackages.asSequence())
+    }.distinct()
+  }
+
+  @JvmRecord @Serializable data class PipDependencies(
+    val packages: List<PipPackage> = emptyList(),
+    val optionalPackages: Map<String, List<PipPackage>> = emptyMap(),
+  ) : DependencyEcosystemConfig {
+    fun hasPackages(): Boolean = packages.isNotEmpty() || optionalPackages.isNotEmpty()
+    fun allPackages(): Sequence<PipPackage> {
+      return (packages.asSequence() + optionalPackages.values.flatten().asSequence()).distinct()
+    }
+  }
+
+  @JvmRecord @Serializable data class PipPackage(
+    val name: String,
+    val version: String? = null,
+  ) : DependencyEcosystemConfig.PackageSpec
+
+  @JvmRecord @Serializable data class GemDependencies(
+    val packages: List<GemPackage> = emptyList(),
+    val devPackages: List<GemPackage> = emptyList(),
+    val from: List<String> = emptyList(),
+  ) : DependencyEcosystemConfig
+
+  @JvmRecord @Serializable data class GemPackage(
+    val name: String,
+  ) : DependencyEcosystemConfig.PackageSpec
+
+  @JvmRecord @Serializable data class DependencyResolution(
+    val maven: MavenDependencies = MavenDependencies(),
+    val npm: NpmDependencies = NpmDependencies(),
+    val pip: PipDependencies = PipDependencies(),
+    val gems: GemDependencies = GemDependencies(),
+  )
+
+  @Serializable
+  sealed interface JvmTarget {
+    @JvmRecord @Serializable data class NumericJvmTarget(val number: UInt) : JvmTarget {
+      override val argValue: String get() = number.toString()
+    }
+
+    @JvmRecord @Serializable data class StringJvmTarget(val name: String) : JvmTarget {
+      override val argValue: String get() = name
+    }
+
+    val argValue: String
+
+    companion object {
+      val DEFAULT: JvmTarget = NumericJvmTarget(DEFAULT_JAVA_TARGET)
+    }
+  }
+
+  @JvmRecord @Serializable data class JvmFeatures(
+    val testing: Boolean = true,
+    val automodules: Boolean = true,
+  )
+
+  @JvmRecord @Serializable data class JvmTesting(
+    val enabled: Boolean = true,
+    val driver: JvmTestDriver = JvmTestDriver.Elide
+  ) {
+    enum class JvmTestDriver {
+      Elide,
+      JUnit,
+    }
+  }
+
+  @JvmRecord @Serializable data class JavaCompilerSettings(
+    val flags: List<String> = emptyList(),
+  )
+
+  @JvmRecord @Serializable data class JavaLanguage(
+    val source: JvmTarget? = null,
+    val release: JvmTarget? = null,
+    val compiler: JavaCompilerSettings = JavaCompilerSettings(),
+  )
+
+  @JvmRecord @Serializable data class JvmSettings(
+    val main: String? = null,
+    val target: JvmTarget? = null,
+    val javaHome: String? = null,
+    val features: JvmFeatures = JvmFeatures(),
+    val java: JavaLanguage = JavaLanguage(),
+    val flags: List<String> = emptyList(),
+  )
+
+  @JvmRecord @Serializable data class JavaScriptSettings(
+    val debug: Boolean = false,
+    val ecma: EcmaStandard? = null,
+    val packageManager: String? = null,
+    val runner: String? = null,
+  )
+
+  @Serializable
+  sealed interface EcmaStandard {
+    @JvmRecord @Serializable data class NumericEcmaStandard(val number: UInt) : EcmaStandard {
+      override val argValue: String get() = number.toString()
+    }
+
+    @JvmRecord @Serializable data class StringEcmaStandard(val name: String) : EcmaStandard {
+      override val argValue: String get() = name
+    }
+
+    val argValue: String
+  }
+
+  @JvmRecord @Serializable data class TypeScriptSettings(
+    val debug: Boolean = false,
+  )
+
+  @Serializable @Suppress("UNUSED") enum class JvmTargetValidationMode {
+    WARNING,
+    ERROR,
+    IGNORE,
+  }
+
+  @JvmRecord @Serializable data class KotlinJvmCompilerOptions(
+    // Abstract Options
+    val optIn: List<String> = emptyList(),
+    val progressiveMode: Boolean = false,
+    val extraWarnings: Boolean = false,
+    val allWarningsAsErrors: Boolean = false,
+    val suppressWarnings: Boolean = false,
+    val verbose: Boolean = false,
+    val freeCompilerArgs: List<String> = emptyList(),
+    val apiVersion: String = "auto",
+    val languageVersion: String = "auto",
+    val includeRuntime: Boolean = false,
+    val noStdlib: Boolean = false,
+
+    // JVM Options
+    val javaParameters: Boolean = false,
+    val jvmTarget: JvmTarget? = null,
+    val noJdk: Boolean = false,
+    val jvmTargetValidationMode: JvmTargetValidationMode = JvmTargetValidationMode.ERROR,
+  ) {
+    fun collect(): Sequence<String> = sequence {
+      // opt-ins
+      optIn.forEach { yield("-opt-in=$it") }
+
+      // compiler options
+      if (progressiveMode) yield("-progressive")
+      if (extraWarnings) yield("-Wextra")
+      if (allWarningsAsErrors) yield("-Werror")
+      if (suppressWarnings) yield("-nowarn")
+      if (verbose) yield("-verbose")
+      if (apiVersion != "auto") yield("-api-version=$apiVersion")
+      if (languageVersion != "auto") yield("-language-version=$languageVersion")
+      if (includeRuntime) yield("-include-runtime")
+      if (noStdlib) yield("-no-stdlib")
+      when (val tgt = jvmTarget) {
+        null -> {}
+        else -> yield("-jvm-target=${tgt.argValue}")
+      }
+
+      if (freeCompilerArgs.isNotEmpty()) yieldAll(freeCompilerArgs)
+    }
+  }
+
+  @JvmRecord @Serializable data class KotlinFeatureOptions(
+    val injection: Boolean = true,
+    val testing: Boolean = true,
+    val kotlinx: Boolean = true,
+    val kapt: Boolean = true,
+    val ksp: Boolean = true,
+    val enableDefaultPlugins: Boolean = true,
+    val experimental: Boolean = true,
+    val incremental: Boolean = true,
+    val serialization: Boolean = kotlinx && enableDefaultPlugins && experimental,
+    val coroutines: Boolean = kotlinx,
+    val redaction: Boolean = enableDefaultPlugins && experimental,
+    val autoClasspath: Boolean = true,
+    val reflection: Boolean = true,
+  )
+
+  @JvmRecord @Serializable data class KotlinSettings(
+    val apiLevel: String = "auto",
+    val languageLevel: String = "auto",
+    val compilerOptions: KotlinJvmCompilerOptions = KotlinJvmCompilerOptions(),
+    val features: KotlinFeatureOptions = KotlinFeatureOptions(),
+  )
+
+  @JvmRecord @Serializable data class PythonSettings(
+    val debug: Boolean = false,
+    val wsgi: WsgiSettings = WsgiSettings(),
+  )
+
+  @JvmRecord @Serializable data class WsgiSettings(
+    val name: String? = null,
+    val args: List<String>? = null,
+  )
+
+  @JvmRecord @Serializable data class RubySettings(
+    val debug: Boolean = false,
+  )
+
+  @JvmRecord @Serializable data class PklSettings(
+    val debug: Boolean = false,
+  )
+
+  @JvmRecord @Serializable data class NativeImageLinkAtBuildTime(
+    val enabled: Boolean = true,
+    val packages: List<String> = emptyList(),
+  )
+
+  @JvmRecord @Serializable data class NativeImageClassInit(
+    val enabled: Boolean = true,
+    val buildtime: List<String> = emptyList(),
+    val runtime: List<String> = emptyList(),
+  )
+
+  @JvmRecord @Serializable data class NativeImageExclusions(
+    val all: List<MavenPackage> = emptyList(),
+    val classpath: List<MavenPackage> = emptyList(),
+    val modulepath: List<MavenPackage> = emptyList(),
+  )
+
+  @Serializable enum class OptimizationLevel(val symbol: String) {
+    AUTO(OPTIMIZATION_LEVEL_AUTO),
+    BUILD(OPTIMIZATION_LEVEL_BUILD),
+    SIZE(OPTIMIZATION_LEVEL_SIZE),
+    ZERO(OPTIMIZATION_LEVEL_ZERO),
+    ONE(OPTIMIZATION_LEVEL_ONE),
+    TWO(OPTIMIZATION_LEVEL_TWO),
+    THREE(OPTIMIZATION_LEVEL_THREE),
+    FOUR(OPTIMIZATION_LEVEL_FOUR)
+  }
+
+  @JvmRecord @Serializable data class ProfileGuidedOptimization(
+    val enabled: Boolean = true,
+    val autoprofile: Boolean = false,
+    val instrument: Boolean = false,
+    val sampling: Boolean = false,
+    val profiles: List<String> = emptyList(),
+  )
+
+  @Serializable enum class NativeImageDriverMode(val symbol: String) {
+    EMBEDDED("embedded"),
+    EXTERNAL("external")
+  }
+
+  @JvmRecord @Serializable data class NativeImageOptions(
+    val verbose: Boolean = false,
+    val linkAtBuildTime: NativeImageLinkAtBuildTime = NativeImageLinkAtBuildTime(),
+    val classInit: NativeImageClassInit = NativeImageClassInit(),
+    val exclusions: NativeImageExclusions = NativeImageExclusions(),
+    val optimization: OptimizationLevel = OptimizationLevel.AUTO,
+    val pgo: ProfileGuidedOptimization = ProfileGuidedOptimization(),
+    val driverMode: NativeImageDriverMode = NativeImageDriverMode.EMBEDDED,
+    val flags: List<String> = emptyList(),
+    val cflags: List<String> = emptyList(),
+    val ldflags: List<String> = emptyList(),
+    val defs: Map<String, String> = emptyMap(),
+    val features: List<String> = emptyList(),
+  )
+
+  @JvmRecord @Serializable data class NativeImageSettings(
+    val verbose: Boolean = false,
+  )
+
+  @Serializable enum class NativeImageType(val symbol: String) {
+    BINARY("binary"),
+    LIBRARY("library");
+  }
+
+  @JvmRecord @Serializable data class NativeImage(
+    val name: String? = null,
+    @SerialName("imageType")
+    val type: NativeImageType = NativeImageType.BINARY,
+    val entrypoint: String? = null,
+    val moduleName: String? = null,
+    val options: NativeImageOptions = NativeImageOptions(),
+    override val from: List<String> = emptyList(),
+    override val dependsOn: List<String> = emptyList(),
+  ) : Artifact
+
+  @JvmRecord @Serializable data class StaticSite(
+    val srcs: String,
+    val prefix: String = "/",
+    val assets: String? = null,
+    val domain: String? = null,
+    val preview: String? = null,
+    val stylesheets: List<String> = emptyList(),
+    val scripts: List<String> = emptyList(),
+    val hosting: String? = null,
+    override val from: List<String> = emptyList(),
+    override val dependsOn: List<String> = emptyList(),
+  ) : Artifact
+
+  @JvmRecord @Serializable data class CoverageSettings(
+    val enabled: Boolean = false,
+    val paths: List<String> = emptyList(),
+  )
+
+  @JvmRecord @Serializable data class TestingSettings(
+    val coverage: CoverageSettings = CoverageSettings(),
+    val jvm: JvmTesting = JvmTesting(),
+  )
+
+  @JvmRecord @Serializable data class LockfileSettings(
+    val enabled: Boolean = true,
+    val format: String = "auto",
+  )
+
+  @Serializable enum class SecretsRemote(val symbol: String) {
+    PROJECT("project"),
+    GITHUB("github"),
+  }
+
+  @JvmRecord @Serializable data class ProjectRemoteSettings(
+    val path: String? = null,
+  )
+
+  @JvmRecord @Serializable data class GithubRemoteSettings(
+    val repository: String? = null,
+  )
+
+  @JvmRecord @Serializable data class SecretSettings(
+    val profile: String? = null,
+    val remote: SecretsRemote? = null,
+    val project: ProjectRemoteSettings? = null,
+    val github: GithubRemoteSettings? = null,
+  )
+
+  @JvmRecord @Serializable data class RuntimeEngineSettings(
+    val maxContexts: Int? = null,
+  )
+
+  @JvmRecord @Serializable data class ServerSettings(
+    val address: BindingAddress? = null,
+    val cleartext: Boolean = true,
+    val transport: String? = null,
+    val https: HttpsServerSettings? = null,
+    val http3: Http3ServerSettings? = null,
+    val serverName: String? = null,
+  ) {
+    @Serializable sealed interface SSLCertificate {
+      @JvmRecord @Serializable data class LocalFileCertificate(
+        val certFile: String,
+        val keyFile: String,
+        val keyPassphrase: String? = null,
+      ) : SSLCertificate
+
+      @JvmRecord @Serializable data class SelfSignedCertificate(
+        val subject: String? = null,
+        val notBefore: Long? = null,
+        val notAfter: Long? = null,
+      ) : SSLCertificate
+    }
+
+    @Serializable sealed interface BindingAddress {
+      @Serializable @JvmInline value class DomainSocketAddress(val path: String) : BindingAddress
+      @JvmRecord @Serializable data class SocketAddress(
+        val hostname: String? = null,
+        val port: Int? = null,
+      ) : BindingAddress
+    }
+
+    @JvmRecord @Serializable data class HttpsServerSettings(
+      val certificate: SSLCertificate,
+      val address: BindingAddress? = null,
+    )
+
+    @JvmRecord @Serializable data class Http3ServerSettings(
+      val certificate: SSLCertificate,
+      val address: BindingAddress? = null,
+      val advertise: Boolean = false,
+    )
+
+    companion object {
+      const val TRANSPORT_IO_URING: String = "io_uring"
+      const val TRANSPORT_EPOLL: String = "epoll"
+      const val TRANSPORT_KQUEUE: String = "kqueue"
+      const val TRANSPORT_NIO: String = "nio"
+    }
+  }
+}
+
+fun NpmDependencies.merge(other: NpmDependencies): NpmDependencies {
+  return NpmDependencies(
+    packages = packages.union(other.packages).toList(),
+    devPackages = devPackages.union(other.devPackages).toList(),
+    repositories = repositories.plus(other.repositories),
+  )
+}
+
+fun PipDependencies.merge(other: PipDependencies): PipDependencies {
+  return PipDependencies(
+    packages = packages.union(other.packages).toList(),
+  )
+}
+
+fun GemDependencies.merge(other: GemDependencies): GemDependencies {
+  return GemDependencies(
+    packages = packages.union(other.packages).toList(),
+  )
+}
+
+fun MavenDependencies.merge(other: MavenDependencies): MavenDependencies {
+  return MavenDependencies(
+    packages = packages.union(other.packages).toList(),
+    modules = modules.union(other.modules).toList(),
+    devPackages = devPackages.union(other.devPackages).toList(),
+    testPackages = testPackages.union(other.testPackages).toList(),
+    compileOnly = compileOnly.union(other.compileOnly).toList(),
+    runtimeOnly = runtimeOnly.union(other.runtimeOnly).toList(),
+    processors = processors.union(other.processors).toList(),
+    exclusions = exclusions.union(other.exclusions).toList(),
+    repositories = repositories.plus(other.repositories),
+    catalogs = catalogs.union(other.catalogs).toList(),
+  )
+}
+
+fun DependencyResolution.merge(other: DependencyResolution): DependencyResolution {
+  return DependencyResolution(
+    npm = npm.merge(other.npm),
+    pip = pip.merge(other.pip),
+    gems = gems.merge(other.gems),
+    maven = maven.merge(other.maven),
+  )
+}
+
+fun ElidePackageManifest.merge(other: ElidePackageManifest): ElidePackageManifest {
+  return ElidePackageManifest(
+    name = name ?: other.name,
+    version = version ?: other.version,
+    description = description ?: other.description,
+    entrypoint = (entrypoint ?: emptyList()).plus(other.entrypoint ?: emptyList()).distinct(),
+    scripts = scripts + other.scripts,
+    artifacts = artifacts + other.artifacts,
+    dependencies = dependencies.merge(other.dependencies),
+    sources = sources + other.sources,
+    execTasks = execTasks + other.execTasks,
+    jvm = (other.jvm ?: jvm),
+    kotlin = (other.kotlin ?: kotlin),
+    python = (other.python ?: python),
+    ruby = (other.ruby ?: ruby),
+    pkl = (other.pkl ?: pkl),
+    nativeImage = (other.nativeImage ?: nativeImage),
+  )
+}
