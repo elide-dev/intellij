@@ -16,8 +16,4 @@ import com.intellij.openapi.externalSystem.model.settings.ExternalSystemExecutio
 import java.nio.file.Path
 
 /** Execution settings used in tasks like project sync or build. */
-data class ElideExecutionSettings(
-  val elideHome: Path,
-  val downloadSources: Boolean,
-  val downloadDocs: Boolean,
-) : ExternalSystemExecutionSettings()
+data class ElideExecutionSettings(val elideHome: Path) : ExternalSystemExecutionSettings()

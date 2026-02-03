@@ -35,7 +35,7 @@ import java.io.File
 /**
  * Coordinator service for Elide as an external build system.
  *
- * The Elide Manager allows the IDE to discover the plugin components that should interact with the project model, and
+ * The Elide Manager allows the IDE to discover the plugin components that should interact with the project model and
  * provides general structural information about an Elide project:
  *
  *  - The [ElideProjectResolver] service builds the project model from configuration files.
@@ -47,7 +47,7 @@ import java.io.File
  *
  * Together, these components provide the main plugin features, such as auto-import, project discovery, sync, build
  * actions, etc. Some additional parts, such as the [dev.elide.intellij.startup.ElideStartupActivity], are used
- * to complement those features and improve the experience (e.g. by scanning for a project on startup).
+ * to complement those features and improve the experience (e.g., by scanning for a project on startup).
  */
 class ElideManager : ExternalSystemAutoImportAware, ExternalSystemConfigurableAware, ExternalSystemManager<
         ElideProjectSettings,
@@ -73,13 +73,9 @@ class ElideManager : ExternalSystemAutoImportAware, ExternalSystemConfigurableAw
     val project = it.first
     val path = it.second
 
-    val settings = ElideSettings.getSettings(project)
-
     LOG.debug("Preparing execution settings for project at '$path': $project")
     ElideExecutionSettings(
       elideHome = ElideDistributionResolver.getElideHome(project, path),
-      downloadSources = settings.downloadSources,
-      downloadDocs = settings.downloadDocs,
     )
   }
 

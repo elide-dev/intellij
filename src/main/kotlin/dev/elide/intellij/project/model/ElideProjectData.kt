@@ -1,9 +1,9 @@
 package dev.elide.intellij.project.model
 
 import com.intellij.openapi.externalSystem.model.Key
-import elide.tooling.project.manifest.ElidePackageManifest
-import elide.tooling.project.manifest.ElidePackageManifest.JvmSettings
-import elide.tooling.project.manifest.ElidePackageManifest.KotlinSettings
+import dev.elide.project.manifest.ElidePackageManifest
+import dev.elide.project.manifest.ElidePackageManifest.JvmSettings
+import dev.elide.project.manifest.ElidePackageManifest.KotlinSettings
 
 data class ElideProjectData(
   var kotlinSettings: KotlinSettings? = null,
@@ -15,7 +15,7 @@ data class ElideProjectData(
     kotlinSettings = manifest.kotlin,
     entrypoints = manifest.entrypoint,
     jvm = manifest.jvm,
-    scripts = manifest.scripts
+    scripts = manifest.scripts,
   )
 
   companion object {

@@ -37,12 +37,8 @@ class ElideSettings(
   ElideSettingsListener.TOPIC,
   project,
 ), PersistentStateComponent<ElideSettings.ElideSettingsState> {
-  var downloadSources: Boolean = true
-  var downloadDocs: Boolean = false
-
   override fun copyExtraSettingsFrom(other: ElideSettings) {
-    downloadSources = other.downloadSources
-    downloadDocs = other.downloadDocs
+    // noop
   }
 
   override fun checkSettings(old: ElideProjectSettings, new: ElideProjectSettings) {
@@ -70,17 +66,11 @@ class ElideSettings(
   override fun getState(): ElideSettingsState {
     return ElideSettingsState().also {
       fillState(it)
-
-      it.downloadSources = downloadSources
-      it.downloadDocs = downloadDocs
     }
   }
 
   override fun loadState(state: ElideSettingsState) {
     super.loadState(state)
-
-    downloadSources = state.downloadSources
-    downloadDocs = state.downloadDocs
   }
 
   /**
@@ -88,9 +78,6 @@ class ElideSettings(
    */
   class ElideSettingsState : State<ElideProjectSettings> {
     private val linkedSettings = TreeSet<ElideProjectSettings>()
-
-    var downloadSources: Boolean = true
-    var downloadDocs: Boolean = true
 
     @XCollection(elementTypes = [ElideProjectSettings::class])
     override fun getLinkedExternalProjectsSettings(): Set<ElideProjectSettings> = linkedSettings

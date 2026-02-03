@@ -18,8 +18,8 @@ import dev.elide.intellij.Constants
 import dev.elide.intellij.InvalidElideHomeException
 import dev.elide.intellij.project.model.ElideClasspath
 import dev.elide.intellij.project.model.ElideClasspathUsage
-import elide.tooling.project.manifest.ElidePackageManifest
 import dev.elide.intellij.service.ElideDistributionResolver
+import dev.elide.project.manifest.ElidePackageManifest
 import java.nio.file.Path
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -95,16 +95,8 @@ class ElideCommandLine private constructor(
   }
 }
 
-suspend fun ElideCommandLine.install(
-  withSources: Boolean = false,
-  withDocs: Boolean = false,
-  onOutput: ((line: String, stderr: Boolean) -> Unit)? = null,
-) {
-  val args = buildList {
-    add("install")
-    if (withSources) add("--with=sources")
-    if (withDocs) add("--with=docs")
-  }.toTypedArray()
+suspend fun ElideCommandLine.install(onOutput: ((line: String, stderr: Boolean) -> Unit)? = null) {
+  val args = arrayOf("install")
 
   invoke(args = args, onOutput = onOutput)
 }

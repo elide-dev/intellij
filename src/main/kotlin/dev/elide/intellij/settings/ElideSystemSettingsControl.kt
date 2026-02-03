@@ -16,9 +16,7 @@ import com.intellij.openapi.externalSystem.util.ExternalSystemSettingsControl
 import com.intellij.openapi.externalSystem.util.ExternalSystemUiUtil
 import com.intellij.openapi.externalSystem.util.PaintAwarePanel
 import com.intellij.openapi.ui.DialogPanel
-import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.panel
-import dev.elide.intellij.Constants
 
 /**
  * UI manager for [system-wide][ElideSettings] Elide settings panel.
@@ -26,33 +24,16 @@ import dev.elide.intellij.Constants
  * @see ElideConfigurable
  */
 class ElideSystemSettingsControl(
-  private val initialSettings: ElideSettings
+  @Suppress("unused") private val initialSettings: ElideSettings
 ) : ExternalSystemSettingsControl<ElideSettings> {
   private lateinit var controls: DialogPanel
 
-  // controls state
-  private var downloadSources: Boolean = initialSettings.downloadSources
-  private var downloadDocs: Boolean = initialSettings.downloadDocs
-
   private fun controlsPanel(): DialogPanel = panel {
-    row {
-      checkBox(Constants.Strings["settings.general.downloadSources"])
-        .comment(Constants.Strings["settings.general.downloadSources.comment"])
-        .bindSelected(::downloadSources)
-    }
-
-    row {
-      checkBox(Constants.Strings["settings.general.downloadDocs"])
-        .comment(Constants.Strings["settings.general.downloadDocs.comment"])
-        .bindSelected(::downloadDocs)
-    }
+    // noop
   }
 
   override fun isModified(): Boolean {
     controls.apply() // apply UI changes to bound properties before checking
-
-    if (downloadSources != initialSettings.downloadSources) return true
-    if (downloadDocs != initialSettings.downloadDocs) return true
 
     return false
   }
@@ -63,18 +44,12 @@ class ElideSystemSettingsControl(
   }
 
   override fun reset() {
-    downloadSources = initialSettings.downloadSources
-    downloadDocs = initialSettings.downloadDocs
-
     controls.reset()
   }
 
   override fun apply(settings: ElideSettings) {
     // apply UI changes to bound properties before committing
     controls.apply()
-
-    settings.downloadSources = downloadSources
-    settings.downloadDocs = downloadDocs
   }
 
   override fun validate(settings: ElideSettings): Boolean {

@@ -83,8 +83,6 @@ class ElideProjectResolver : ExternalSystemProjectResolver<ElideExecutionSetting
       // install dependencies and resolve classpath
       listener.onStep(id, progressMessage("resolve.steps.sync"))
       cli.install(
-        withSources = settings?.downloadSources == true,
-        withDocs = settings?.downloadDocs == true,
         onOutput = { line, err -> listener.onTaskOutput(id, line, !err) },
       )
 
