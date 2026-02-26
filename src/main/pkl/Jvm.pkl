@@ -103,6 +103,36 @@ open class Jar extends artifacts.Artifact {
 /// Describes configuration for a shaded JAR.
 open class ShadedJar extends Jar {}
 
+/// Describes a sources JAR artifact that packages source files.
+open class SourceJar extends artifacts.Artifact {
+  /// Classifier for the JAR (e.g., "sources" or "no-tzdb-sources").
+  classifier: String?
+
+  /// Patterns to exclude from the sources JAR.
+  excludes: Listing<String> = new {}
+
+  /// Patterns to include in the sources JAR.
+  includes: Listing<String> = new {}
+}
+
+/// Describes a Javadoc JAR artifact that generates and packages documentation.
+open class JavadocJar extends artifacts.Artifact {
+  /// Package groupings for the Javadoc (title -> packages).
+  groups: Mapping<String, Listing<String>> = new {}
+
+  /// External documentation URLs to link.
+  links: Listing<String> = new {}
+
+  /// Patterns to exclude from documentation.
+  excludes: Listing<String> = new {}
+
+  /// Title for the browser window.
+  windowTitle: String?
+
+  /// Title for the documentation.
+  docTitle: String?
+}
+
 /// Base coordinate specification for a Maven package.
 open class MavenCoordinateSpec {
   /// Group for the coordinate.
@@ -189,6 +219,9 @@ class MavenDependencies {
   /// A list of Maven package dependencies to be resolved for this project.
   testPackages: Listing<MavenPackageDependency> = new {}
 
+  /// A list of Maven package dependencies to be resolved as Kotlin compiler plugins.
+  kotlinPlugins: Listing<MavenPackageDependency> = new {}
+
   /// A list of Maven package dependencies to be excluded from resolution and classpath calculations.
   exclusions: Listing<MavenPackageDependency> = new {}
 
@@ -203,12 +236,23 @@ class MavenDependencies {
 
   /// Foreign manifest(s) to import (for example, POM files).
   from: String | Listing<common.FilePath> = new Listing<common.FilePath> {}
+
+  /// Path to local maven repository
+  localRepository: common.FilePath?
 }
 
 /// Create a JAR artifact from the `main` project source set.
 function jar(jarName: String) = new Jar {
   name = "\(jarName.replaceAll(".jar", "")).jar"
 }
+
+/// Create a sources JAR artifact.
+function sourcesJar() = new SourceJar {
+  classifier = "sources"
+}
+
+/// Create a Javadoc JAR artifact.
+function javadocJar() = new JavadocJar {}
 
 /// Add a source set to a JAR artifact.
 function jarSources(sourceSetName: sources.SourceSetName) = new Mixin<Jar> {

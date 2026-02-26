@@ -97,7 +97,7 @@ class KotlinFeatureOptions {
   experimental: Boolean = false
 
   /// Enable or disable KotlinX serialization support.
-  serialization: Boolean = kotlinx && enableDefaultPlugins && experimental
+  serialization: Boolean = kotlinx && enableDefaultPlugins
 
   /// Enable or disable KotlinX Coroutines support.
   coroutines: Boolean = kotlinx
@@ -112,6 +112,28 @@ class KotlinFeatureOptions {
   reflection: Boolean = true
 }
 
+/// Describes a Kotlin toolchain to be used for compilation.
+typealias KotlinToolchain = "embedded" | ManagedKotlinToolchain | CustomKotlinToolchain
+
+/// Describes a managed Kotlin toolchain using a specific version. Managed toolchains are automatically
+/// resolved and downloaded by Elide when required.
+class ManagedKotlinToolchain {
+  /// Kotlin version for this managed toolchain.
+  version: String
+}
+
+/// Describes a custom Kotlin toolchain, using the path to a local distribution.
+class CustomKotlinToolchain {
+  /// Path to a local Kotlin distribution.
+  path: String
+}
+
+/// Describes a set of option key-value pairs used to configure a Kotlin compiler plugin
+typealias KotlinPluginOptions = Mapping<String, String>
+
+/// An identifier for a Kotlin compiler plugin.
+typealias KotlinPluginId = String
+
 /// Specifies settings which apply to Kotlin projects.
 class KotlinSettings {
   /// Set the uniform Kotlin API level. Defaults to auto-detecting the best API level to use.
@@ -125,4 +147,10 @@ class KotlinSettings {
 
   /// Manage Elide settings which relate to Kotlin.
   features: KotlinFeatureOptions = new {}
+
+  /// Select the Kotlin toolchain to be used.
+  toolchain: KotlinToolchain = "embedded"
+
+  /// Configure options passed to Kotlin compiler plugins.
+  plugins: Mapping<KotlinPluginId, KotlinPluginOptions> = new {}
 }

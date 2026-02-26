@@ -206,11 +206,56 @@ data class ElidePackageManifest(
     val entrypoint: String? = null,
   )
 
+  /**
+   * Output mode for container images.
+   * - `DAEMON`: Publish to the local Docker daemon.
+   * - `REGISTRY`: Publish directly to the registry specified in the image coordinates.
+   * - `TARBALL`: Write to a local tarball that can be imported manually into Docker.
+   */
+  @Serializable
+  enum class ContainerOutputMode(override val symbol: String) : Symbolic<String> {
+    DAEMON("daemon"),
+    REGISTRY("registry"),
+    TARBALL("tarball");
+
+    companion object : Symbolic.SealedResolver<String, ContainerOutputMode> {
+      override fun resolve(symbol: String): ContainerOutputMode =
+        when (symbol.lowercase().trim()) {
+          "daemon" -> DAEMON
+          "registry" -> REGISTRY
+          "tarball" -> TARBALL
+          else -> throw unresolved(symbol)
+        }
+    }
+  }
+
+  /**
+   * Container image format.
+   * - `OCI`: Open Container Initiative (OCI) image format.
+   * - `DOCKER`: Docker image format (Docker Image Manifest V2).
+   */
+  @Serializable
+  enum class ContainerFormat(override val symbol: String) : Symbolic<String> {
+    OCI("oci"),
+    DOCKER("docker");
+
+    companion object : Symbolic.SealedResolver<String, ContainerFormat> {
+      override fun resolve(symbol: String): ContainerFormat =
+        when (symbol.lowercase().trim()) {
+          "oci" -> OCI
+          "docker" -> DOCKER
+          else -> throw unresolved(symbol)
+        }
+    }
+  }
+
   @Serializable
   data class ContainerImage(
     val image: String? = null,
     val base: String? = null,
     val tags: List<String> = emptyList(),
+    val output: ContainerOutputMode = ContainerOutputMode.DAEMON,
+    val format: ContainerFormat = ContainerFormat.DOCKER,
     override val from: List<String> = emptyList(),
     override val dependsOn: List<String> = emptyList(),
   ) : Artifact
@@ -467,11 +512,13 @@ data class ElidePackageManifest(
     val compileOnly: List<MavenPackage> = emptyList(),
     val runtimeOnly: List<MavenPackage> = emptyList(),
     val processors: List<MavenPackage> = emptyList(),
+    val kotlinPlugins: List<MavenPackage> = emptyList(),
     val exclusions: List<MavenPackage> = emptyList(),
     val catalogs: List<GradleCatalog> = emptyList(),
     val repositories: Map<String, MavenRepository> = emptyMap(),
     val enableDefaultRepositories: Boolean = true,
     val from: List<String> = emptyList(),
+    val localRepository: String? = null,
   ) : DependencyEcosystemConfig {
     fun hasPackages(): Boolean =
       (packages.isNotEmpty() ||
@@ -571,7 +618,26 @@ data class ElidePackageManifest(
     }
   }
 
-  @JvmRecord @Serializable data class JavaCompilerSettings(val flags: List<String> = emptyList())
+  @JvmRecord
+  @Serializable
+  data class JavaCompilerSettings(
+    val flags: List<String> = emptyList(),
+    val mode: CompilerMode = CompilerMode.Embedded,
+  ) {
+    enum class CompilerMode(override val symbol: String) : Symbolic<String> {
+      Embedded("embedded"),
+      External("external");
+
+      companion object : Symbolic.SealedResolver<String, CompilerMode> {
+        override fun resolve(symbol: String): CompilerMode =
+          when (symbol) {
+            Embedded.symbol -> Embedded
+            External.symbol -> External
+            else -> error("Unrecognized compiler mode: $symbol")
+          }
+      }
+    }
+  }
 
   @JvmRecord
   @Serializable
@@ -666,10 +732,6 @@ data class ElidePackageManifest(
       if (languageVersion != "auto") yield("-language-version=$languageVersion")
       if (includeRuntime) yield("-include-runtime")
       if (noStdlib) yield("-no-stdlib")
-      when (val tgt = jvmTarget) {
-        null -> {}
-        else -> yield("-jvm-target=${tgt.argValue}")
-      }
 
       if (freeCompilerArgs.isNotEmpty()) yieldAll(freeCompilerArgs)
     }
@@ -693,6 +755,15 @@ data class ElidePackageManifest(
     val reflection: Boolean = true,
   )
 
+  @Serializable
+  sealed interface KotlinToolchainMode {
+    @Serializable data object Embedded : KotlinToolchainMode
+
+    @Serializable @JvmInline value class Custom(val kotlinHome: String) : KotlinToolchainMode
+
+    @Serializable @JvmInline value class Managed(val version: String) : KotlinToolchainMode
+  }
+
   @JvmRecord
   @Serializable
   data class KotlinSettings(
@@ -700,6 +771,8 @@ data class ElidePackageManifest(
     val languageLevel: String = "auto",
     val compilerOptions: KotlinJvmCompilerOptions = KotlinJvmCompilerOptions(),
     val features: KotlinFeatureOptions = KotlinFeatureOptions(),
+    val toolchain: KotlinToolchainMode = KotlinToolchainMode.Embedded,
+    val plugins: Map<String, Map<String, String>> = emptyMap(),
   )
 
   @JvmRecord

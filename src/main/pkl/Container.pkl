@@ -19,6 +19,19 @@ typealias QualifiedContainerCoordinate = String
 /// Cryptographic fingerprint for a container image.
 typealias ContainerHash = String
 
+/// Output mode for container images.
+///
+/// - `"daemon"`: Publish to the local Docker daemon.
+/// - `"registry"`: Publish directly to the registry specified in the image coordinates.
+/// - `"tarball"`: Write to a local tarball that can be imported manually into Docker.
+typealias ContainerOutputMode = "daemon"|"registry"|"tarball"
+
+/// Container image format.
+///
+/// - `"oci"`: Open Container Initiative (OCI) image format.
+/// - `"docker"`: Docker image format (Docker Image Manifest V2).
+typealias ContainerFormat = "oci"|"docker"
+
 /// Describes a container image output.
 class ContainerImage extends artifacts.Artifact {
   /// Target image coordinate.
@@ -29,4 +42,10 @@ class ContainerImage extends artifacts.Artifact {
 
   /// Tags to apply to the container image.
   tags: Listing<ContainerTag> = new {}
+
+  /// Output mode for the container image. Defaults to `"daemon"`.
+  output: ContainerOutputMode = "daemon"
+
+  /// Container image format. Defaults to `"docker"`.
+  format: ContainerFormat = "docker"
 }

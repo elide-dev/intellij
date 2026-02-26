@@ -2,8 +2,14 @@
 @ModuleInfo { minPklVersion = "0.28.1" }
 module elide.java
 
+/// Selects the Java compiler variant used by the build system
+typealias JavaCompilerMode = "embedded" | "external" | String
+
 /// Controls settings relating to the Java compiler.
 class JavaCompiler {
+  /// Compiler to be used by the build system, defaults to the embedded native javac
+  mode: JavaCompilerMode = "embedded"
+
   /// Extra flags to pass to the Java compiler.
   flags: Listing<String> = new {}
 }
