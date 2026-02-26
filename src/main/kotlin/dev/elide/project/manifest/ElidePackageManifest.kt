@@ -72,7 +72,7 @@ data class ElidePackageManifest(
     private var ManifestJson = Json { ignoreUnknownKeys = true }
 
     @JvmStatic fun parse(input: String): ElidePackageManifest {
-      return runCatching { Json.decodeFromString<ElidePackageManifest>(input) }
+      return runCatching { ManifestJson.decodeFromString<ElidePackageManifest>(input) }
         .getOrElse { throw IllegalStateException("Failed to parse Elide project manifest: ${it.message}", it) }
     }
   }
@@ -771,7 +771,6 @@ data class ElidePackageManifest(
     val languageLevel: String = "auto",
     val compilerOptions: KotlinJvmCompilerOptions = KotlinJvmCompilerOptions(),
     val features: KotlinFeatureOptions = KotlinFeatureOptions(),
-    val toolchain: KotlinToolchainMode = KotlinToolchainMode.Embedded,
     val plugins: Map<String, Map<String, String>> = emptyMap(),
   )
 
@@ -1067,25 +1066,5 @@ fun DependencyResolution.merge(other: DependencyResolution): DependencyResolutio
     pip = pip.merge(other.pip),
     gems = gems.merge(other.gems),
     maven = maven.merge(other.maven),
-  )
-}
-
-fun ElidePackageManifest.merge(other: ElidePackageManifest): ElidePackageManifest {
-  return ElidePackageManifest(
-    name = name ?: other.name,
-    version = version ?: other.version,
-    description = description ?: other.description,
-    entrypoint = (entrypoint ?: emptyList()).plus(other.entrypoint ?: emptyList()).distinct(),
-    scripts = scripts + other.scripts,
-    artifacts = artifacts + other.artifacts,
-    dependencies = dependencies.merge(other.dependencies),
-    sources = sources + other.sources,
-    execTasks = execTasks + other.execTasks,
-    jvm = (other.jvm ?: jvm),
-    kotlin = (other.kotlin ?: kotlin),
-    python = (other.python ?: python),
-    ruby = (other.ruby ?: ruby),
-    pkl = (other.pkl ?: pkl),
-    nativeImage = (other.nativeImage ?: nativeImage),
   )
 }

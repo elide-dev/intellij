@@ -86,7 +86,9 @@ class ElideProjectResolver : ExternalSystemProjectResolver<ElideExecutionSetting
         onOutput = { line, err -> listener.onTaskOutput(id, line, !err) },
       )
 
-      val classpaths = ElideClasspathUsage.entries.associateWith { cli.classpath(it) }
+      val classpaths = ElideClasspathUsage.entries.associateWith {
+        cli.classpath("main", it)
+      }
 
       // build the project model from the manifest and classpaths
       listener.onStep(id, progressMessage("resolve.steps.buildModel"))

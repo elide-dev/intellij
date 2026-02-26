@@ -115,12 +115,13 @@ suspend fun ElideCommandLine.manifest(
 }
 
 suspend fun ElideCommandLine.classpath(
+  sourceSet: String,
   usage: ElideClasspathUsage,
   onOutput: ((line: String, stderr: Boolean) -> Unit)? = null,
 ): ElideClasspath {
   val output = StringBuilder()
 
-  invoke("classpath", usage.name) { line, stderr ->
+  invoke("classpath", "$sourceSet:${usage.name}") { line, stderr ->
     onOutput?.invoke(line, stderr)
     if (!stderr) output.append(line)
   }
