@@ -75,7 +75,7 @@ class ElideProjectDataService : AbstractProjectDataService<ElideProjectData, Pro
 
         settings.useProjectSettings = false
         settings.apiLevel = LanguageVersion.fromVersionString(kotlinOptions.apiLevel.takeUnless { it == "auto" })
-        settings.languageLevel = LanguageVersion.fromVersionString(kotlinOptions.languageLevel.takeIf { it == "auto" })
+        settings.languageLevel = LanguageVersion.fromVersionString(kotlinOptions.languageLevel.takeUnless { it == "auto" })
 
         settings.compilerSettings = CompilerSettings().apply {
           additionalArguments = kotlinOptions.compilerOptions.collect().joinToString(" ")

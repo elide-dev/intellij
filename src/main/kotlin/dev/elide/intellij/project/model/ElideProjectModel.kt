@@ -13,10 +13,10 @@
 
 package dev.elide.intellij.project.model
 
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.externalSystem.model.DataNode
 import com.intellij.openapi.externalSystem.model.ProjectKeys
 import com.intellij.openapi.externalSystem.model.project.*
-import com.intellij.openapi.projectRoots.ProjectJdkTable
 import com.intellij.openapi.roots.DependencyScope
 import com.intellij.openapi.util.io.toCanonicalPath
 import dev.elide.intellij.Constants
@@ -30,10 +30,12 @@ import kotlin.io.path.nameWithoutExtension
 import kotlin.io.path.pathString
 
 object ElideProjectModel {
+  private val LOG = Logger.getInstance(ElideProjectModel::class.java)
+
   private const val SUFFIX_JAR = "jar"
   private const val SUFFIX_JAVADOC = "-javadoc.$SUFFIX_JAR"
   private const val SUFFIX_SOURCES = "-sources.$SUFFIX_JAR"
-  private const val LIBRARIES_ROOT = ".dev/dependencies/m2/"
+  private const val DEFAULT_LIBRARIES_ROOT = ".dev/dependencies/m2/"
 
   private data class SourceSetModel(
     val name: String,
@@ -66,9 +68,14 @@ object ElideProjectModel {
 
     projectNode.createChild(ProjectKeys.MODULE, rootModule)
 
+    // Determine library root from manifest or use default
+    val librariesRoot = manifest.dependencies.maven.localRepository?.let { customPath ->
+      if (customPath.endsWith("/")) customPath else "$customPath/"
+    } ?: DEFAULT_LIBRARIES_ROOT
+
     // add project library data from classpath info
     val libraries = classpaths.mapValues { (_, value) ->
-      value.entries.distinct().map { buildLibraryData(it, projectPath) }.toList()
+      value.entries.distinct().mapNotNull { buildLibraryData(it, projectPath, librariesRoot) }.toList()
     }
 
     libraries.values.asSequence().flatMap { it }.distinctBy { it.getPaths(LibraryPathType.BINARY) }.forEach {
@@ -77,16 +84,11 @@ object ElideProjectModel {
 
     // build modules for each source set
     val modules = manifest.sources.entries.map { (name, sourceSet) ->
-      buildSourceSetModule(projectNode, projectPath, libraries, name, sourceSet)
+      buildSourceSetModule(projectNode, projectPath, libraries, name, sourceSet, manifest)
     }
 
-    // add module dependencies (test modules depend on main modules)
-    for (test in modules.filter { it.name == "test" || it.sourceSet.type == SourceSetType.Test }) {
-      for (main in modules.filter { it.name != "test" && it.sourceSet.type == SourceSetType.Main }) {
-        val data = ModuleDependencyData(test.module.data, main.module.data)
-        test.module.createChild(ProjectKeys.MODULE_DEPENDENCY, data)
-      }
-    }
+    // add module dependencies based on source set types
+    configureModuleDependencies(modules)
 
     // add resources roots to the modules containing them
     for (artifact in manifest.artifacts.values) {
@@ -111,13 +113,70 @@ object ElideProjectModel {
       }
     }
 
-    // configure the project's JDK
-    val jdkName = ProjectJdkTable.getInstance().allJdks.lastOrNull()?.name
+    // configure the project's JDK using intelligent selection
+    val jdkName = ElideJdkContributor.selectJdk(manifest)
     projectNode.createChild(ProjectSdkData.KEY, ProjectSdkData(jdkName))
 
     // attached additional data so we can finish the import after the project is resolved
     projectNode.createChild(ElideProjectData.PROJECT_KEY, ElideProjectData(manifest))
+
+    // invoke registered contributors
+    invokeContributors(projectNode, projectPath, manifest)
+
     return projectNode
+  }
+
+  private fun invokeContributors(
+    projectNode: DataNode<ProjectData>,
+    projectPath: Path,
+    manifest: ElidePackageManifest,
+  ) {
+    ElideProjectModelContributor.EP_NAME.extensionList.forEach { contributor ->
+      try {
+        contributor.contribute(projectNode, projectPath, manifest)
+      } catch (e: Exception) {
+        LOG.warn("Failed to invoke project model contributor: ${contributor.javaClass.name}", e)
+      }
+    }
+  }
+
+  private fun configureModuleDependencies(modules: List<SourceSetModel>) {
+    val mainModules = modules.filter { it.name != "test" && it.sourceSet.type == SourceSetType.Main }
+    val testModules = modules.filter { it.name == "test" || it.sourceSet.type == SourceSetType.Test }
+    val integrationModules = modules.filter { it.sourceSet.type == SourceSetType.Integration }
+    val exampleModules = modules.filter { it.sourceSet.type == SourceSetType.Example }
+
+    // Test modules depend on main modules
+    for (test in testModules) {
+      for (main in mainModules) {
+        val data = ModuleDependencyData(test.module.data, main.module.data)
+        data.scope = DependencyScope.TEST
+        test.module.createChild(ProjectKeys.MODULE_DEPENDENCY, data)
+      }
+    }
+
+    // Integration test modules depend on both main and test modules
+    for (integration in integrationModules) {
+      for (main in mainModules) {
+        val data = ModuleDependencyData(integration.module.data, main.module.data)
+        data.scope = DependencyScope.TEST
+        integration.module.createChild(ProjectKeys.MODULE_DEPENDENCY, data)
+      }
+      for (test in testModules) {
+        val data = ModuleDependencyData(integration.module.data, test.module.data)
+        data.scope = DependencyScope.TEST
+        integration.module.createChild(ProjectKeys.MODULE_DEPENDENCY, data)
+      }
+    }
+
+    // Example modules depend on main modules
+    for (example in exampleModules) {
+      for (main in mainModules) {
+        val data = ModuleDependencyData(example.module.data, main.module.data)
+        data.scope = DependencyScope.COMPILE
+        example.module.createChild(ProjectKeys.MODULE_DEPENDENCY, data)
+      }
+    }
   }
 
   private fun buildSourceSetModule(
@@ -125,7 +184,8 @@ object ElideProjectModel {
     projectPath: Path,
     libraries: Map<ElideClasspathUsage, List<LibraryData>>,
     sourceSetName: String,
-    sourceSet: SourceSet
+    sourceSet: SourceSet,
+    manifest: ElidePackageManifest,
   ): SourceSetModel {
     val module = ModuleData(
       /* id = */ sourceSetName,
@@ -138,16 +198,17 @@ object ElideProjectModel {
 
     val moduleNode = projectNode.createChild(ProjectKeys.MODULE, module)
 
-    // add library dependencies
-    val classpathUsages = when (if (sourceSetName == "test") SourceSetType.Test else sourceSet.type) {
-      SourceSetType.Main,
+    // Determine effective source set type (handle "test" name convention)
+    val effectiveType = if (sourceSetName == "test") SourceSetType.Test else sourceSet.type
+
+    // add library dependencies based on source set type
+    val classpathUsages = when (effectiveType) {
+      SourceSetType.Main -> setOf(ElideClasspathUsage.COMPILE, ElideClasspathUsage.RUNTIME)
       SourceSetType.Example -> setOf(ElideClasspathUsage.COMPILE, ElideClasspathUsage.RUNTIME)
-
-      SourceSetType.Test,
+      SourceSetType.Test -> setOf(ElideClasspathUsage.TEST)
       SourceSetType.Integration -> setOf(ElideClasspathUsage.TEST)
-
-      SourceSetType.Docs,
-      SourceSetType.Infra,
+      SourceSetType.Infra -> setOf(ElideClasspathUsage.COMPILE)
+      SourceSetType.Docs -> emptySet()
       SourceSetType.Other -> emptySet()
     }
 
@@ -162,9 +223,15 @@ object ElideProjectModel {
       moduleNode.createChild(ProjectKeys.LIBRARY_DEPENDENCY, data)
     }
 
-    val sourceType = when {
-      sourceSet.type == SourceSetType.Test || sourceSetName == "test" -> ExternalSystemSourceType.TEST
-      else -> ExternalSystemSourceType.SOURCE
+    // Determine source type for IntelliJ
+    val sourceType = when (effectiveType) {
+      SourceSetType.Main -> ExternalSystemSourceType.SOURCE
+      SourceSetType.Test -> ExternalSystemSourceType.TEST
+      SourceSetType.Integration -> ExternalSystemSourceType.TEST
+      SourceSetType.Example -> ExternalSystemSourceType.SOURCE
+      SourceSetType.Docs -> ExternalSystemSourceType.EXCLUDED
+      SourceSetType.Infra -> ExternalSystemSourceType.SOURCE
+      SourceSetType.Other -> ExternalSystemSourceType.EXCLUDED
     }
 
     val contentRoots = buildList {
@@ -177,26 +244,18 @@ object ElideProjectModel {
       }
     }
 
-    // configure the module's JDK
-    val jdkName = ProjectJdkTable.getInstance().allJdks.lastOrNull()?.name
+    // configure the module's JDK using intelligent selection
+    val jdkName = ElideJdkContributor.selectJdk(manifest)
     moduleNode.createChild(ModuleSdkData.KEY, ModuleSdkData(jdkName))
 
     return SourceSetModel(sourceSetName, sourceSet, moduleNode, contentRoots)
   }
 
-  private fun buildLibraryData(classpathEntry: String, projectPath: Path): LibraryData {
-    val libraryName = buildString {
-      val localName = classpathEntry.removePrefix(LIBRARIES_ROOT)
-        .substringBeforeLast('/') // strip file name
-
-      val versionIndex = localName.lastIndexOf('/')
-      val artifactIndex = localName.lastIndexOf('/', versionIndex - 1)
-
-      append(localName.substring(0, artifactIndex).replace('/', '.'))
-      append(":")
-      append(localName.substring(artifactIndex + 1, versionIndex))
-      append(":")
-      append(localName.substring(versionIndex + 1))
+  private fun buildLibraryData(classpathEntry: String, projectPath: Path, librariesRoot: String): LibraryData? {
+    val libraryName = parseLibraryName(classpathEntry, librariesRoot)
+    if (libraryName == null) {
+      LOG.warn("Failed to parse library name from classpath entry: $classpathEntry")
+      return null
     }
 
     val library = LibraryData(Constants.SYSTEM_ID, libraryName)
@@ -204,15 +263,68 @@ object ElideProjectModel {
     val classesPath = projectPath.resolve(classpathEntry)
     library.addPath(LibraryPathType.BINARY, classesPath.pathString)
 
-    classesPath.parent.resolve("${classesPath.nameWithoutExtension}$SUFFIX_SOURCES")
-      .takeIf { it.isRegularFile() }
+    classesPath.parent?.resolve("${classesPath.nameWithoutExtension}$SUFFIX_SOURCES")
+      ?.takeIf { it.isRegularFile() }
       ?.let { library.addPath(LibraryPathType.SOURCE, it.pathString) }
 
-    classesPath.parent.resolve("${classesPath.nameWithoutExtension}$SUFFIX_JAVADOC")
-      .takeIf { it.isRegularFile() }
+    classesPath.parent?.resolve("${classesPath.nameWithoutExtension}$SUFFIX_JAVADOC")
+      ?.takeIf { it.isRegularFile() }
       ?.let { library.addPath(LibraryPathType.DOC, it.pathString) }
 
     return library
+  }
+
+  /**
+   * Parse a Maven-style library name from a classpath entry path.
+   *
+   * Expected path format: `{librariesRoot}/group/artifact/version/artifact-version.jar`
+   * Output format: `group:artifact:version`
+   *
+   * @param classpathEntry The classpath entry path.
+   * @param librariesRoot The library root prefix to strip.
+   * @return The parsed library name, or null if the path is malformed.
+   */
+  private fun parseLibraryName(classpathEntry: String, librariesRoot: String): String? {
+    return try {
+      val localName = classpathEntry.removePrefix(librariesRoot)
+        .substringBeforeLast('/') // strip file name
+
+      if (localName.isEmpty()) {
+        return generateFallbackLibraryName(classpathEntry)
+      }
+
+      val versionIndex = localName.lastIndexOf('/')
+      if (versionIndex <= 0) {
+        return generateFallbackLibraryName(classpathEntry)
+      }
+
+      val artifactIndex = localName.lastIndexOf('/', versionIndex - 1)
+      if (artifactIndex < 0 || artifactIndex >= versionIndex - 1) {
+        return generateFallbackLibraryName(classpathEntry)
+      }
+
+      val groupPath = localName.substring(0, artifactIndex)
+      val artifact = localName.substring(artifactIndex + 1, versionIndex)
+      val version = localName.substring(versionIndex + 1)
+
+      if (groupPath.isEmpty() || artifact.isEmpty() || version.isEmpty()) {
+        return generateFallbackLibraryName(classpathEntry)
+      }
+
+      "${groupPath.replace('/', '.')}:$artifact:$version"
+    } catch (e: StringIndexOutOfBoundsException) {
+      LOG.debug("Failed to parse library name from path: $classpathEntry", e)
+      generateFallbackLibraryName(classpathEntry)
+    }
+  }
+
+  /**
+   * Generate a fallback library name from the classpath entry when standard parsing fails.
+   */
+  private fun generateFallbackLibraryName(classpathEntry: String): String {
+    val fileName = classpathEntry.substringAfterLast('/')
+    val name = fileName.removeSuffix(".$SUFFIX_JAR")
+    return if (name.isNotEmpty()) "unknown:$name:unknown" else "unknown:library:unknown"
   }
 
   private fun collectRoots(
