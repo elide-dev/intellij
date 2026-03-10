@@ -90,7 +90,7 @@ class ElideDistributionResolver(private val project: Project) {
     /** Lightly validates an Elide distribution [path], verifying some basic directories and files are presents. */
     @JvmStatic fun validateDistributionPath(path: Path): Boolean {
       if (!path.resolve(Constants.ELIDE_RESOURCES_DIR).isDirectory()) return false
-      if (!path.resolve(Constants.ELIDE_BINARY).isRegularFile()) return false
+      if (!path.resolve(Constants.ELIDE_BINARIES_DIR).resolve(Constants.ELIDE_BINARY).isRegularFile()) return false
 
       return true
     }

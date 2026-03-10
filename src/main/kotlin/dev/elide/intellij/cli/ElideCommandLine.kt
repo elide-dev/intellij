@@ -48,7 +48,7 @@ class ElideCommandLine private constructor(
     environment: Map<String, String>? = null,
     onOutput: ((line: String, stderr: Boolean) -> Unit)? = null,
   ) {
-    val elideBin = elideHome.resolve(Constants.ELIDE_BINARY)
+    val elideBin = elideHome.resolve(Constants.ELIDE_BINARIES_DIR).resolve(Constants.ELIDE_BINARY)
     if (!elideBin.isRegularFile()) throw InvalidElideHomeException(elideHome)
 
     val command = buildList {

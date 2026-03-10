@@ -46,6 +46,9 @@ object Constants {
   /** Resources path relative to the root of the Elide distribution. */
   const val ELIDE_RESOURCES_DIR = "resources"
 
+  /** Binaries path relative to the root of the Elide distribution. */
+  const val ELIDE_BINARIES_DIR = "bin"
+
   /** Relative path to the CLI binary in an Elide distribution. */
   const val ELIDE_BINARY = "elide"
 
