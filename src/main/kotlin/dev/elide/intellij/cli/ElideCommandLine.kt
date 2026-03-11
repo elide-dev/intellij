@@ -121,7 +121,7 @@ suspend fun ElideCommandLine.classpath(
 ): ElideClasspath {
   val output = StringBuilder()
 
-  invoke("classpath", "$sourceSet:${usage.name}") { line, stderr ->
+  invoke("classpath", "$sourceSet:${usage.name.lowercase()}") { line, stderr ->
     onOutput?.invoke(line, stderr)
     if (!stderr) output.append(line)
   }

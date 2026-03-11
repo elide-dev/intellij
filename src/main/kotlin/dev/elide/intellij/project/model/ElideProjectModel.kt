@@ -46,7 +46,7 @@ object ElideProjectModel {
 
   fun buildModel(
     projectPath: Path,
-    classpaths: Map<ElideClasspathUsage, ElideClasspath>,
+    classpaths: Map<String, ElideClasspath>,
     manifest: ElidePackageManifest,
   ): DataNode<ProjectData> {
     val projectData = ProjectData(
@@ -182,7 +182,7 @@ object ElideProjectModel {
   private fun buildSourceSetModule(
     projectNode: DataNode<ProjectData>,
     projectPath: Path,
-    libraries: Map<ElideClasspathUsage, List<LibraryData>>,
+    libraries: Map<String, List<LibraryData>>,
     sourceSetName: String,
     sourceSet: SourceSet,
     manifest: ElidePackageManifest,
@@ -212,7 +212,7 @@ object ElideProjectModel {
       SourceSetType.Other -> emptySet()
     }
 
-    for (usage in classpathUsages) libraries[usage]?.forEach { library ->
+    for (usage in classpathUsages) libraries[sourceSetName]?.forEach { library ->
       val data = LibraryDependencyData(module, library, LibraryLevel.MODULE)
       data.isExported = true
       data.scope = when (usage) {
