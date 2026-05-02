@@ -40,7 +40,7 @@ object Constants {
   /** Name and extension of the Elide lockfile. */
   const val LOCKFILE_NAME = "elide.lock.bin"
 
-  /** Default installation directory for Elide under the user home path. */
+  /** Directory name for the Elide distribution root; used as a path segment when constructing platform-specific install paths. */
   const val ELIDE_HOME = "elide"
 
   /** Resources path relative to the root of the Elide distribution. */

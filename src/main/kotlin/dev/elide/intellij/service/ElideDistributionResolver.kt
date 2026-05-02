@@ -66,11 +66,30 @@ class ElideDistributionResolver(private val project: Project) {
     }
 
     /**
-     * Returns the default path to the Elide installation in the user's home directory. Note that the path is not
-     * guaranteed to contain a valid distribution or even exist.
+     * Returns the default path to the Elide installation, resolved using platform-specific conventions. Resolution
+     * order:
+     *
+     * 1. `$ELIDE_HOME` environment variable, if set.
+     * 2. First candidate directory (in platform priority order) that already exists on disk.
+     * 3. Platform-appropriate default (regardless of whether it exists yet).
+     *
+     * **Unix (Linux / macOS) candidates**, in order:
+     * - `$XDG_DATA_HOME/elide` (when `XDG_DATA_HOME` is set)
+     * - `~/.local/share/elide` (XDG base-dir default)
+     * - `/opt/elide/current` (system-wide deb/rpm/DMG install symlink)
+     * - `~/.elide` (legacy)
+     *
+     * **Windows candidates**, in order:
+     * - `%LOCALAPPDATA%\elide` (shell installer default)
+     * - `%ProgramFiles%\Elide` (MSI installer)
+     * - `%USERPROFILE%\.local\share\elide` (fallback when `LOCALAPPDATA` is absent)
+     * - `%USERPROFILE%\.elide` (legacy)
+     *
+     * Note that the returned path is not guaranteed to contain a valid distribution or even exist on disk.
      */
     @JvmStatic fun defaultDistributionPath(): Path {
-      return Path(System.getProperty("user.home")).resolve(Constants.ELIDE_HOME)
+      System.getenv("ELIDE_HOME")?.takeIf { it.isNotBlank() }?.let { return Path(it) }
+      return if (isWindows()) resolveWindowsDefaultPath() else resolveUnixDefaultPath()
     }
 
     /**
@@ -93,6 +112,38 @@ class ElideDistributionResolver(private val project: Project) {
       if (!path.resolve(Constants.ELIDE_BINARIES_DIR).resolve(Constants.ELIDE_BINARY).isRegularFile()) return false
 
       return true
+    }
+
+    private fun isWindows(): Boolean =
+      System.getProperty("os.name")?.lowercase()?.contains("windows") == true
+
+    private fun resolveUnixDefaultPath(): Path {
+      val userHome = System.getProperty("user.home")
+      val xdgDataHome = System.getenv("XDG_DATA_HOME")?.takeIf { it.isNotBlank() }
+      val candidates = buildList {
+        xdgDataHome?.let { add(Path(it).resolve(Constants.ELIDE_HOME)) }
+        add(Path(userHome).resolve(".local/share/${Constants.ELIDE_HOME}"))
+        add(Path("/opt/elide/current"))
+        add(Path(userHome).resolve(".${Constants.ELIDE_HOME}"))
+      }
+      return candidates.firstOrNull { it.isDirectory() }
+        ?: xdgDataHome?.let { Path(it).resolve(Constants.ELIDE_HOME) }
+        ?: Path(userHome).resolve(".local/share/${Constants.ELIDE_HOME}")
+    }
+
+    private fun resolveWindowsDefaultPath(): Path {
+      val userHome = System.getProperty("user.home")
+      val localAppData = System.getenv("LOCALAPPDATA")?.takeIf { it.isNotBlank() }
+      val programFiles = System.getenv("ProgramFiles")?.takeIf { it.isNotBlank() }
+      val candidates = buildList {
+        localAppData?.let { add(Path(it).resolve(Constants.ELIDE_HOME)) }
+        programFiles?.let { add(Path(it).resolve("Elide")) }
+        add(Path(userHome).resolve(".local/share/${Constants.ELIDE_HOME}"))
+        add(Path(userHome).resolve(".${Constants.ELIDE_HOME}"))
+      }
+      return candidates.firstOrNull { it.isDirectory() }
+        ?: localAppData?.let { Path(it).resolve(Constants.ELIDE_HOME) }
+        ?: Path(userHome).resolve(".local/share/${Constants.ELIDE_HOME}")
     }
   }
 }
