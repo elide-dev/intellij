@@ -90,26 +90,27 @@ object ElideProjectModel {
     // add module dependencies based on source set types
     configureModuleDependencies(modules)
 
-    // add resources roots to the modules containing them
-    for (artifact in manifest.artifacts.values) {
-      if (artifact !is ElidePackageManifest.Jar) continue
-      collectRoots(projectPath, artifact.resources.values.map { it.path }).forEach { (root, paths) ->
-        for (module in modules) {
-          val containingRoot = module.contentRoots.asSequence()
-            .filter { root.startsWith(it.rootPath) }
-            .maxByOrNull { it.rootPath.length }
-            ?: continue
+    // add resources roots from JVM source sets
+    for (module in modules) {
+      val sourceSet = module.sourceSet
+      if (sourceSet !is ElidePackageManifest.JvmSourceSet) continue
 
-          val type = when {
-            module.sourceSet.type == SourceSetType.Test || module.name == "test" -> ExternalSystemSourceType.TEST_RESOURCE
-            else -> ExternalSystemSourceType.RESOURCE
-          }
+      val resourcePaths = sourceSet.resources.values.toList()
+      if (resourcePaths.isEmpty()) continue
 
-          if (paths.size == 1 && root == containingRoot.rootPath) containingRoot.storePath(type, paths.single())
-          else containingRoot.storePath(type, root)
+      collectRoots(projectPath, resourcePaths).forEach { (root, paths) ->
+        val containingRoot = module.contentRoots.asSequence()
+          .filter { root.startsWith(it.rootPath) }
+          .maxByOrNull { it.rootPath.length }
+          ?: return@forEach
 
-          break
+        val type = when {
+          sourceSet.type == SourceSetType.Test || module.name == "test" -> ExternalSystemSourceType.TEST_RESOURCE
+          else -> ExternalSystemSourceType.RESOURCE
         }
+
+        if (paths.size == 1 && root == containingRoot.rootPath) containingRoot.storePath(type, paths.single())
+        else containingRoot.storePath(type, root)
       }
     }
 
@@ -141,40 +142,15 @@ object ElideProjectModel {
   }
 
   private fun configureModuleDependencies(modules: List<SourceSetModel>) {
-    val mainModules = modules.filter { it.name != "test" && it.sourceSet.type == SourceSetType.Main }
-    val testModules = modules.filter { it.name == "test" || it.sourceSet.type == SourceSetType.Test }
-    val integrationModules = modules.filter { it.sourceSet.type == SourceSetType.Integration }
-    val exampleModules = modules.filter { it.sourceSet.type == SourceSetType.Example }
+    val mainModules = modules.filter { it.name != "test" && it.sourceSet.type == SourceSetType.Source }
+    val otherModules = modules.filter { it.name == "test" || it.sourceSet.type != SourceSetType.Source }
 
-    // Test modules depend on main modules
-    for (test in testModules) {
+    // other modules depend on main modules
+    for (test in otherModules) {
       for (main in mainModules) {
         val data = ModuleDependencyData(test.module.data, main.module.data)
         data.scope = DependencyScope.TEST
         test.module.createChild(ProjectKeys.MODULE_DEPENDENCY, data)
-      }
-    }
-
-    // Integration test modules depend on both main and test modules
-    for (integration in integrationModules) {
-      for (main in mainModules) {
-        val data = ModuleDependencyData(integration.module.data, main.module.data)
-        data.scope = DependencyScope.TEST
-        integration.module.createChild(ProjectKeys.MODULE_DEPENDENCY, data)
-      }
-      for (test in testModules) {
-        val data = ModuleDependencyData(integration.module.data, test.module.data)
-        data.scope = DependencyScope.TEST
-        integration.module.createChild(ProjectKeys.MODULE_DEPENDENCY, data)
-      }
-    }
-
-    // Example modules depend on main modules
-    for (example in exampleModules) {
-      for (main in mainModules) {
-        val data = ModuleDependencyData(example.module.data, main.module.data)
-        data.scope = DependencyScope.COMPILE
-        example.module.createChild(ProjectKeys.MODULE_DEPENDENCY, data)
       }
     }
   }
@@ -203,12 +179,9 @@ object ElideProjectModel {
 
     // add library dependencies based on source set type
     val classpathUsages = when (effectiveType) {
-      SourceSetType.Main -> setOf(ElideClasspathUsage.COMPILE, ElideClasspathUsage.RUNTIME)
+      SourceSetType.Source -> setOf(ElideClasspathUsage.COMPILE, ElideClasspathUsage.RUNTIME)
       SourceSetType.Example -> setOf(ElideClasspathUsage.COMPILE, ElideClasspathUsage.RUNTIME)
       SourceSetType.Test -> setOf(ElideClasspathUsage.TEST)
-      SourceSetType.Integration -> setOf(ElideClasspathUsage.TEST)
-      SourceSetType.Infra -> setOf(ElideClasspathUsage.COMPILE)
-      SourceSetType.Docs -> emptySet()
       SourceSetType.Other -> emptySet()
     }
 
@@ -225,12 +198,9 @@ object ElideProjectModel {
 
     // Determine source type for IntelliJ
     val sourceType = when (effectiveType) {
-      SourceSetType.Main -> ExternalSystemSourceType.SOURCE
+      SourceSetType.Source -> ExternalSystemSourceType.SOURCE
       SourceSetType.Test -> ExternalSystemSourceType.TEST
-      SourceSetType.Integration -> ExternalSystemSourceType.TEST
       SourceSetType.Example -> ExternalSystemSourceType.SOURCE
-      SourceSetType.Docs -> ExternalSystemSourceType.EXCLUDED
-      SourceSetType.Infra -> ExternalSystemSourceType.SOURCE
       SourceSetType.Other -> ExternalSystemSourceType.EXCLUDED
     }
 
