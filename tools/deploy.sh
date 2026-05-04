@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # check if xmllint is available
 if ! command -v xmllint &> /dev/null; then
@@ -9,6 +10,11 @@ fi
 PLUGIN_VERSION="$(cat .version)"
 XML_FILE="src/main/resources/META-INF/plugin.xml"
 PLUGIN_FILE="build/distributions/elide-intellij-${PLUGIN_VERSION}.zip"
+
+if [[ ! -f "$PLUGIN_FILE" ]]; then
+    echo "Error: plugin archive not found: $PLUGIN_FILE"
+    exit 1
+fi
 
 # prepare metadata
 PLUGIN_ID=$(xmllint --xpath "string(//idea-plugin/id)" "$XML_FILE" 2>/dev/null)
@@ -38,12 +44,11 @@ ENCODED_ID=$(url_encode "$PLUGIN_ID")
 ENCODED_VERSION=$(url_encode "$PLUGIN_VERSION")
 
 echo "Uploading plugin archive..."
-curl -# \
+curl --fail -# \
   -X POST \
   -F "file=@$PLUGIN_FILE" \
   -H "x-api-key: ${ELIDE_PLUGINS_KEY}" \
-  "https://plugins.elide.dev/intellij/files?id=${ENCODED_ID}&version=${ENCODED_VERSION}" \
-  2>&1 | cat
+  "https://plugins.elide.dev/intellij/files?id=${ENCODED_ID}&version=${ENCODED_VERSION}"
 echo "Archive uploaded"
 
 echo "Updating plugin metadata..."
@@ -68,9 +73,9 @@ METADATA_JSON="$(jq -n \
   (if $untilBuild != "" then {untilBuild: $untilBuild} else {} end)'
 )"
 
-curl -s \
+curl --fail -s \
   -H "x-api-key: ${ELIDE_PLUGINS_KEY}" \
   -H "Content-Type: application/json" \
   "https://plugins.elide.dev/intellij/plugins?id=${ENCODED_ID}&version=${ENCODED_VERSION}" \
-  -d "$METADATA_JSON" > /dev/null
+  -d "$METADATA_JSON"
 echo "Plugin deployed"
