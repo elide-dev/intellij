@@ -39,23 +39,14 @@ The plugin ZIP is written to `build/distributions/`.
 
 ## Release workflow
 
-Releases are automated via [release-please](https://github.com/googleapis/release-please).
+Releases are triggered by pushing a version tag. Steps:
 
-**Commit convention:** all commits must follow [Conventional Commits](https://www.conventionalcommits.org/). A commitlint check enforces this on every PR.
+1. Update `.version` with the new version (e.g. `0.6.0`)
+2. Commit: `chore: bump version to 0.6.0`
+3. Tag and push:
+   ```bash
+   git tag v0.6.0 && git push origin v0.6.0
+   ```
+4. The `Release` workflow builds the plugin, publishes it to the Elide plugin repository, and creates a GitHub Release with auto-generated notes and the plugin ZIP attached.
 
-| Commit type | Version bump |
-|---|---|
-| `fix:` | patch |
-| `feat:` | minor |
-| `feat!:` / `BREAKING CHANGE:` | major |
-| `chore:`, `docs:`, `refactor:` | no release |
-
-**How a release happens:**
-
-1. Merge one or more `feat:` / `fix:` commits into `main`.
-2. Once CI passes, release-please opens a release PR that bumps `.version` and updates `CHANGELOG.md`.
-3. Review and merge the release PR.
-4. Once CI passes on that merge, release-please creates the tag and GitHub Release with auto-generated notes.
-5. The publish job builds the plugin, deploys it to the Elide plugin repository, and attaches the ZIP to the GitHub Release.
-
-Releases never happen without a human merging the release PR.
+**Commit convention:** commits should follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, etc.). A commitlint check enforces this on every PR.
