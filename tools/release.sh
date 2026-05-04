@@ -65,7 +65,7 @@ read -rp "Proceed? [y/N] " reply
 
 echo "$NEW_VERSION" > .version
 git add .version
-git commit -m "chore: bump version to $NEW_VERSION"
+git commit -m "chore: release v$NEW_VERSION" -m "[skip ci]"
 git tag "v$NEW_VERSION"
 
 if [[ "$PUSH" == true ]]; then

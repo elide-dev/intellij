@@ -7,6 +7,7 @@ if ! command -v xmllint &> /dev/null; then
     exit 1
 fi
 
+PLUGINS_URL="${ELIDE_PLUGINS_URL:-${PLUGINS_URL}}"
 PLUGIN_VERSION="$(cat .version)"
 XML_FILE="src/main/resources/META-INF/plugin.xml"
 PLUGIN_FILE="build/distributions/elide-intellij-${PLUGIN_VERSION}.zip"
@@ -43,12 +44,17 @@ url_encode() {
 ENCODED_ID=$(url_encode "$PLUGIN_ID")
 ENCODED_VERSION=$(url_encode "$PLUGIN_VERSION")
 
-echo "Uploading plugin archive..."
-curl --fail -# \
-  -X POST \
-  -F "file=@$PLUGIN_FILE" \
+echo "Getting presigned upload URL..."
+UPLOAD_URL=$(curl --fail -s \
   -H "x-api-key: ${ELIDE_PLUGINS_KEY}" \
-  "https://plugins.elide.dev/intellij/files?id=${ENCODED_ID}&version=${ENCODED_VERSION}"
+  "${PLUGINS_URL}/intellij/files/presign?id=${ENCODED_ID}&version=${ENCODED_VERSION}")
+
+echo "Uploading plugin archive..."
+curl -v --fail -# \
+  -X PUT \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary "@$PLUGIN_FILE" \
+  "$UPLOAD_URL"
 echo "Archive uploaded"
 
 echo "Updating plugin metadata..."
@@ -76,6 +82,6 @@ METADATA_JSON="$(jq -n \
 curl --fail -s \
   -H "x-api-key: ${ELIDE_PLUGINS_KEY}" \
   -H "Content-Type: application/json" \
-  "https://plugins.elide.dev/intellij/plugins?id=${ENCODED_ID}&version=${ENCODED_VERSION}" \
+  "${PLUGINS_URL}/intellij/plugins?id=${ENCODED_ID}" \
   -d "$METADATA_JSON"
 echo "Plugin deployed"
