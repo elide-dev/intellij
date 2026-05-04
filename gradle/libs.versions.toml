@@ -2,14 +2,14 @@
 buildconfig = "5.6.8"
 buildTimeTracker = "4.3.0"
 
-intellij-platform = "2.5.0"
-intellij-target-ide = "2025.1"
+intellij-platform = "2.16.0"
+intellij-target-ide = "2026.1.1"
 intellij-sinceBuild = "251"
 intellij-untilBuild = "261.*"
 
 pkl-plugin = "0.35.1"
 
-kotlin = "2.2.20"
+kotlin = "2.3.21"
 kotlinx-coroutines = "1.10.2"
 
 serialization = "1.9.0"

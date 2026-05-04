@@ -12,6 +12,7 @@
  */
 
 import org.jetbrains.intellij.platform.gradle.CustomPluginRepositoryType
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
   alias(libs.plugins.kotlin.jvm)
@@ -31,7 +32,10 @@ kotlin {
 
 repositories {
   intellijPlatform {
-    customPluginRepository("https://plugins.elide.dev/intellij", CustomPluginRepositoryType.SIMPLE)
+    customPluginRepository("https://plugins.elide.dev/intellij", CustomPluginRepositoryType.SIMPLE) {
+      credentials { username = "" } // leave empty, workaround for Gradle's "MissingValueException" import bug
+      content { includeGroup("org.pkl") }
+    }
     defaultRepositories()
   }
 
@@ -59,11 +63,11 @@ dependencies {
   implementation(libs.kotlinx.serialization.json)
 
   intellijPlatform {
-    create("IC", libs.versions.intellij.target.ide.get())
+    intellijIdea(libs.versions.intellij.target.ide.get())
     bundledPlugin("com.intellij.java")
     bundledPlugin("org.jetbrains.kotlin")
-    plugin("pkl-intellij", "0.32.0", "org.pkl")
-    testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
+    plugin(id = "org.pkl", version = "0.35.1")
+    testFramework(TestFrameworkType.Platform)
   }
 }
 

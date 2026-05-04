@@ -11,10 +11,6 @@
  * License for the specific language governing permissions and limitations under the License.
  */
 
-@file:Suppress("UnstableApiUsage")
-
-enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
-
 rootProject.name = "elide-intellij"
 
 pluginManagement {
@@ -24,16 +20,6 @@ pluginManagement {
     google()
     mavenLocal()
   }
-}
-
-dependencyResolutionManagement {
-  repositories {
-    mavenCentral()
-    google()
-    mavenLocal()
-  }
-
-  repositoriesMode = RepositoriesMode.PREFER_PROJECT
 }
 
 plugins {
