@@ -59,6 +59,6 @@ import dev.elide.intellij.settings.ElideSettings
   }
 
   override suspend fun unlinkProject(project: Project, externalProjectPath: String) {
-    ElideOpenProjectProvider().unlinkProject(project, externalProjectPath)
+    // noop
   }
 }

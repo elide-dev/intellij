@@ -12,21 +12,17 @@
  */
 package dev.elide.intellij.project
 
-import com.intellij.openapi.application.EDT
-import com.intellij.openapi.externalSystem.action.DetachExternalProjectAction
 import com.intellij.openapi.externalSystem.importing.AbstractOpenProjectProvider
+import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
 import com.intellij.openapi.externalSystem.model.ProjectSystemId
 import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode
 import com.intellij.openapi.externalSystem.service.project.trusted.ExternalSystemTrustedProjectDialog
-import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.io.toCanonicalPath
 import com.intellij.openapi.vfs.VirtualFile
 import dev.elide.intellij.Constants
 import dev.elide.intellij.settings.ElideProjectSettings
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /** Service used to link an Elide project with the IDE, enabling auto-import, sync, and other features. */
 @Suppress("UnstableApiUsage") class ElideOpenProjectProvider : AbstractOpenProjectProvider() {
@@ -46,20 +42,11 @@ import kotlinx.coroutines.withContext
     val settings = ElideProjectSettings()
     settings.externalProjectPath = projectPath.toCanonicalPath()
 
-    ExternalSystemUtil.linkExternalProject(
-      /* externalSystemId = */ systemId,
-      /* projectSettings = */ settings,
-      /* project = */ project,
-      /* importResultCallback = */ { },
-      /* isPreviewMode = */ false,
-      /* progressExecutionMode = */ ProgressExecutionMode.IN_BACKGROUND_ASYNC,
-    )
-  }
-
-  override suspend fun unlinkProject(project: Project, externalProjectPath: String) {
-    val projectData = ExternalSystemApiUtil.findProjectNode(project, systemId, externalProjectPath)?.data ?: return
-    withContext(Dispatchers.EDT) {
-      DetachExternalProjectAction.detachProject(project, projectData.owner, projectData, null)
-    }
+    val importSpec = ImportSpecBuilder(project, systemId)
+      .withPreviewMode(false)
+      .use(ProgressExecutionMode.IN_BACKGROUND_ASYNC)
+      .build()
+    
+    ExternalSystemUtil.linkExternalProject(settings, importSpec)
   }
 }
