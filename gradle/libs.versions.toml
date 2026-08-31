@@ -5,7 +5,7 @@ buildTimeTracker = "4.3.0"
 intellij-platform = "2.16.0"
 intellij-target-ide = "2026.1.1"
 intellij-sinceBuild = "251"
-intellij-untilBuild = "261.*"
+intellij-untilBuild = "262.*"
 
 pkl-plugin = "0.35.1"
 
