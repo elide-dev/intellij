@@ -80,6 +80,21 @@ object Constants {
   /** Commands available to all projects by default. */
   val DEFAULT_COMMANDS = arrayOf(COMMAND_BUILD, COMMAND_INSTALL, COMMAND_RUN, COMMAND_SERVE)
 
+  /**
+   * Flag that turns on the CLI's debugging features.
+   *
+   * For JVM entrypoints, `elide run --debugger` launches the guest JVM with
+   * `-agentlib:jdwp=transport=dt_socket,server=y,suspend=y`: the CLI owns the socket and the program stays suspended
+   * until a debugger dials in.
+   */
+  const val FLAG_DEBUGGER = "--debugger"
+
+  /** Host the CLI's JDWP server is reachable at; the plugin only ever runs the CLI locally. */
+  const val DEBUGGER_HOST = "127.0.0.1"
+
+  /** Port the CLI's JDWP server listens on by default. */
+  const val DEBUGGER_PORT = 5005
+
   /** Descriptor for a file chooser to be used when selecting an Elide project. */
   @JvmStatic fun projectFileChooser(): FileChooserDescriptor {
     return FileChooserDescriptor(

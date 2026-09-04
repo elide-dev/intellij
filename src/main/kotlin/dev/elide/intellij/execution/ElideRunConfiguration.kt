@@ -12,7 +12,10 @@
  */
 package dev.elide.intellij.execution
 
+import com.intellij.execution.Executor
 import com.intellij.execution.configurations.ConfigurationFactory
+import com.intellij.execution.configurations.RunProfileState
+import com.intellij.execution.runners.ExecutionEnvironment
 import com.intellij.execution.target.LanguageRuntimeType
 import com.intellij.execution.target.TargetEnvironmentAwareRunProfile
 import com.intellij.execution.target.TargetEnvironmentConfiguration
@@ -21,6 +24,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.util.execution.ParametersListUtil
 import dev.elide.intellij.Constants
 import dev.elide.intellij.project.model.ElideEntrypointInfo
+import dev.elide.intellij.project.model.ElideEntrypointInfo.Kind
 import org.jdom.Element
 import javax.swing.Icon
 
@@ -37,6 +41,15 @@ class ElideRunConfiguration(
 ), TargetEnvironmentAwareRunProfile {
   var entrypointKind: ElideEntrypointInfo.Kind? = null
   var entrypointValue: String? = null
+
+  /**
+   * Whether this configuration can be debugged over JDWP, which decides if the IDE offers the "Debug" action for it.
+   *
+   * Only a JVM entrypoint started by `elide run` exposes a JDWP server; for guest languages the same flag activates
+   * the Chrome DevTools or Debug Adapter protocol instead, neither of which the IDE's Java debugger speaks.
+   */
+  val supportsDebugger: Boolean
+    get() = supportsDebugger(settings.taskNames, entrypointKind, entrypointValue)
 
   /**
    * The Elide command line backing this configuration.
@@ -70,6 +83,20 @@ class ElideRunConfiguration(
     options.remoteTarget = targetName
   }
 
+  override fun getState(executor: Executor, env: ExecutionEnvironment): RunProfileState? {
+    // keyed on the runner rather than the executor: only ElideDebugRunner knows how to attach to the JDWP server the
+    // debugger flag starts, and the platform's own debug runner needs the state it builds itself
+    if (ElideDebugRunner.RUNNER_ID != env.runner.runnerId) return super.getState(executor, env)
+
+    // the debugger flag is added to a *copy* of the settings: the command line the user typed is persisted as-is, and
+    // re-running the same configuration without the debugger must not inherit the flag
+    val debugSettings = settings.clone().apply { taskNames = debuggerCommandLine(taskNames) }
+
+    // `debug = false` keeps the platform from allocating the debug port and fork socket its own debug runner needs;
+    // ElideDebugRunnableState brings the connection the CLI's JDWP server expects instead
+    return ElideDebugRunnableState(debugSettings, project, this, env).also { copyUserDataTo(it) }
+  }
+
   override fun readExternal(element: Element) {
     super.readExternal(element)
     element.readExternalString(ENTRYPOINT_VALUE_KEY) { entrypointValue = it }
@@ -97,8 +124,40 @@ class ElideRunConfiguration(
     consumer(value)
   }
 
-  private companion object {
+  internal companion object {
     private const val ENTRYPOINT_VALUE_KEY = "elideEntrypointValue"
     private const val ENTRYPOINT_KIND_KEY = "elideEntrypointKind"
+
+    /** Entrypoint file extensions that run on the JVM, and are therefore debuggable over JDWP. */
+    private val JVM_ENTRYPOINT_EXTENSIONS = setOf("kt", "kts", "java", "jar", "class")
+
+    /**
+     * Returns [taskNames] with [Constants.FLAG_DEBUGGER] inserted right after the `run` command, where it precedes
+     * both the entrypoint and any `--` separated script arguments.
+     *
+     * Command lines without a `run` command receive the flag in leading position, which the CLI also accepts.
+     */
+    fun debuggerCommandLine(taskNames: List<String>): List<String> {
+      if (taskNames.contains(Constants.FLAG_DEBUGGER)) return taskNames
+
+      return taskNames.toMutableList().apply {
+        add(indexOf(Constants.COMMAND_RUN) + 1, Constants.FLAG_DEBUGGER)
+      }
+    }
+
+    /** Returns whether the entrypoint described by [taskNames], [kind] and [value] runs on a debuggable JVM. */
+    fun supportsDebugger(taskNames: List<String>, kind: Kind?, value: String?): Boolean {
+      if (taskNames.firstOrNull { !it.startsWith('-') } != Constants.COMMAND_RUN) return false
+
+      return when (kind) {
+        Kind.JvmMainClass -> true
+        // manifest scripts are shell commands, not guest code, so there is nothing to attach to
+        Kind.Script -> false
+        Kind.Generic -> value?.substringAfterLast('.')?.lowercase() in JVM_ENTRYPOINT_EXTENSIONS
+        // hand-written command lines carry no entrypoint metadata; the CLI resolves the manifest entrypoint, which
+        // for a JVM project is a main class
+        null -> true
+      }
+    }
   }
 }

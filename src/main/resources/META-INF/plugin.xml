@@ -24,6 +24,7 @@
       <li>Install dependencies on project sync, with support for sources and documentation</li>
       <li>Run configurations for entry points declared in the Elide project manifest</li>
       <li>Run main entry points from the gutter in JVM projects</li>
+      <li>Debug JVM entry points with the IDE's Java debugger, over the CLI's JDWP server</li>
       <li>Run common Elide tasks from the IDE (`build`, `install`, `run`)</li>
       <li>Use a custom Elide distribution for running tasks</li>
     </ul>
@@ -57,6 +58,9 @@
     <runAnything.executionProvider implementation="dev.elide.intellij.action.ElideRunAnythingProvider"/>
     <executionTargetLanguageRuntimeType implementation="dev.elide.intellij.execution.ElideRuntimeType"/>
     <runConfigurationProducer implementation="dev.elide.intellij.execution.ElideJvmMainConfigurationProducer"/>
+    <!-- `order="first"`: the platform's ExternalSystemTaskDebugRunner claims every ExternalSystemRunConfiguration for
+         the Debug executor, and ProgramRunner.getRunner takes the first match in extension order -->
+    <programRunner implementation="dev.elide.intellij.execution.ElideDebugRunner" order="first"/>
 
     <externalSystemUnlinkedProjectAware implementation="dev.elide.intellij.project.ElideUnlinkedProjectAware"/>
     <externalIconProvider key="ELIDE" implementationClass="dev.elide.intellij.ui.ElideIconProvider"/>

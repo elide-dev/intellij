@@ -99,8 +99,17 @@ class ElideCommandLine private constructor(
     } finally {
       withContext(NonCancellable) {
         if (process.isAlive) {
-          process.destroy()
-          if (withTimeoutOrNull(TERMINATION_GRACE_MILLIS) { process.awaitExit() } == null) process.destroyForcibly()
+          // the CLI re-executes itself and runs JVM entrypoints in a grandchild process, neither of which exits with
+          // the launcher; the handles are collected first, because a dead parent's children are reparented away and
+          // stop showing up in `descendants()`
+          val tree = buildList {
+            add(process.toHandle())
+            addAll(process.descendants().toList())
+          }
+
+          tree.forEach { it.destroy() }
+          withTimeoutOrNull(TERMINATION_GRACE_MILLIS) { process.awaitExit() }
+          tree.forEach { if (it.isAlive) it.destroyForcibly() }
         }
 
         // safe to join now: the process is gone, so both streams are at EOF

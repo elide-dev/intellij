@@ -8,6 +8,8 @@ JetBrains IDE integration for the [Elide](https://elide.dev) runtime.
 - Automatic dependency installation on project sync, with sources and documentation
 - Run configurations generated from entry points declared in the Elide project manifest
 - Gutter icons to run JVM main entry points directly from the editor
+- Debugging of JVM entry points: "Debug" runs the CLI with `--debugger` and attaches the IDE's Java debugger to the
+  JDWP server it starts
 - IDE actions for common Elide tasks: `build`, `install`, `run`
 - Support for custom Elide distributions
 - Optional [Pkl](https://pkl-lang.org) language plugin integration
