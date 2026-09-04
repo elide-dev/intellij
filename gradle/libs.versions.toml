@@ -7,7 +7,7 @@ intellij-target-ide = "2026.1.1"
 intellij-sinceBuild = "251"
 intellij-untilBuild = "262.*"
 
-pkl-plugin = "0.35.1"
+pkl-plugin = "0.37.0"
 
 kotlin = "2.3.21"
 kotlinx-coroutines = "1.10.2"

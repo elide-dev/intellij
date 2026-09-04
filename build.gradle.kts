@@ -71,7 +71,7 @@ dependencies {
     intellijIdea(libs.versions.intellij.target.ide.get())
     bundledPlugin("com.intellij.java")
     bundledPlugin("org.jetbrains.kotlin")
-    plugin(id = "org.pkl", version = "0.35.1")
+    plugin(id = "org.pkl", version = libs.versions.pkl.plugin.get())
   }
 }
 

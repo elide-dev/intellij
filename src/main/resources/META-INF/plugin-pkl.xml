@@ -1,10 +1,6 @@
 <idea-plugin>
   <resource-bundle>i18n.Strings</resource-bundle>
 
-  <extensions defaultExtensionNs="org.pkl">
-    <moduleResolver implementation="dev.elide.intellij.psi.PklElideModuleResolver"/>
-  </extensions>
-
   <extensions defaultExtensionNs="com.intellij">
     <runLineMarkerContributor language="Pkl"
                               implementationClass="dev.elide.intellij.execution.ElideManifestLineMarkerContributor"/>
