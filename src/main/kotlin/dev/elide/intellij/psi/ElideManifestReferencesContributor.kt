@@ -12,6 +12,7 @@
  */
 package dev.elide.intellij.psi
 
+import com.intellij.codeInsight.completion.CompletionUtilCore
 import com.intellij.codeInsight.highlighting.HighlightedReference
 import com.intellij.openapi.project.BaseProjectDirectories.Companion.getBaseDirectories
 import com.intellij.openapi.util.TextRange
@@ -41,9 +42,9 @@ class ElideManifestReferencesContributor : PsiReferenceContributor() {
       element.getParentOfType<PklClassProperty>(true)?.takeIf { it.propertyName.textMatches("jvm") }
         ?: return PsiReference.EMPTY_ARRAY
 
-      // always filter out the cursor placeholder text
-      val textContent = element.let { it.text.substring(0, it.textLength) }
-        .replace("IntellijIdeaRulezzz", "")
+      // always filter out the cursor placeholder text the completion machinery injects
+      val textContent = element.text
+        .replace(CompletionUtilCore.DUMMY_IDENTIFIER_TRIMMED, "")
         .trim()
 
       return if (textContent.isEmpty()) PsiReference.EMPTY_ARRAY
@@ -61,9 +62,9 @@ class ElideManifestReferencesContributor : PsiReferenceContributor() {
       element.getParentOfType<PklClassProperty>(true)?.takeIf { it.propertyName.textMatches("entrypoint") }
         ?: return PsiReference.EMPTY_ARRAY
 
-      // always filter out the cursor placeholder text
-      val textContent = element.let { it.text.substring(0, it.textLength) }
-        .replace("IntellijIdeaRulezzz", "")
+      // always filter out the cursor placeholder text the completion machinery injects
+      val textContent = element.text
+        .replace(CompletionUtilCore.DUMMY_IDENTIFIER_TRIMMED, "")
         .trim()
 
       return arrayOf(ElideManifestEntrypointFileReference(element, textContent))

@@ -20,7 +20,6 @@ import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.PsiShortNamesCache
-import com.jetbrains.rd.generator.nova.GenerationSpec.Companion.nullIfEmpty
 
 object PsiLookupUtil {
   fun lookupElementsByQualifiedNamePrefix(project: Project, prefix: String): List<LookupElement> {
@@ -40,7 +39,7 @@ object PsiLookupUtil {
       parentPackage.getSubPackages(scope).asSequence()
         .filter { it.name?.startsWith(shortPrefix) == true }
         .forEach { pkg ->
-          val packageName = parentPackageName.nullIfEmpty()?.let { "$it.${pkg.name}" } ?: pkg.name.orEmpty()
+          val packageName = parentPackageName.ifEmpty { null }?.let { "$it.${pkg.name}" } ?: pkg.name.orEmpty()
           val lookup = LookupElementBuilder.create(packageName, packageName)
             .withIcon(pkg.getIcon(0))
 
@@ -51,7 +50,7 @@ object PsiLookupUtil {
       parentPackage.classes.asSequence()
         .filter { it.name?.startsWith(shortPrefix) == true }
         .forEach { clazz ->
-          val fullName = parentPackageName.nullIfEmpty()?.let { "$it.${clazz.name}" } ?: clazz.name.orEmpty()
+          val fullName = parentPackageName.ifEmpty { null }?.let { "$it.${clazz.name}" } ?: clazz.name.orEmpty()
           val lookup = LookupElementBuilder.create(fullName)
             .withIcon(clazz.getIcon(0))
 
@@ -63,12 +62,11 @@ object PsiLookupUtil {
     val namesCache = PsiShortNamesCache.getInstance(project)
     namesCache.allClassNames.asSequence().filter { it.startsWith(shortPrefix) }.forEach { className ->
       namesCache.getClassesByName(className, scope).forEach { clazz ->
-        clazz.qualifiedName?.startsWith(prefix)?.let { qualifiedName ->
-          val lookup = LookupElementBuilder.create(qualifiedName)
-            .withIcon(clazz.getIcon(0))
+        val qualifiedName = clazz.qualifiedName?.takeIf { it.startsWith(prefix) } ?: return@forEach
+        val lookup = LookupElementBuilder.create(qualifiedName)
+          .withIcon(clazz.getIcon(0))
 
-          results.add(lookup)
-        }
+        results.add(lookup)
       }
     }
 
