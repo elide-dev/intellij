@@ -25,11 +25,12 @@ import com.intellij.openapi.externalSystem.service.execution.ExternalSystemRunna
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
 import dev.elide.intellij.Constants
+import dev.elide.intellij.cli.ElideCli
 
 /**
  * Task state used for debug runs of an [ElideRunConfiguration], driven by [ElideDebugRunner].
  *
- * The command line the state executes carries [Constants.FLAG_DEBUGGER], which makes the CLI start the JVM entrypoint
+ * The command line the state executes carries [ElideCli.DEBUGGER], which makes the CLI start the JVM entrypoint
  * behind a suspended JDWP server. Because the debuggee owns the socket, the connection handed to the debugger is a
  * client-mode one, and the debugger polls it until the CLI is done installing dependencies and compiling sources.
  */

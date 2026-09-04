@@ -49,6 +49,28 @@ class ElideEntrypointInfoTest {
     assertEquals("""run "src/my scripts/main.kt"""", generic.fullCommandLine)
   }
 
+  @Test fun `the jvm main is only offered when a bare run reaches it`() {
+    // regression: the CLI resolves the manifest's `entrypoint` before `jvm.main`, so with both declared the bare
+    // `run` command line of a JVM main entry would have started the other program
+    val shadowed = ElideProjectInfo.from(
+      ElideProjectData(entrypoints = listOf("src/main.js"), jvmMainClass = "fixture.MainKt"),
+    )
+
+    assertEquals(listOf("run src/main.js"), shadowed.entrypoints.map { it.fullCommandLine })
+
+    val jvmOnly = ElideProjectInfo.from(ElideProjectData(jvmMainClass = "fixture.MainKt"))
+
+    assertEquals(listOf("run"), jvmOnly.entrypoints.map { it.fullCommandLine })
+  }
+
+  @Test fun `scripts are offered ahead of the project entrypoint`() {
+    val info = ElideProjectInfo.from(
+      ElideProjectData(entrypoints = listOf("src/main.js"), scripts = listOf("hello")),
+    )
+
+    assertEquals(listOf("run hello", "run src/main.js"), info.entrypoints.map { it.fullCommandLine })
+  }
+
   @Test fun `kinds are matched by name for tolerant deserialization`() {
     // regression: `Kind.valueOf` threw for configurations written by a newer plugin version
     assertEquals(ElideEntrypointInfo.Kind.Script, ElideEntrypointInfo.Kind.entries.find { it.name == "Script" })

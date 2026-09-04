@@ -34,11 +34,15 @@ class ElideRunConfigurationExtension :
       workingDirectoryInfo = ExternalSystemWorkingDirectoryInfo(project, Constants.SYSTEM_ID),
     )
 
-    addCommandLineFragment(
+    val commandLineInfo = ElideCommandLineInfo(project, workingDirectoryField.component().component)
+    val commandLineFragment = addCommandLineFragment(
       project = project,
-      commandLineInfo = ElideCommandLineInfo(project, workingDirectoryField.component().component),
+      commandLineInfo = commandLineInfo,
       getCommandLine = { rawCommandLine },
       setCommandLine = { rawCommandLine = it },
     )
+
+    // completion depends on what is already typed, which only the field itself knows
+    commandLineInfo.attach(commandLineFragment.component(), commandLineFragment)
   }
 }

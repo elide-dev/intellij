@@ -24,6 +24,7 @@ import com.intellij.openapi.util.io.toCanonicalPath
 import com.intellij.psi.PsiElement
 import dev.elide.intellij.project.model.ElideEntrypointInfo
 import dev.elide.intellij.project.model.fullCommandLine
+import dev.elide.intellij.psi.manifestDeclaresEntrypoint
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
 import org.pkl.intellij.PklLanguage
 import org.pkl.intellij.psi.*
@@ -94,6 +95,10 @@ class ElideManifestRunConfigurationProducer :
 
     val value = when (kind) {
       ElideEntrypointInfo.Kind.JvmMainClass -> {
+        // a manifest that also declares an `entrypoint` shadows its JVM main: `elide run` resolves the entrypoint and
+        // never reaches the main class, so a `run` configuration here would start the other program
+        if (element.manifestDeclaresEntrypoint) return null
+
         element.getParentOfType<PklObjectProperty>(true)
           ?.takeIf { it.propertyName.text == "main" }?.expr?.resolvedText()
       }

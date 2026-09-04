@@ -15,13 +15,33 @@ package dev.elide.intellij.project.model
 import com.intellij.util.execution.ParametersListUtil
 import com.intellij.util.xmlb.annotations.Attribute
 import com.intellij.util.xmlb.annotations.XCollection
-import dev.elide.intellij.Constants
+import dev.elide.intellij.cli.ElideCli
 
 /** Serializable project data resolved from an Elide manifest during project sync. */
 data class ElideProjectInfo(
   /** Resolved entrypoints from the project's manifest. */
   @XCollection val entrypoints: List<ElideEntrypointInfo> = emptyList(),
-)
+) {
+  companion object {
+    /** Returns the entrypoints [data] exposes, in the order they are offered as run targets and completions. */
+    @JvmStatic fun from(data: ElideProjectData): ElideProjectInfo = ElideProjectInfo(
+      buildList {
+        // scripts can be used as tasks
+        data.scripts.forEach { name -> add(ElideEntrypointInfo.script(name)) }
+
+        // explicit entry points
+        data.entrypoints.forEach { entrypoint -> add(ElideEntrypointInfo.generic(entrypoint)) }
+
+        // the JVM main class, but only where a bare `elide run` actually reaches it: the CLI resolves the manifest's
+        // `entrypoint` first and only then falls back to `jvm.main`, so with both declared a `run` entry for the main
+        // class would start the other program. `elide build run` still runs it, and can be typed by hand
+        if (data.entrypoints.isEmpty()) {
+          data.jvmMainClass?.let { mainClassName -> add(ElideEntrypointInfo.jvmMain(mainClassName)) }
+        }
+      },
+    )
+  }
+}
 
 /**
  * Describes a resolved entrypoint for an Elide project. Prefer using the static factory functions to construct new
@@ -86,6 +106,6 @@ data class ElideEntrypointInfo(
  */
 val ElideEntrypointInfo.fullCommandLine: String
   get() = when (kind) {
-    ElideEntrypointInfo.Kind.JvmMainClass -> Constants.COMMAND_RUN
-    else -> ParametersListUtil.join(Constants.COMMAND_RUN, value)
+    ElideEntrypointInfo.Kind.JvmMainClass -> ElideCli.RUN.name
+    else -> ParametersListUtil.join(ElideCli.RUN.name, value)
   }

@@ -41,8 +41,12 @@ class ElideRunConfigurationDebugTest {
 
   @Test fun `only run commands are debuggable`() {
     assertTrue(ElideRunConfiguration.supportsDebugger(listOf("--verbose", "run"), Kind.JvmMainClass, "app.MainKt"))
+    // a global flag's value is not a command name
+    assertTrue(ElideRunConfiguration.supportsDebugger(listOf("-p", "./app", "run"), Kind.JvmMainClass, "app.MainKt"))
     assertFalse(ElideRunConfiguration.supportsDebugger(listOf("build"), null, null))
     assertFalse(ElideRunConfiguration.supportsDebugger(listOf("install", "--with=sources"), null, null))
+    // `fmt` is an alias of `format`, not of `run`
+    assertFalse(ElideRunConfiguration.supportsDebugger(listOf("fmt"), null, null))
     assertFalse(ElideRunConfiguration.supportsDebugger(emptyList(), null, null))
   }
 

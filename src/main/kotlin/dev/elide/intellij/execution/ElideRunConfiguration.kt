@@ -15,6 +15,7 @@ package dev.elide.intellij.execution
 import com.intellij.execution.Executor
 import com.intellij.execution.configurations.ConfigurationFactory
 import com.intellij.execution.configurations.RunProfileState
+import com.intellij.execution.configurations.RuntimeConfigurationError
 import com.intellij.execution.runners.ExecutionEnvironment
 import com.intellij.execution.target.LanguageRuntimeType
 import com.intellij.execution.target.TargetEnvironmentAwareRunProfile
@@ -23,6 +24,7 @@ import com.intellij.openapi.externalSystem.service.execution.ExternalSystemRunCo
 import com.intellij.openapi.project.Project
 import com.intellij.util.execution.ParametersListUtil
 import dev.elide.intellij.Constants
+import dev.elide.intellij.cli.ElideCli
 import dev.elide.intellij.project.model.ElideEntrypointInfo
 import dev.elide.intellij.project.model.ElideEntrypointInfo.Kind
 import org.jdom.Element
@@ -65,6 +67,16 @@ class ElideRunConfiguration(
 
   override fun getIcon(): Icon {
     return Constants.Icons.ELIDE
+  }
+
+  override fun checkConfiguration() {
+    super.checkConfiguration()
+
+    // an empty argument vector is not a run: the task manager has nothing to execute, and a bare `elide` would drop
+    // the user into the interactive REPL
+    if (settings.taskNames.none { it.isNotBlank() }) {
+      throw RuntimeConfigurationError(Constants.Strings["execution.error.emptyCommandLine"])
+    }
   }
 
   override fun canRunOn(target: TargetEnvironmentConfiguration): Boolean {
@@ -132,32 +144,37 @@ class ElideRunConfiguration(
     private val JVM_ENTRYPOINT_EXTENSIONS = setOf("kt", "kts", "java", "jar", "class")
 
     /**
-     * Returns [taskNames] with [Constants.FLAG_DEBUGGER] inserted right after the `run` command, where it precedes
-     * both the entrypoint and any `--` separated script arguments.
+     * Returns [taskNames] with [ElideCli.DEBUGGER] inserted right after the `run` command, where it precedes both the
+     * entrypoint and any `--` separated script arguments.
      *
-     * Command lines without a `run` command receive the flag in leading position, which the CLI also accepts.
+     * Command lines without a `run` command receive the flag in leading position, the only other place the CLI
+     * accepts it: the flag configures the implicit root `run`, and is not global.
      */
     fun debuggerCommandLine(taskNames: List<String>): List<String> {
-      if (taskNames.contains(Constants.FLAG_DEBUGGER)) return taskNames
+      if (taskNames.any(ElideCli.DEBUGGER::matches)) return taskNames
 
-      return taskNames.toMutableList().apply {
-        add(indexOf(Constants.COMMAND_RUN) + 1, Constants.FLAG_DEBUGGER)
-      }
+      val invocation = ElideCli.parse(taskNames)
+      val index = if (invocation.command == ElideCli.RUN) invocation.commandIndex + 1 else 0
+
+      return taskNames.toMutableList().apply { add(index, ElideCli.DEBUGGER.option) }
     }
 
     /** Returns whether the entrypoint described by [taskNames], [kind] and [value] runs on a debuggable JVM. */
     fun supportsDebugger(taskNames: List<String>, kind: Kind?, value: String?): Boolean {
-      if (taskNames.firstOrNull { !it.startsWith('-') } != Constants.COMMAND_RUN) return false
+      if (ElideCli.parse(taskNames).command != ElideCli.RUN) return false
 
       return when (kind) {
         Kind.JvmMainClass -> true
         // manifest scripts are shell commands, not guest code, so there is nothing to attach to
         Kind.Script -> false
-        // `elide test` does not yet support --debugger; flip this branch when the CLI gains it
+        // `elide test` rejects --debugger outright: it is declared by `run` and the root command, and is not global.
+        // JVM tests are debuggable through the build system instead (`elide build jvm-test --debugger`), which needs
+        // a JDWP address rather than the client-mode attach this configuration performs
         Kind.JvmTest -> false
         Kind.Generic -> value?.substringAfterLast('.')?.lowercase() in JVM_ENTRYPOINT_EXTENSIONS
-        // hand-written command lines carry no entrypoint metadata; the CLI resolves the manifest entrypoint, which
-        // for a JVM project is a main class
+        // hand-written command lines carry no entrypoint metadata, so the CLI's own resolution decides: `entrypoint`
+        // from the manifest first, then `jvm.main`. A JVM project without an explicit entrypoint therefore lands on a
+        // main class and speaks JDWP; a guest entrypoint answers with CDP/DAP instead and the attach fails visibly
         null -> true
       }
     }

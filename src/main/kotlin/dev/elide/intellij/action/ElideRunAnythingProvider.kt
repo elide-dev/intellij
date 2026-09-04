@@ -20,7 +20,7 @@ import com.intellij.ide.actions.runAnything.getPath
 import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil
 import dev.elide.intellij.Constants
-import dev.elide.intellij.project.model.fullCommandLine
+import dev.elide.intellij.cli.ElideCliCompletion
 import dev.elide.intellij.service.ElideExecutionService
 import dev.elide.intellij.service.elideProjectIndex
 import dev.elide.intellij.settings.ElideSettings
@@ -45,11 +45,14 @@ class ElideRunAnythingProvider : RunAnythingCommandLineProvider() {
     val projectPath = (dataContext.getData(EXECUTING_CONTEXT) ?: RunAnythingContext.ProjectContext(project))
       .workingDirectory()
 
-    val tasks = projectPath?.let { project.elideProjectIndex[it] }?.entrypoints?.map {
-      it.fullCommandLine
-    }?.sorted()?.asSequence().orEmpty()
+    val entrypoints = projectPath?.let { project.elideProjectIndex[it] }?.entrypoints.orEmpty()
 
-    return tasks + Constants.DEFAULT_COMMANDS.asSequence()
+    // the popup prefixes every variant with the parameters already completed, so only the next token is suggested
+    val typed = commandLine.completedParameters
+    val tasks = ElideCliCompletion.tasks(typed, entrypoints)
+    val flags = ElideCliCompletion.flags(typed, includeShort = false)
+
+    return (tasks + flags).asSequence().map { it.text }
   }
 
   override fun run(

@@ -71,28 +71,6 @@ object Constants {
   /** Browser URL for the installation section of the documentation. */
   const val INSTALL_URL = "https://docs.elide.dev/installation"
 
-  // command names
-  const val COMMAND_RUN = "run"
-  const val COMMAND_BUILD = "build"
-  const val COMMAND_INSTALL = "install"
-  const val COMMAND_SERVE = "serve"
-  const val COMMAND_TEST = "test"
-
-  /** Flag for `elide test` that narrows the run to tests whose `pkg.Class#method` id matches a Java regex. */
-  const val FLAG_TEST_NAME_PATTERN = "--test-name-pattern"
-
-  /** Commands available to all projects by default. */
-  val DEFAULT_COMMANDS = arrayOf(COMMAND_BUILD, COMMAND_INSTALL, COMMAND_RUN, COMMAND_SERVE, COMMAND_TEST)
-
-  /**
-   * Flag that turns on the CLI's debugging features.
-   *
-   * For JVM entrypoints, `elide run --debugger` launches the guest JVM with
-   * `-agentlib:jdwp=transport=dt_socket,server=y,suspend=y`: the CLI owns the socket and the program stays suspended
-   * until a debugger dials in.
-   */
-  const val FLAG_DEBUGGER = "--debugger"
-
   /** Host the CLI's JDWP server is reachable at; the plugin only ever runs the CLI locally. */
   const val DEBUGGER_HOST = "127.0.0.1"
 

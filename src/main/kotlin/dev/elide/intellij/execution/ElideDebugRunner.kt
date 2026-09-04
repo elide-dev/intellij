@@ -23,7 +23,7 @@ import com.intellij.execution.ui.RunContentDescriptor
  * Program runner backing the IDE's "Debug" action for [ElideRunConfiguration].
  *
  * The CLI starts JVM entrypoints under a suspended JDWP server when it is passed `--debugger`
- * ([dev.elide.intellij.Constants.FLAG_DEBUGGER], added to the command line by
+ * ([dev.elide.intellij.cli.ElideCli.DEBUGGER], added to the command line by
  * [ElideRunConfiguration.getState]), so all this runner does is point the IDE's Java debugger at that server;
  * [ElideDebugRunnableState] carries the connection.
  *

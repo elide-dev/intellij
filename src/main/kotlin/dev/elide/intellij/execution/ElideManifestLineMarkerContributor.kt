@@ -17,6 +17,7 @@ import com.intellij.icons.AllIcons
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.util.firstLeaf
+import dev.elide.intellij.psi.manifestDeclaresEntrypoint
 import dev.elide.intellij.psi.parentPropertyReference
 import dev.elide.intellij.psi.parentStringLiteral
 import org.pkl.intellij.PklLanguage
@@ -39,6 +40,10 @@ class ElideManifestLineMarkerContributor : RunLineMarkerContributor() {
     val prop = PsiTreeUtil.getParentOfType(element, PklClassProperty::class.java) ?: return null
     if (!prop.propertyName.textMatches("jvm")) return null
     if (prop.parent !is PklModuleMemberList) return null
+
+    // no runnable configuration exists for a JVM main the manifest's own `entrypoint` shadows, so an icon here would
+    // offer actions that resolve to nothing
+    if (element.manifestDeclaresEntrypoint) return null
 
     return withExecutorActions(AllIcons.Actions.Execute)
   }

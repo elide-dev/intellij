@@ -30,7 +30,7 @@ import com.intellij.psi.PsiMethod
 import com.intellij.psi.util.ClassUtil
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.execution.ParametersListUtil
-import dev.elide.intellij.Constants
+import dev.elide.intellij.cli.ElideCli
 import dev.elide.intellij.project.model.ElideEntrypointInfo.Kind
 import dev.elide.intellij.service.elideProjectIndex
 import java.nio.file.InvalidPathException
@@ -83,8 +83,8 @@ class ElideJUnitTestConfigurationProducer : LazyRunConfigurationProducer<ElideRu
 
     configuration.name = target.method?.let { "${target.psiClass.name}.${it.name}" } ?: target.psiClass.name.orEmpty()
     configuration.rawCommandLine = ParametersListUtil.join(
-      Constants.COMMAND_TEST,
-      Constants.FLAG_TEST_NAME_PATTERN,
+      ElideCli.TEST.name,
+      ElideCli.TEST_NAME_PATTERN.option,
       testNamePattern(target.jvmClassName, target.method?.name),
     )
     configuration.settings.externalProjectPath = externalProject

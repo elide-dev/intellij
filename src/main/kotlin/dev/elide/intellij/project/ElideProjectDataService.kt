@@ -24,7 +24,6 @@ import com.intellij.openapi.externalSystem.util.Order
 import com.intellij.openapi.module.Module
 import com.intellij.openapi.project.Project
 import dev.elide.intellij.Constants
-import dev.elide.intellij.project.model.ElideEntrypointInfo
 import dev.elide.intellij.project.model.ElideProjectData
 import dev.elide.intellij.project.model.ElideProjectInfo
 import dev.elide.intellij.service.elideProjectIndex
@@ -58,7 +57,7 @@ class ElideProjectDataService : AbstractProjectDataService<ElideProjectData, Pro
 
     // the index is rewritten on every sync: manifest edits (new scripts, a renamed main class, removed entrypoints)
     // must reach the gutter producers and completion without deleting the persisted index by hand
-    project.elideProjectIndex.update(projectData.linkedExternalProjectPath, collectElideProjectInfo(data))
+    project.elideProjectIndex.update(projectData.linkedExternalProjectPath, ElideProjectInfo.from(data))
   }
 
   /**
@@ -105,21 +104,6 @@ class ElideProjectDataService : AbstractProjectDataService<ElideProjectData, Pro
     "latest" -> LanguageVersion.entries.last()
     "stable" -> LanguageVersion.LATEST_STABLE
     else -> LanguageVersion.fromVersionString(level)
-  }
-
-  private fun collectElideProjectInfo(data: ElideProjectData): ElideProjectInfo {
-    val entrypoints = buildList {
-      // scripts can be used as tasks
-      data.scripts.forEach { name -> add(ElideEntrypointInfo.script(name)) }
-
-      // explicit entry points
-      data.entrypoints.forEach { entrypoint -> add(ElideEntrypointInfo.generic(entrypoint)) }
-
-      // JVM main class
-      data.jvmMainClass?.let { mainClassName -> add(ElideEntrypointInfo.jvmMain(mainClassName)) }
-    }
-
-    return ElideProjectInfo(entrypoints)
   }
 
   private companion object {

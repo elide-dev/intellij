@@ -13,6 +13,7 @@
 package dev.elide.intellij.psi
 
 import com.intellij.psi.PsiElement
+import com.intellij.psi.util.PsiTreeUtil
 import org.pkl.intellij.psi.*
 
 /**
@@ -30,3 +31,20 @@ inline val PsiElement.parentPropertyReference: PsiElement?
   get() = parent?.takeIf { it is PklUnqualifiedAccessName }
     ?.parent?.takeIf { it is PklUnqualifiedAccessExpr }
     .takeIf { parent?.reference?.resolve() is PklProperty }
+
+/**
+ * Returns whether the manifest containing this element declares at least one explicit `entrypoint`.
+ *
+ * The CLI resolves the manifest's `entrypoint` before falling back to `jvm.main`, so a JVM main class declared
+ * alongside one is not what a bare `elide run` starts.
+ */
+val PsiElement.manifestDeclaresEntrypoint: Boolean
+  get() {
+    val file = containingFile ?: return false
+
+    return PsiTreeUtil.findChildrenOfType(file, PklClassProperty::class.java).any { property ->
+      property.parent is PklModuleMemberList &&
+        property.propertyName.textMatches("entrypoint") &&
+        PsiTreeUtil.findChildrenOfType(property, PklObjectElement::class.java).isNotEmpty()
+    }
+  }
