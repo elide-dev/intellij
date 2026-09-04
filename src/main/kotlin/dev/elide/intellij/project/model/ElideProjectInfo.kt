@@ -37,6 +37,7 @@ data class ElideEntrypointInfo(
   enum class Kind {
     Script,
     JvmMainClass,
+    JvmTest,
     Generic,
   }
 

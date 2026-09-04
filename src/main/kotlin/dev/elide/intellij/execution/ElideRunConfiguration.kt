@@ -153,6 +153,8 @@ class ElideRunConfiguration(
         Kind.JvmMainClass -> true
         // manifest scripts are shell commands, not guest code, so there is nothing to attach to
         Kind.Script -> false
+        // `elide test` does not yet support --debugger; flip this branch when the CLI gains it
+        Kind.JvmTest -> false
         Kind.Generic -> value?.substringAfterLast('.')?.lowercase() in JVM_ENTRYPOINT_EXTENSIONS
         // hand-written command lines carry no entrypoint metadata; the CLI resolves the manifest entrypoint, which
         // for a JVM project is a main class

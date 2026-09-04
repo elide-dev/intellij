@@ -54,5 +54,8 @@ class ElideRunConfigurationDebugTest {
 
     // hand-written command lines carry no entrypoint metadata: the CLI resolves the manifest entrypoint
     assertTrue(ElideRunConfiguration.supportsDebugger(listOf("run"), null, null))
+
+    // `elide test` does not yet support --debugger
+    assertFalse(ElideRunConfiguration.supportsDebugger(listOf("test", "-t", "x"), Kind.JvmTest, "a.B#c"))
   }
 }

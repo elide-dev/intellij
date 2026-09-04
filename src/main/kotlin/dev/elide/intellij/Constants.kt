@@ -76,9 +76,13 @@ object Constants {
   const val COMMAND_BUILD = "build"
   const val COMMAND_INSTALL = "install"
   const val COMMAND_SERVE = "serve"
+  const val COMMAND_TEST = "test"
+
+  /** Flag for `elide test` that narrows the run to tests whose `pkg.Class#method` id matches a Java regex. */
+  const val FLAG_TEST_NAME_PATTERN = "--test-name-pattern"
 
   /** Commands available to all projects by default. */
-  val DEFAULT_COMMANDS = arrayOf(COMMAND_BUILD, COMMAND_INSTALL, COMMAND_RUN, COMMAND_SERVE)
+  val DEFAULT_COMMANDS = arrayOf(COMMAND_BUILD, COMMAND_INSTALL, COMMAND_RUN, COMMAND_SERVE, COMMAND_TEST)
 
   /**
    * Flag that turns on the CLI's debugging features.

@@ -58,6 +58,7 @@
     <runAnything.executionProvider implementation="dev.elide.intellij.action.ElideRunAnythingProvider"/>
     <executionTargetLanguageRuntimeType implementation="dev.elide.intellij.execution.ElideRuntimeType"/>
     <runConfigurationProducer implementation="dev.elide.intellij.execution.ElideJvmMainConfigurationProducer"/>
+    <runConfigurationProducer implementation="dev.elide.intellij.execution.ElideJUnitTestConfigurationProducer"/>
     <!-- `order="first"`: the platform's ExternalSystemTaskDebugRunner claims every ExternalSystemRunConfiguration for
          the Debug executor, and ProgramRunner.getRunner takes the first match in extension order -->
     <programRunner implementation="dev.elide.intellij.execution.ElideDebugRunner" order="first"/>

@@ -100,12 +100,15 @@ class ElideManifestRunConfigurationProducer :
 
       ElideEntrypointInfo.Kind.Script -> element.getParentOfType<PklObjectEntry>(true)?.keyExpr?.resolvedText()
       ElideEntrypointInfo.Kind.Generic -> element.getParentOfType<PklObjectElement>(true)?.expr?.resolvedText()
+      // manifests declare no per-test entrypoints; JvmTest configurations come from the JUnit gutter producer only
+      ElideEntrypointInfo.Kind.JvmTest -> return null
     } ?: return null
 
     return when (kind) {
       ElideEntrypointInfo.Kind.Script -> ElideEntrypointInfo.script(value)
       ElideEntrypointInfo.Kind.JvmMainClass -> ElideEntrypointInfo.jvmMain(value)
       ElideEntrypointInfo.Kind.Generic -> ElideEntrypointInfo.generic(value)
+      ElideEntrypointInfo.Kind.JvmTest -> return null
     }
   }
 
