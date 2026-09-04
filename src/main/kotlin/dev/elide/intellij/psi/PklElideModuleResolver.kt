@@ -34,9 +34,10 @@ class PklElideModuleResolver : PklModuleResolverExtension {
           ?: error("Failed to load builtin PKL module '$relativePath'")
 
         val source = resource.use { stream ->
-          stream.bufferedReader().lineSequence().joinToString("\n") {
-            // fix: rewrite imports to be internal
-            it.replaceFirst("import \"", "import \"elide:")
+          stream.bufferedReader().lineSequence().joinToString("\n") { line ->
+            // fix: rewrite the schema's relative imports so they resolve back through this extension; imports which
+            // already name a scheme (`pkl:semver` and friends) are resolved by the Pkl plugin itself
+            line.replace(RELATIVE_IMPORT) { match -> "${match.groupValues[1]}elide:" }
           }
         }
         LightVirtualFile(uri, PklFileType, source)
@@ -49,6 +50,9 @@ class PklElideModuleResolver : PklModuleResolverExtension {
   private companion object {
     private const val ELIDE_URI_PREFIX = "elide:"
     private const val RESOURCE_PREFIX = "/elide/pkl/"
+
+    /** Matches the opening quote of an import which names no scheme, and is therefore relative to the schema root. */
+    private val RELATIVE_IMPORT = Regex("""^(\s*(?:import|amends|extends)\s+")(?![A-Za-z][A-Za-z0-9+.-]*:)""")
 
     private val LOG = Logger.getInstance(PklElideModuleResolver::class.java)
   }

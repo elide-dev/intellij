@@ -62,13 +62,24 @@ repositories {
 dependencies {
   implementation(libs.kotlinx.serialization.json)
 
+  testImplementation(platform(libs.junit.bom))
+  testImplementation(kotlin("test"))
+  testImplementation(libs.junit.jupiter)
+  testRuntimeOnly(libs.junit.platform.launcher)
+
   intellijPlatform {
     intellijIdea(libs.versions.intellij.target.ide.get())
     bundledPlugin("com.intellij.java")
     bundledPlugin("org.jetbrains.kotlin")
     plugin(id = "org.pkl", version = "0.35.1")
-    testFramework(TestFrameworkType.Platform)
   }
+}
+
+// The manifest decoding tests are plain JVM tests over the generated model, so the IntelliJ platform test framework
+// is deliberately absent from the test classpath: its JUnit `LauncherSessionListener` requires a running IDE test
+// harness and fails to instantiate outside one.
+tasks.test {
+  useJUnitPlatform()
 }
 
 intellijPlatform {

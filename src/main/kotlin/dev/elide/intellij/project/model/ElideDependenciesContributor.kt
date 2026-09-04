@@ -14,7 +14,7 @@ package dev.elide.intellij.project.model
 
 import com.intellij.openapi.externalSystem.model.DataNode
 import com.intellij.openapi.externalSystem.model.project.ProjectData
-import dev.elide.project.manifest.ElidePackageManifest
+import dev.elide.tooling.manifest.project.ProjectModule
 import java.nio.file.Path
 
 /**
@@ -27,7 +27,7 @@ class ElideDependenciesContributor : ElideProjectModelContributor {
   override fun contribute(
     projectNode: DataNode<ProjectData>,
     projectPath: Path,
-    manifest: ElidePackageManifest,
+    manifest: ProjectModule,
   ) {
     // Dependencies are already handled in buildModel via classpaths.
     // This contributor is a placeholder for future dependency enhancements such as:

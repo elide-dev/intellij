@@ -20,9 +20,12 @@ import com.intellij.openapi.externalSystem.model.project.*
 import com.intellij.openapi.roots.DependencyScope
 import com.intellij.openapi.util.io.toCanonicalPath
 import dev.elide.intellij.Constants
-import dev.elide.project.manifest.ElidePackageManifest
-import dev.elide.project.manifest.ElidePackageManifest.SourceSet
-import dev.elide.project.manifest.ElidePackageManifest.SourceSet.SourceSetType
+import dev.elide.project.manifest.paths
+import dev.elide.project.manifest.resources
+import dev.elide.project.manifest.type
+import dev.elide.tooling.manifest.project.ProjectModule
+import dev.elide.tooling.manifest.sources.SourceSet
+import dev.elide.tooling.manifest.sources.SourceSetType
 import java.nio.file.Path
 import kotlin.io.path.absolutePathString
 import kotlin.io.path.isRegularFile
@@ -47,7 +50,7 @@ object ElideProjectModel {
   fun buildModel(
     projectPath: Path,
     classpaths: Map<String, ElideClasspath>,
-    manifest: ElidePackageManifest,
+    manifest: ProjectModule,
   ): DataNode<ProjectData> {
     val projectData = ProjectData(
       /* owner = */ Constants.SYSTEM_ID,
@@ -93,8 +96,8 @@ object ElideProjectModel {
     // add resources roots from JVM source sets
     for (module in modules) {
       val sourceSet = module.sourceSet
-      if (sourceSet !is ElidePackageManifest.JvmSourceSet) continue
 
+      // only JVM source sets declare resources; the rest report none
       val resourcePaths = sourceSet.resources.values.toList()
       if (resourcePaths.isEmpty()) continue
 
@@ -130,7 +133,7 @@ object ElideProjectModel {
   private fun invokeContributors(
     projectNode: DataNode<ProjectData>,
     projectPath: Path,
-    manifest: ElidePackageManifest,
+    manifest: ProjectModule,
   ) {
     ElideProjectModelContributor.EP_NAME.extensionList.forEach { contributor ->
       try {
@@ -161,7 +164,7 @@ object ElideProjectModel {
     libraries: Map<String, List<LibraryData>>,
     sourceSetName: String,
     sourceSet: SourceSet,
-    manifest: ElidePackageManifest,
+    manifest: ProjectModule,
   ): SourceSetModel {
     val module = ModuleData(
       /* id = */ sourceSetName,

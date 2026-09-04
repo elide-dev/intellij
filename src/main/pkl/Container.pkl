@@ -22,9 +22,8 @@ typealias ContainerHash = String
 /// Output mode for container images.
 ///
 /// - `"daemon"`: Publish to the local Docker daemon.
-/// - `"registry"`: Publish directly to the registry specified in the image coordinates.
 /// - `"tarball"`: Write to a local tarball that can be imported manually into Docker.
-typealias ContainerOutputMode = "daemon"|"registry"|"tarball"
+typealias ContainerOutputMode = "daemon"|"tarball"
 
 /// Container image format.
 ///
@@ -48,4 +47,7 @@ class ContainerImage extends artifacts.Artifact {
 
   /// Container image format. Defaults to `"docker"`.
   format: ContainerFormat = "docker"
+
+  /// Artifacts to include in this container image.
+  from: Listing<artifacts.ArtifactName> = new {}
 }

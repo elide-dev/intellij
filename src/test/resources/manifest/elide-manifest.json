@@ -1,0 +1,118 @@
+{
+    "name": "fixture",
+    "version": "1.0.0",
+    "description": "Manifest decoding fixture",
+    "entrypoint": [
+        "src/main/kotlin/Main.kt"
+    ],
+    "scripts": {
+        "hello": "echo hi"
+    },
+    "dependencies": {
+        "maven": {
+            "packages": [
+                {
+                    "@type": "elide.jvm.MavenPackageDependency.OfString",
+                    "value": "com.google.guava:guava:32.1.3-jre"
+                },
+                {
+                    "@type": "elide.jvm.MavenPackageSpec",
+                    "group": "org.slf4j",
+                    "name": "slf4j-api",
+                    "classifier": null,
+                    "version": {
+                        "@type": "elide.base.PackageVersion.OfString",
+                        "value": "2.0.13"
+                    },
+                    "coordinate": null
+                }
+            ],
+            "testPackages": [
+                {
+                    "@type": "elide.jvm.MavenPackageDependency.OfString",
+                    "value": "org.junit.jupiter:junit-jupiter:5.11.0"
+                }
+            ],
+            "localRepository": "custom/m2"
+        }
+    },
+    "jvm": {
+        "main": "fixture.MainKt",
+        "target": {
+            "@type": "elide.jvm.JvmTargetLevel.OfInt",
+            "value": 21
+        },
+        "java": {
+            "source": {
+                "@type": "elide.jvm.JvmTargetLevel.OfInt",
+                "value": 17
+            },
+            "release": {
+                "@type": "elide.jvm.JvmTargetLevel.OfInt",
+                "value": 21
+            }
+        },
+        "flags": [
+            "-Xmx2g"
+        ]
+    },
+    "kotlin": {
+        "apiLevel": {
+            "@type": "elide.kotlin.KotlinLanguageTargets.V2_2"
+        },
+        "languageLevel": {
+            "@type": "elide.kotlin.KotlinLanguageTargets.V2_2"
+        },
+        "compilerOptions": {
+            "optIn": [
+                "kotlin.ExperimentalStdlibApi"
+            ],
+            "progressiveMode": true,
+            "allWarningsAsErrors": true,
+            "freeCompilerArgs": [
+                "-Xcontext-parameters"
+            ]
+        },
+        "features": {
+            "serialization": true,
+            "coroutines": true,
+            "atomicfu": true,
+            "powerAssert": true,
+            "metro": true
+        }
+    },
+    "sources": {
+        "main": {
+            "@type": "elide.jvm.JvmSourceSetSpec",
+            "type": "source",
+            "dependsOn": [],
+            "paths": [
+                "src/main/kotlin/**/*.kt"
+            ],
+            "resources": {
+                "res": "src/main/resources/**"
+            }
+        },
+        "test": {
+            "@type": "elide.sources.SourceSet.OfString",
+            "value": "src/test/kotlin/**/*.kt"
+        },
+        "samples": {
+            "@type": "elide.sources.SourceSetSpec",
+            "type": "example",
+            "paths": [
+                "samples/**/*.kt"
+            ]
+        }
+    },
+    "artifacts": {
+        "app": {
+            "@type": "elide.jvm.Jar",
+            "dependsOn": [
+                "main"
+            ],
+            "name": "fixture.jar",
+            "main": "fixture.MainKt"
+        }
+    }
+}

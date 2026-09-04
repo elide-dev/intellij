@@ -37,6 +37,26 @@ Then search for **Elide** in the marketplace tab.
 
 The plugin ZIP is written to `build/distributions/`.
 
+## Manifest schema codegen
+
+The Elide project manifest model in `src/main/kotlin/dev/elide/tooling/manifest` is **generated** from Elide's
+published Pkl schema at <https://pkl.elide.dev/v2/> by [`brine`](https://elide.dev), together with the bundled copy of
+that schema in `src/main/pkl` (served to the Pkl language plugin for `elide:` imports). Both are committed, and
+regeneration is a manual step, so CI never needs `brine`:
+
+```bash
+tools/codegen.sh          # or: make codegen
+```
+
+Only the Kotlin model and its kotlinx.serialization support are generated; the Pkl decoders are not, because the
+plugin never evaluates Pkl. It runs `elide manifest` and decodes that command's JSON output through
+`ElideManifests.parse`, which is guaranteed to match as long as the model is generated from the schema above -- the
+CLI serializes the same generated model. `ElideManifestsTest` pins that contract against verbatim `elide manifest`
+output.
+
+Never hand-edit the generated sources: re-run codegen after an Elide release that changes the manifest format, and
+commit the result.
+
 ## Release workflow
 
 Releases are triggered by pushing a version tag. Steps:

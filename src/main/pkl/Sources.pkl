@@ -6,28 +6,23 @@ module elide.sources
 typealias SourceGlobOrPath = String
 
 /// Types of source sets.
-typealias SourceSetType = "main" | "test" | "integration" | "example" | "docs" | "infra" | "other"
-
-/// Specifies the location of source files.
-abstract class SourcesSpec {}
+typealias SourceSetType = "source" | "test" | "example" | "other"
 
 /// Describes a single named group, or set, of source code files.
-class SourceSetSpec {
+open class SourceSetSpec {
   /// The type of source set.
-  type: SourceSetType = "main"
+  type: SourceSetType = "source"
 
-  /// Flipped to `true` if this is a default or synthetic source set.
-  synthetic: Boolean = false
+  /// Dependencies of this source set; declarations from dependencies will be
+  /// visible to sources in this source set.
+  dependsOn: Listing<SourceSetName> = new {}
 
   /// Paths of source files to enclose.
   paths: Listing<SourceGlobOrPath> = new {}
-
-  /// Typed source-set specification. Overrides other properties, as applicable, if present.
-  sources: SourcesSpec?
 }
 
 /// Source set names are simple strings.
-typealias SourceSetName = SourceSetType | String
+typealias SourceSetName = String
 
 /// Source set definition or simple glob.
 typealias SourceSet = SourceSetSpec | SourceGlobOrPath

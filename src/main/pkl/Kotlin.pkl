@@ -5,7 +5,8 @@ module elide.kotlin
 import "Jvm.pkl" as jvm
 
 /// Kotlin language targets.
-typealias KotlinLanguageTargets = "latest" | "stable" | "auto" | "1.9" | "2.0" | "2.1" | "2.2"
+/// @schema prefix=V
+typealias KotlinLanguageTargets = "latest" | "stable" | "auto" | "1.9" | "2.0" | "2.1" | "2.2" | "2.3" | "2.4" | String
 
 /// Kotlin language levels.
 typealias KotlinLanguageLevel = KotlinLanguageTargets
@@ -68,45 +69,39 @@ class KotlinCompilerJvmOptions extends KotlinCompilerOptions {
 
   /// Validation of JVM target compatibility between Kotlin and Java.
   jvmTargetValidationMode: JvmTargetValidationMode = "ERROR"
+
+  incremental: Boolean = true
 }
 
 /// Specifies Kotlin-related features and options within Elide.
 class KotlinFeatureOptions {
-  /// Enable or disable annotation processing with kapt.
+  /// Deprecated: KAPT is retired. This property is accepted for backward compatibility but is
+  /// ignored — annotation processing now runs under `javac` after the Kotlin compile.
   kapt: Boolean = true
-
-  /// Enable or disable annotation processing with KSP.
-  ksp: Boolean = false
-
-  /// Whether to enable classpath/modulepath injection features.
-  injection: Boolean = true
 
   /// Whether to enable Kotlin's test support features.
   testing: Boolean = true
-
-  /// Whether to enable incremental compilation for Kotlin.
-  incremental: Boolean = true
 
   /// Whether to enable KotlinX dependencies automatically on the classpath.
   kotlinx: Boolean = true
 
   /// Whether to enable the default suite of built-in plugins for the Kotlin compiler.
-  enableDefaultPlugins: Boolean = true
-
-  /// Whether to allow use of experimental features (i.e. compiler plugins).
-  experimental: Boolean = false
+  defaultPlugins: Boolean = true
 
   /// Enable or disable KotlinX serialization support.
-  serialization: Boolean = kotlinx && enableDefaultPlugins
+  serialization: Boolean = kotlinx && defaultPlugins
 
   /// Enable or disable KotlinX Coroutines support.
   coroutines: Boolean = kotlinx
 
-  /// Enable or disable secret redaction support.
-  redaction: Boolean = enableDefaultPlugins && experimental
+  /// Enable or disable the KotlinX AtomicFU compiler plugin.
+  atomicfu: Boolean = kotlinx && defaultPlugins
 
-  /// Whether to automatically calculate classpaths for Kotlin projects.
-  autoClasspath: Boolean = true
+  /// Enable or disable the Power Assert compiler plugin.
+  powerAssert: Boolean = defaultPlugins
+
+  /// Enable or disable the Metro dependency-injection compiler plugin.
+  metro: Boolean = defaultPlugins
 
   /// Whether to enable Kotlin's reflection features.
   reflection: Boolean = true

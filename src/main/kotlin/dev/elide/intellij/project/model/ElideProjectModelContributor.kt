@@ -15,7 +15,7 @@ package dev.elide.intellij.project.model
 import com.intellij.openapi.extensions.ExtensionPointName
 import com.intellij.openapi.externalSystem.model.DataNode
 import com.intellij.openapi.externalSystem.model.project.ProjectData
-import dev.elide.project.manifest.ElidePackageManifest
+import dev.elide.tooling.manifest.project.ProjectModule
 import java.nio.file.Path
 
 /**
@@ -41,6 +41,6 @@ interface ElideProjectModelContributor {
   fun contribute(
     projectNode: DataNode<ProjectData>,
     projectPath: Path,
-    manifest: ElidePackageManifest,
+    manifest: ProjectModule,
   )
 }

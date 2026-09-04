@@ -2,14 +2,15 @@
 @ModuleInfo { minPklVersion = "0.28.1" }
 module elide.nativeImage
 
-import "Base.pkl" as _common
 import "Artifacts.pkl" as _artifacts
+import "Base.pkl" as _common
 import "Jvm.pkl" as _jvm
 
 /// Flag for the Native Image compiler.
 typealias NativeImageFlag = String
 
 /// Optimization levels.
+/// @schema prefix=O
 typealias OptimizationLevel = "auto" | "b" | "s" | "0" | "1" | "2" | "3" | "4"
 
 /// Type of image produced by a native image task.
@@ -27,10 +28,12 @@ class NativeImageLinkAtBuildTime {
   packages: Listing<String> = new {}
 }
 
+typealias ClassInitialization = "buildtime" | "runtime"
+
 /// Configuration for Native Image class initialization settings.
 class NativeImageClassInit {
   /// Whether initialize-at-build-time is enabled as the default.
-  enabled: Boolean = true
+  default: ClassInitialization = "buildtime"
 
   /// Specific classes or packages to initialize at build time.
   buildtime: Listing<String> = new {}
@@ -120,6 +123,9 @@ class NativeImageSettings extends NativeImageOptions {}
 
 /// Describes a Native Image artifact within an Elide project.
 class NativeImage extends _artifacts.Artifact {
+  /// Artifacts from which to build the Native Image.
+  from: Listing<_artifacts.ArtifactName> = new {}
+
   /// Name of the output artifact (binary or library). If not provided, one is calculated.
   name: String?
 

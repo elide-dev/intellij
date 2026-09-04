@@ -1,9 +1,9 @@
 package dev.elide.intellij.project.model
 
 import com.intellij.openapi.externalSystem.model.Key
-import dev.elide.project.manifest.ElidePackageManifest
-import dev.elide.project.manifest.ElidePackageManifest.JvmSettings
-import dev.elide.project.manifest.ElidePackageManifest.KotlinSettings
+import dev.elide.tooling.manifest.jvm.JvmSettings
+import dev.elide.tooling.manifest.kotlin.KotlinSettings
+import dev.elide.tooling.manifest.project.ProjectModule
 
 data class ElideProjectData(
   var kotlinSettings: KotlinSettings? = null,
@@ -11,7 +11,7 @@ data class ElideProjectData(
   var jvm: JvmSettings? = null,
   var scripts: Map<String, String>? = null
 ) {
-  constructor(manifest: ElidePackageManifest) : this(
+  constructor(manifest: ProjectModule) : this(
     kotlinSettings = manifest.kotlin,
     entrypoints = manifest.entrypoint,
     jvm = manifest.jvm,

@@ -26,7 +26,10 @@ import dev.elide.intellij.project.model.ElideEntrypointInfo
 import dev.elide.intellij.project.model.ElideProjectData
 import dev.elide.intellij.project.model.ElideProjectInfo
 import dev.elide.intellij.service.elideProjectIndex
-import dev.elide.project.manifest.ElidePackageManifest
+import dev.elide.project.manifest.argValue
+import dev.elide.project.manifest.collect
+import dev.elide.project.manifest.explicitOrNull
+import dev.elide.tooling.manifest.kotlin.KotlinSettings
 import org.jetbrains.kotlin.config.CompilerSettings
 import org.jetbrains.kotlin.config.LanguageVersion
 import org.jetbrains.kotlin.idea.facet.KotlinFacet
@@ -61,7 +64,7 @@ class ElideProjectDataService : AbstractProjectDataService<ElideProjectData, Pro
 
   private fun configureKotlinFacet(
     project: Project,
-    kotlinSettings: ElidePackageManifest.KotlinSettings?,
+    kotlinSettings: KotlinSettings?,
     modelsProvider: IdeModifiableModelsProvider
   ) {
     project.modules.forEach { module ->
@@ -74,8 +77,10 @@ class ElideProjectDataService : AbstractProjectDataService<ElideProjectData, Pro
         val kotlinOptions = kotlinSettings ?: return@apply
 
         settings.useProjectSettings = false
-        settings.apiLevel = LanguageVersion.fromVersionString(kotlinOptions.apiLevel.takeUnless { it == "auto" })
-        settings.languageLevel = LanguageVersion.fromVersionString(kotlinOptions.languageLevel.takeUnless { it == "auto" })
+        settings.apiLevel = LanguageVersion.fromVersionString(kotlinOptions.apiLevel.explicitOrNull()?.argValue)
+        settings.languageLevel = LanguageVersion.fromVersionString(
+          kotlinOptions.languageLevel.explicitOrNull()?.argValue,
+        )
 
         settings.compilerSettings = CompilerSettings().apply {
           additionalArguments = kotlinOptions.compilerOptions.collect().joinToString(" ")

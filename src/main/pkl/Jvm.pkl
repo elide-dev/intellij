@@ -2,10 +2,11 @@
 @ModuleInfo { minPklVersion = "0.28.1" }
 module elide.jvm
 
-import "Base.pkl" as common
 import "Artifacts.pkl" as artifacts
-import "Sources.pkl" as sources
+import "Base.pkl" as common
 import "Java.pkl" as _java
+import "Sources.pkl" as sources
+import "Testing.pkl" as testing
 
 /// JVM target levels as integers.
 typealias JvmTargetLevel = "latest" | "stable" | "auto" | Float(1.8) | Float(1.9) | Int8(isBetween(8, 29))
@@ -20,9 +21,16 @@ typealias MavenGroup = String
 typealias MavenModule = String
 
 /// Matches against Maven coordinate strings.
+///
+/// Accepts `group:artifact`, `group:artifact:version`, the Gradle 4-part
+/// `group:artifact:version:classifier`, and the Aether 5-part
+/// `group:artifact:extension:classifier:version` (2–5 colon-separated segments).
 typealias MavenCoordinate = String(matches(
-    Regex(#"^[a-zA-Z0-9_\-.]+(\.[a-zA-Z0-9_\-.]+)*:[a-zA-Z0-9_\-.]+(\:[a-zA-Z0-9_\-.]+)?$"#)
+    Regex(#"^[a-zA-Z0-9_\-.]+(\.[a-zA-Z0-9_\-.]+)*:[a-zA-Z0-9_\-.]+(\:[a-zA-Z0-9_\-.]+){0,3}$"#)
 ))
+
+/// Simple name of a Spring Boot starter — the segment following `spring-boot-starter-`.
+typealias SpringStarterName = String(matches(Regex(#"^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*$"#)))
 
 /// Known standard JAR manifest keys.
 typealias StandardManifestKey = "Implementation-Title" | "Implementation-Version" | "Implementation-Vendor" |
@@ -31,7 +39,7 @@ typealias StandardManifestKey = "Implementation-Title" | "Implementation-Version
     "Class-Path" | "Main-Class" | "Bundle-SymbolicName" | "Bundle-Version"
 
 /// Key within a JAR manifest.
-typealias JarManifestKey = StandardManifestKey | String
+typealias JarManifestKey = String
 
 /// Value within a JAR manifest.
 typealias JarManifestValue = String
@@ -39,13 +47,16 @@ typealias JarManifestValue = String
 /// Class name for a JVM class, which is a string.
 typealias JvmClass = String
 
-/// Whether to default to using compression for JARs.
-const defaultUseJarCompression = true
+/// Describes a source set containing JVM (Java/Kotlin) sources.
+class JvmSourceSetSpec extends sources.SourceSetSpec {
+  /// Resources to be included in JVM artifacts built from this source set.
+  resources: Mapping<common.FilePath, common.FilePath> = new {}
+}
 
 /// Options which apply to JARs.
 class JarOptions {
   /// Whether to apply compression.
-  compress: Boolean = defaultUseJarCompression
+  compress: Boolean = true
 
   /// Whether to add default manifest properties.
   defaultManifestProperties: Boolean = true
@@ -60,22 +71,13 @@ abstract class JarResource {
   path: common.FilePath
 }
 
-/// Defines one or more JAR resources from files.
-class FilesJarResource extends JarResource {
-  /// Path to the file to embed as a JAR resource.
-  files: common.FilePath
-}
-
-/// Defines one or more JAR resources from an artifact.
-class ArtifactJarResource extends JarResource {
-  /// Artifact to depend on and embed.
-  artifact: artifacts.ArtifactName
-}
-
 /// Describes a JAR output artifact.
 open class Jar extends artifacts.Artifact {
   /// Filename for the resulting JAR.
   name: common.FileName?
+
+  /// Optional main class for this JAR, added to the manifest automatically
+  main: String? = null
 
   /// Which source set to build this JAR from.
   sources: Listing<sources.SourceSetName> = new {
@@ -85,7 +87,7 @@ open class Jar extends artifacts.Artifact {
   }
 
   /// Which resources to add to the JAR.
-  resources: Mapping<common.FilePath, common.FilePath | JarResource> = new {}
+  resources: Mapping<common.FilePath, common.FilePath> = new {}
 
   /// Keys and values to include in the JAR's manifest.
   manifest: Mapping<JarManifestKey, JarManifestValue> = new {}
@@ -100,11 +102,15 @@ open class Jar extends artifacts.Artifact {
   options: JarOptions = new {}
 }
 
-/// Describes configuration for a shaded JAR.
-open class ShadedJar extends Jar {}
-
 /// Describes a sources JAR artifact that packages source files.
 open class SourceJar extends artifacts.Artifact {
+  /// Which source set to build this JAR from.
+  sources: Listing<sources.SourceSetName> = new {
+    default {
+      "main"
+    }
+  }
+
   /// Classifier for the JAR (e.g., "sources" or "no-tzdb-sources").
   classifier: String?
 
@@ -117,6 +123,13 @@ open class SourceJar extends artifacts.Artifact {
 
 /// Describes a Javadoc JAR artifact that generates and packages documentation.
 open class JavadocJar extends artifacts.Artifact {
+  /// Which source set to build this JAR from.
+  sources: Listing<sources.SourceSetName> = new {
+    default {
+      "main"
+    }
+  }
+
   /// Package groupings for the Javadoc (title -> packages).
   groups: Mapping<String, Listing<String>> = new {}
 
@@ -158,34 +171,34 @@ class MavenPackageSpec extends MavenCoordinateSpec {
 
   /// Full Maven coordinate for the package; if specified, this is preferred to the group and name.
   coordinate: MavenCoordinate?
+}
 
-  /// Local path to a JAR file to use in place of a resolved artifact for this dependency; project-root-relative.
-  path: common.FilePath?
+/// Provides authentication settings for a remote Maven repository.
+class MavenRepositoryCredentials {
+  /// Username used for authentication with the remote repository.
+  username: String? = null
 
-  /// Name of a custom repository to pull this dependency from.
-  repository: common.RepositoryName?
+  /// Password used for authentication with the remote repository.
+  password: String? = null
 }
 
 /// Describes a Maven repository to include when resolving dependencies.
 class MavenRepositorySpec {
+  /// Optional descriptive name for this repository.
+  name: String? = null
+
+  /// Optional description for this repository.
+  description: String? = null
+
+  /// Optional authentication material for this repository.
+  credentials: MavenRepositoryCredentials = new {}
+
   /// URL where this repository can be accessed.
-  url: common.RepositoryUrl?
-
-  /// File path to a local repository.
-  path: common.FilePath?
+  url: common.RepositoryUrl
 }
-
-/// Defines a Gradle catalog and settings.
-class GradleCatalogSpec {
-  /// Path to the Gradle dependency catalog.
-  path: common.FilePath
-}
-
-/// Describes a Gradle catalog, which can be specified strucuturally, or as a simple path.
-typealias GradleCatalog = GradleCatalogSpec | common.FilePath
 
 /// Maven packages can be specified structurally, or as coordinate strings, Gradle-style coordinate strings, or purls.
-typealias MavenPackageDependency = MavenPackageSpec | MavenCoordinate | common.Purl
+typealias MavenPackageDependency = MavenPackageSpec | MavenCoordinate | common.FilePath
 
 /// Specifies a simple Maven repository endpoint or structural definition.
 typealias MavenRepository = MavenRepositorySpec | common.RepositoryUrl
@@ -195,103 +208,111 @@ class MavenLibraryCoordinate extends MavenCoordinateSpec
 
 /// Configuration for Maven dependency resolution.
 class MavenDependencies {
-  /// Coordinates for this project as a library, if applicable.
-  coordinates: MavenLibraryCoordinate?
-
   /// A list of Maven package dependencies to be resolved for this project.
-  packages: Listing<MavenPackageDependency> = new {}
+  packages: Listing<MavenPackageDependency> = new {
+    default = (_) -> new MavenPackageSpec {}
+  }
 
   /// A list of Maven packages to make available at dev-time only.
-  devPackages: Listing<MavenPackageDependency> = new {}
+  devPackages: Listing<MavenPackageDependency> = new {
+    default = (_) -> new MavenPackageSpec {}
+  }
 
   /// A list of dependencies to include specifically on the module path.
-  modules: Listing<MavenPackageDependency> = new {}
+  modules: Listing<MavenPackageDependency> = new {
+    default = (_) -> new MavenPackageSpec {}
+  }
 
   /// A list of Maven packages to be resolved as compile-time only dependencies.
-  compileOnly: Listing<MavenPackageDependency> = new {}
+  compileOnly: Listing<MavenPackageDependency> = new {
+    default = (_) -> new MavenPackageSpec {}
+  }
 
   /// A list of Maven package dependencies to be resolved as runtime dependencies.
-  runtimeOnly: Listing<MavenPackageDependency> = new {}
+  runtimeOnly: Listing<MavenPackageDependency> = new {
+    default = (_) -> new MavenPackageSpec {}
+  }
 
   /// A list of Maven package dependencies to be resolved as processor dependencies.
-  processors: Listing<MavenPackageDependency> = new {}
+  processors: Listing<MavenPackageDependency> = new {
+    default = (_) -> new MavenPackageSpec {}
+  }
 
   /// A list of Maven package dependencies to be resolved for this project.
-  testPackages: Listing<MavenPackageDependency> = new {}
+  testPackages: Listing<MavenPackageDependency> = new {
+    default = (_) -> new MavenPackageSpec {}
+  }
 
   /// A list of Maven package dependencies to be resolved as Kotlin compiler plugins.
-  kotlinPlugins: Listing<MavenPackageDependency> = new {}
+  kotlinPlugins: Listing<MavenPackageDependency> = new {
+    default = (_) -> new MavenPackageSpec {}
+  }
 
   /// A list of Maven package dependencies to be excluded from resolution and classpath calculations.
-  exclusions: Listing<MavenPackageDependency> = new {}
-
-  /// A list of Gradle dependency catalogs to be resolved for this project.
-  catalogs: Listing<GradleCatalog> = new {}
+  exclusions: Listing<MavenPackageDependency> = new {
+    default = (_) -> new MavenPackageSpec {}
+  }
 
   /// A suite of extra Maven repositories.
-  repositories: Mapping<String, MavenRepository> = new {}
+  repositories: Mapping<String, MavenRepository> = new {
+    default = (repo) -> new MavenRepositorySpec {
+      name = repo
+    }
+  }
 
   /// Whether to enable default repositories like Maven Central. Defaults to `true`.
   enableDefaultRepositories: Boolean = true
-
-  /// Foreign manifest(s) to import (for example, POM files).
-  from: String | Listing<common.FilePath> = new Listing<common.FilePath> {}
 
   /// Path to local maven repository
   localRepository: common.FilePath?
 }
 
-/// Create a JAR artifact from the `main` project source set.
-function jar(jarName: String) = new Jar {
-  name = "\(jarName.replaceAll(".jar", "")).jar"
-}
+/// Maven group which publishes Spring Boot starters.
+const springBootGroup: MavenGroup = "org.springframework.boot"
 
-/// Create a sources JAR artifact.
-function sourcesJar() = new SourceJar {
-  classifier = "sources"
-}
+/// Artifact-name prefix shared by every Spring Boot starter.
+const springBootStarterPrefix: String = "spring-boot-starter-"
 
-/// Create a Javadoc JAR artifact.
-function javadocJar() = new JavadocJar {}
+/// Builds a Maven coordinate from a group, artifact-name prefix, simple name, and version.
+///
+/// Shared by dependency-family shorthands (currently [SpringDependencies]). The [MavenCoordinate]
+/// return type re-validates the assembled string, so a malformed template fails at manifest eval
+/// rather than downstream during resolution.
+const function familyCoordinate(
+  group: MavenGroup,
+  prefix: String,
+  name: String,
+  version: common.PackageVersion
+): MavenCoordinate = "\(group):\(prefix)\(name):\(version)"
 
-/// Add a source set to a JAR artifact.
-function jarSources(sourceSetName: sources.SourceSetName) = new Mixin<Jar> {
-  sources {
-    sourceSetName
-  }
-}
+/// Shorthand for Spring Boot starter dependencies; expands into [MavenDependencies].
+///
+/// Starters follow the fixed convention `org.springframework.boot:spring-boot-starter-<name>`, so
+/// only the simple name is declared here. Artifacts which do not follow it — `spring-boot-devtools`,
+/// or anything in the `org.springframework` group — are declared in `maven` as ordinary coordinates;
+/// the two merge.
+class SpringDependencies {
+  /// Spring Boot version. Starters are versioned by Spring Boot, not by Spring Framework.
+  version: common.PackageVersion
 
-/// Add a resource to a JAR artifact.
-function jarResources(_file: common.FilePath, at: common.FilePath) = new Mixin<Jar> {
-  resources {
-    new FilesJarResource {
-      files = _file
-      path = at
+  /// Starters to resolve into the compile scope.
+  starter: Listing<SpringStarterName> = new {}
+
+  /// Starters to resolve into the test scope.
+  testStarter: Listing<SpringStarterName> = new {}
+
+  /// Expanded compile-scope coordinates; consumed by the manifest codec.
+  fixed packages: Listing<MavenCoordinate> = new {
+    for (name in starter) {
+      familyCoordinate(springBootGroup, springBootStarterPrefix, name, version)
     }
   }
-}
 
-/// Embed an artifact within a JAR.
-function withArtifact(artifactName: artifacts.ArtifactName, at: common.FilePath) = new Mixin<Jar> {
-  artifacts {
-    artifactName
-  }
-  resources {
-    new ArtifactJarResource {
-      artifact = artifactName
-      path = at
+  /// Expanded test-scope coordinates; consumed by the manifest codec.
+  fixed testPackages: Listing<MavenCoordinate> = new {
+    for (name in testStarter) {
+      familyCoordinate(springBootGroup, springBootStarterPrefix, name, version)
     }
-  }
-}
-
-/// Create a JAR artifact from the `main` project source set.
-function app(_entrypoint: common.FilePath | String) = new Jar {
-  name = "main.jar"
-  options {
-    entrypoint = _entrypoint
-  }
-  manifest {
-    ["Main-Class"] = _entrypoint
   }
 }
 
@@ -303,7 +324,6 @@ class JvmFeatures {
   /// Whether auto-modules are enabled (JDK 9+ modulepath handling).
   automodules: Boolean = true
 }
-
 
 /// Controls settings relating to the Java language.
 class JavaLanguage {
@@ -328,6 +348,9 @@ class JvmSettings {
   /// Set a custom Java Home override for this project.
   javaHome: String? = null
 
+  /// Prefer Bali from PATH for external JVM invocations.
+  preferBali: Boolean = false
+
   /// Controls features and settings related to JVM support.
   features: JvmFeatures = new {}
 
@@ -339,16 +362,45 @@ class JvmSettings {
 
   /// Runtime definitions (system properties).
   defs: Mapping<String, String> = new {}
+
+  /// Controls whether debug info (`-g`) is emitted during compilation. Defaults to true.
+  debug: Boolean = true
 }
 
-/// Options for running JVM tests.
-class JvmTesting {
-  /// Enable JVM testing with automatic discovery using classpath scanning.
-  enabled: Boolean = true
+abstract class JvmCoverageReport extends testing.CoverageReport
 
-  /// Test engine to be used for JVM tests:
-  /// - Elide: use the built-in test engine built on GraalVM's Espresso VM; detects JUnit-compatible tests by scsanning
-  ///   the classpath.
-  /// - JUnit5: use the JUnit Jupiter engine to run compatible tests detected in the classpath.
-  driver: "Elide" | "JUnit" = "Elide"
+/// Coverage report in HTML format.
+class HtmlCoverageReport extends JvmCoverageReport {
+  name = "html"
 }
+
+/// Coverage report in XML format.
+class XmlCoverageReport extends JvmCoverageReport {
+  name = "xml"
+}
+
+/// Coverage report in CSV format.
+class CsvCoverageReport extends JvmCoverageReport {
+  name = "csv"
+}
+
+/// Structured settings for configuring test coverage.
+class JvmCoverageSettings {
+  /// Whether coverage is active. Off by default: enable it here, or pass `--coverage`.
+  enabled: Boolean = false
+
+  /// Coverage reports to be generated.
+  reports: Listing<JvmCoverageReport> = new {}
+}
+
+/// Creates a new empty JVM source set.
+function sourceSet() = new JvmSourceSetSpec { }
+
+/// Configures a new default HMTL coverage report
+function htmlReport() = new HtmlCoverageReport { }
+
+/// Configures a new default XML coverage report
+function xmlReport() = new XmlCoverageReport { }
+
+/// Configures a new default CSV coverage report
+function csvReport() = new CsvCoverageReport { }

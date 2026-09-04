@@ -19,8 +19,9 @@ import com.intellij.openapi.externalSystem.model.project.ProjectSdkData
 import com.intellij.openapi.projectRoots.JavaSdk
 import com.intellij.openapi.projectRoots.ProjectJdkTable
 import com.intellij.openapi.projectRoots.Sdk
-import dev.elide.project.manifest.ElidePackageManifest
-import dev.elide.project.manifest.ElidePackageManifest.JvmTarget
+import dev.elide.project.manifest.majorVersionOrNull
+import dev.elide.tooling.manifest.jvm.JvmTargetLevel
+import dev.elide.tooling.manifest.project.ProjectModule
 import java.nio.file.Path
 
 /**
@@ -37,7 +38,7 @@ class ElideJdkContributor : ElideProjectModelContributor {
   override fun contribute(
     projectNode: DataNode<ProjectData>,
     projectPath: Path,
-    manifest: ElidePackageManifest,
+    manifest: ProjectModule,
   ) {
     val jdkName = selectJdk(manifest)
     if (jdkName != null) {
@@ -60,7 +61,7 @@ class ElideJdkContributor : ElideProjectModelContributor {
      * @param manifest The Elide package manifest.
      * @return The name of the selected JDK, or null if no suitable JDK is available.
      */
-    fun selectJdk(manifest: ElidePackageManifest): String? {
+    fun selectJdk(manifest: ProjectModule): String? {
       val jvmSettings = manifest.jvm ?: return selectFallbackJdk()
 
       // Get target version from manifest, checking in priority order
@@ -77,13 +78,7 @@ class ElideJdkContributor : ElideProjectModelContributor {
       return selectJdkForVersion(targetVersion) ?: selectFallbackJdk()
     }
 
-    private fun extractTargetVersion(target: JvmTarget?): Int? {
-      return when (target) {
-        is JvmTarget.NumericJvmTarget -> target.number.toInt()
-        is JvmTarget.StringJvmTarget -> target.name.toIntOrNull()
-        null -> null
-      }
-    }
+    private fun extractTargetVersion(target: JvmTargetLevel?): Int? = target?.majorVersionOrNull()
 
     private fun selectJdkForVersion(targetVersion: Int): String? {
       val allJdks = ProjectJdkTable.getInstance().allJdks

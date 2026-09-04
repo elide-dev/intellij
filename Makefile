@@ -5,7 +5,11 @@
 GRADLEW   := ./gradlew
 BUMP_TYPE := $(filter major minor patch, $(MAKECMDGOALS))
 
-.PHONY: dist publish release bump major minor patch
+.PHONY: codegen dist publish release bump major minor patch
+
+## Regenerate the manifest model from Elide's published Pkl schema (requires `brine`)
+codegen:
+	tools/codegen.sh
 
 ## Build the plugin ZIP distribution
 dist:

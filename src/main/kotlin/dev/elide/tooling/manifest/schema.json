@@ -1,0 +1,68 @@
+{
+  "manifestVersion": 2,
+  "elideVersion": "1.5.1",
+  "minPklVersion": "0.28.1",
+  "entrypoint": "/v2/project.pkl",
+  "modules": {
+    "Artifacts.pkl": {
+      "bytes": 443,
+      "sha256": "5115a0648625cc20ed4d3d9ed3e2e1d5d895b0bfe38739e8d8f1a82e17a67560"
+    },
+    "Base.pkl": {
+      "bytes": 1829,
+      "sha256": "55a5152ca5a8eab4984d43143b085f9767538a5f6a793039b32a9ce6f789b344"
+    },
+    "Container.pkl": {
+      "bytes": 1644,
+      "sha256": "696d3dc4b36c74209a927838b387ce5666a8dab94c168d0cb90c668f1922bdb5"
+    },
+    "Dev.pkl": {
+      "bytes": 1633,
+      "sha256": "6963a482f47b013a066780f97d77074f67e3e3562f721f6a0c994f075d1f7a4e"
+    },
+    "Engine.pkl": {
+      "bytes": 405,
+      "sha256": "172f5b3de976fa702553b769490dbdf6dc574fbfc0ca7af424263b2551e1d0de"
+    },
+    "Java.pkl": {
+      "bytes": 599,
+      "sha256": "834b2f1c256bfb5689b8ec695002b7b0b9acf138a8684199180ec194675245e5"
+    },
+    "JavaScript.pkl": {
+      "bytes": 583,
+      "sha256": "fd663436b3b606f973288591cc34a26edb95ae483b3ee9a32ca5022d6e6adf03"
+    },
+    "Jvm.pkl": {
+      "bytes": 13006,
+      "sha256": "05487f3d8c6b7118cf7d5ab7b4626b43c4b42b9a960e48d2f028539bbb3b437b"
+    },
+    "Kotlin.pkl": {
+      "bytes": 5428,
+      "sha256": "138ae601517015c43103c5e56b23d2ec57e9b9f6d71fd689dd8438ef2c8e3f37"
+    },
+    "NativeImage.pkl": {
+      "bytes": 4706,
+      "sha256": "3c9d963a0421a013581d5e0f9d802c4bf3c727ce6b50518fcb383cf6bf2c792c"
+    },
+    "Sources.pkl": {
+      "bytes": 1005,
+      "sha256": "1b5713b14a6f97ad64e2b149b400bfb8de515e7b3b0eed3f6876c579673f84df"
+    },
+    "Testing.pkl": {
+      "bytes": 1634,
+      "sha256": "c768d6702eae79c4a4edb75640f7ef8abb49355b84b37e217eac0aae9028c14b"
+    },
+    "Toolchain.pkl": {
+      "bytes": 1023,
+      "sha256": "2267a29244f85c2259232c3764c72725d6890249057adf1263c3843de146acf6"
+    },
+    "Web.pkl": {
+      "bytes": 2303,
+      "sha256": "06fe6b4f42af39b216970827e59da43b9ed21e8247622fa6968adee66019ea36"
+    },
+    "project.pkl": {
+      "bytes": 5625,
+      "sha256": "9382e59dd79b1c56ce9e47aa2ed6f7a9f8386f77e7ceac3dcf181cd41fd73fe6"
+    }
+  }
+}

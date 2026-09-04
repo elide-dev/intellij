@@ -19,7 +19,8 @@ import dev.elide.intellij.InvalidElideHomeException
 import dev.elide.intellij.project.model.ElideClasspath
 import dev.elide.intellij.project.model.ElideClasspathUsage
 import dev.elide.intellij.service.ElideDistributionResolver
-import dev.elide.project.manifest.ElidePackageManifest
+import dev.elide.project.manifest.ElideManifests
+import dev.elide.tooling.manifest.project.ProjectModule
 import java.nio.file.Path
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -103,7 +104,7 @@ suspend fun ElideCommandLine.install(onOutput: ((line: String, stderr: Boolean) 
 
 suspend fun ElideCommandLine.manifest(
   onOutput: ((line: String, stderr: Boolean) -> Unit)? = null,
-): ElidePackageManifest {
+): ProjectModule {
   val output = StringBuilder()
 
   invoke("manifest") { line, stderr ->
@@ -111,7 +112,7 @@ suspend fun ElideCommandLine.manifest(
     if (!stderr) output.append(line)
   }
 
-  return ElidePackageManifest.parse(output.toString().trim())
+  return ElideManifests.parse(output.toString().trim())
 }
 
 suspend fun ElideCommandLine.classpath(

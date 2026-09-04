@@ -34,6 +34,9 @@ class StaticSite extends _artifacts.Artifact {
   /// Scripts to add to all pages.
   scripts: Listing<_common.FilePath> = new {}
 
+  /// Rewrite links when rendering markdown documents.
+  rewriteLinks: Boolean = true
+
   /// Static site host (optional).
   hosting: StaticSiteHost? = null
 }
@@ -59,12 +62,12 @@ class CssSettings {
 /// Describes settings which apply in web-based environments; these settings configure how Elide builds and serves web
 /// applications, and related resources like images, stylesheets, and JavaScript.
 class WebSettings {
-  /// Whether to enable debug logging for web-related stuff.
-  debug: Boolean = false
-
   /// Settings to apply to CSS processing and serving. If both `browsers` and `css.targets` are specified, the CSS suite
   /// wins at build-time.
   css: CssSettings = new {}
+
+  /// Minify rendered HTML.
+  minifyHtml: Boolean = true
 
   /// Browser support for this project, which applies to all built targets.
   browsers: Listing<String> = new {}

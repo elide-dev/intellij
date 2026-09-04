@@ -1,0 +1,73 @@
+amends "elide:project.pkl"
+
+import "elide:Jvm.pkl" as Jvm
+import "elide:Sources.pkl" as Sources
+
+name = "fixture"
+version = "1.0.0"
+description = "Manifest decoding fixture"
+entrypoint { "src/main/kotlin/Main.kt" }
+
+scripts {
+  ["hello"] = "echo hi"
+}
+
+jvm {
+  main = "fixture.MainKt"
+  target = 21
+  flags { "-Xmx2g" }
+  java {
+    release = 21
+    source = 17
+  }
+}
+
+kotlin {
+  apiLevel = "2.2"
+  languageLevel = "2.2"
+  compilerOptions {
+    optIn { "kotlin.ExperimentalStdlibApi" }
+    allWarningsAsErrors = true
+    progressiveMode = true
+    freeCompilerArgs { "-Xcontext-parameters" }
+  }
+}
+
+dependencies {
+  maven {
+    localRepository = "custom/m2"
+    packages {
+      "com.google.guava:guava:32.1.3-jre"
+      new Jvm.MavenPackageSpec {
+        group = "org.slf4j"
+        name = "slf4j-api"
+        version = "2.0.13"
+      }
+    }
+    testPackages {
+      "org.junit.jupiter:junit-jupiter:5.11.0"
+    }
+  }
+}
+
+sources {
+  ["main"] = new Jvm.JvmSourceSetSpec {
+    paths { "src/main/kotlin/**/*.kt" }
+    resources {
+      ["res"] = "src/main/resources/**"
+    }
+  }
+  ["test"] = "src/test/kotlin/**/*.kt"
+  ["samples"] = new Sources.SourceSetSpec {
+    type = "example"
+    paths { "samples/**/*.kt" }
+  }
+}
+
+artifacts {
+  ["app"] = new Jvm.Jar {
+    name = "fixture.jar"
+    main = "fixture.MainKt"
+    dependsOn { "main" }
+  }
+}
