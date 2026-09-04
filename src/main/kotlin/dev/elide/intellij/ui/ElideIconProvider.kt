@@ -18,5 +18,5 @@ import javax.swing.Icon
 
 /** Provides UI icons for the project sync reload button and other elements. */
 class ElideIconProvider : ExternalSystemIconProvider {
-  override val reloadIcon: Icon = Constants.Icons.RELOAD_PROJECT
+  override val reloadIcon: Icon = Constants.Icons.ELIDE
 }

@@ -29,9 +29,11 @@ class ElideConfigurable(project: Project) : AbstractExternalSystemConfigurable<
   project, Constants.SYSTEM_ID,
 ) {
   override fun getId(): String = Constants.CONFIGURABLE_ID
-  override fun getDisplayName() = "Elide"
+  override fun getDisplayName(): String = Constants.Strings["elide"]
 
   override fun newProjectSettings(): ElideProjectSettings = ElideProjectSettings()
   override fun createProjectSettingsControl(settings: ElideProjectSettings) = ElideProjectSettingsControl(settings)
-  override fun createSystemSettingsControl(settings: ElideSettings) = ElideSystemSettingsControl(settings)
+
+  // Elide has no IDE-wide settings: the platform skips the system section when no control is provided
+  override fun createSystemSettingsControl(settings: ElideSettings) = null
 }

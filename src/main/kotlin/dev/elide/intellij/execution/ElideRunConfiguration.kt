@@ -18,6 +18,7 @@ import com.intellij.execution.target.TargetEnvironmentAwareRunProfile
 import com.intellij.execution.target.TargetEnvironmentConfiguration
 import com.intellij.openapi.externalSystem.service.execution.ExternalSystemRunConfiguration
 import com.intellij.openapi.project.Project
+import com.intellij.util.execution.ParametersListUtil
 import dev.elide.intellij.Constants
 import dev.elide.intellij.project.model.ElideEntrypointInfo
 import org.jdom.Element
@@ -37,14 +38,20 @@ class ElideRunConfiguration(
   var entrypointKind: ElideEntrypointInfo.Kind? = null
   var entrypointValue: String? = null
 
-  var rawCommandLine
-    get() = settings.taskNames.joinToString(" ")
+  /**
+   * The Elide command line backing this configuration.
+   *
+   * Parsing goes through [ParametersListUtil] so quoted arguments (entrypoint paths or script arguments containing
+   * spaces) survive a round trip through the editor.
+   */
+  var rawCommandLine: String
+    get() = ParametersListUtil.join(settings.taskNames)
     set(value) {
-      settings.taskNames = value.split(" ")
+      settings.taskNames = ParametersListUtil.parse(value)
     }
 
   override fun getIcon(): Icon {
-    return Constants.Icons.RELOAD_PROJECT
+    return Constants.Icons.ELIDE
   }
 
   override fun canRunOn(target: TargetEnvironmentConfiguration): Boolean {
@@ -66,8 +73,9 @@ class ElideRunConfiguration(
   override fun readExternal(element: Element) {
     super.readExternal(element)
     element.readExternalString(ENTRYPOINT_VALUE_KEY) { entrypointValue = it }
-    element.readExternalString(ENTRYPOINT_KIND_KEY) {
-      entrypointKind = ElideEntrypointInfo.Kind.valueOf(it)
+    element.readExternalString(ENTRYPOINT_KIND_KEY) { kind ->
+      // tolerate kinds written by a newer plugin version: an unknown name must not break workspace loading
+      entrypointKind = ElideEntrypointInfo.Kind.entries.find { it.name == kind }
     }
   }
 

@@ -25,8 +25,8 @@ import javax.swing.Icon
 
 /** Provides a runtime type for Elide, which can be referenced by run configurations and tasks. */
 class ElideRuntimeType : LanguageRuntimeType<ElideRuntimeTargetConfiguration>(TYPE_ID) {
-  override val configurableDescription: String = "Elide runtime configuration"
-  override val launchDescription: String = "Run with Elide"
+  override val configurableDescription: String = Constants.Strings["execution.target.runtime.description"]
+  override val launchDescription: String = Constants.Strings["execution.target.runtime.launch"]
 
   override fun isApplicableTo(runConfig: RunnerAndConfigurationSettings): Boolean = true
 
@@ -43,8 +43,8 @@ class ElideRuntimeType : LanguageRuntimeType<ElideRuntimeTargetConfiguration>(TY
     return target.runtimes.findByType()
   }
 
-  override val displayName: String = "Elide"
-  override val icon: Icon = Constants.Icons.RELOAD_PROJECT
+  override val displayName: String = Constants.Strings["execution.target.runtime.displayName"]
+  override val icon: Icon = Constants.Icons.ELIDE
 
   override fun createSerializer(config: ElideRuntimeTargetConfiguration): PersistentStateComponent<*> = config
   override fun createDefaultConfig() = ElideRuntimeTargetConfiguration()

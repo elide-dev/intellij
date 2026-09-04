@@ -16,6 +16,7 @@ import com.intellij.execution.configurations.ConfigurationFactory
 import com.intellij.openapi.externalSystem.model.ProjectSystemId
 import com.intellij.openapi.externalSystem.service.execution.AbstractExternalSystemTaskConfigurationType
 import com.intellij.openapi.externalSystem.service.execution.ExternalSystemRunConfiguration
+import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.project.Project
 import dev.elide.intellij.Constants
 import dev.elide.intellij.settings.ElideSettings
@@ -24,7 +25,7 @@ import javax.swing.Icon
 /** Extension providing the [ElideRunConfiguration] type. */
 class ElideExternalTaskConfigurationType : AbstractExternalSystemTaskConfigurationType(Constants.SYSTEM_ID) {
   override fun getIcon(): Icon {
-    return Constants.Icons.RELOAD_PROJECT
+    return Constants.Icons.ELIDE
   }
 
   override fun getConfigurationFactoryId(): String = "Elide"
@@ -41,5 +42,19 @@ class ElideExternalTaskConfigurationType : AbstractExternalSystemTaskConfigurati
     return ElideRunConfiguration(project, factory, name).apply {
       settings.externalProjectPath = defaultPath ?: project.basePath
     }
+  }
+
+  companion object {
+    /**
+     * Returns the registered Elide configuration type.
+     *
+     * Every producer and extension resolves the factory through here instead of repeating an unchecked cast of
+     * [ExternalSystemUtil.findConfigurationType]'s result.
+     */
+    @JvmStatic val instance: ElideExternalTaskConfigurationType
+      get() = ExternalSystemUtil.findConfigurationType(Constants.SYSTEM_ID) as ElideExternalTaskConfigurationType
+
+    /** Returns the factory used to create [ElideRunConfiguration] instances. */
+    @JvmStatic val configurationFactory: ConfigurationFactory get() = instance.factory
   }
 }

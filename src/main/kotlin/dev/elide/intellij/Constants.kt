@@ -37,8 +37,24 @@ object Constants {
   /** Name of the project directory where the lockfile and other artifacts are placed. */
   const val OUTPUT_DIR = ".dev"
 
-  /** Name and extension of the Elide lockfile. */
-  const val LOCKFILE_NAME = "elide.lock.bin"
+  /** Name of the directory under [OUTPUT_DIR] where installed dependencies are placed. */
+  const val DEPENDENCIES_DIR = "dependencies"
+
+  /** Prefix shared by every Elide lockfile name. */
+  const val LOCKFILE_PREFIX = "elide.lock"
+
+  /** Extension used by Elide lockfiles. */
+  const val LOCKFILE_EXTENSION = ".bin"
+
+  /**
+   * Returns whether [fileName] names an Elide lockfile.
+   *
+   * The lockfile carries a format version in its name (`elide.lock.v2.bin` as of Elide 1.5), so the version segment
+   * is matched loosely instead of pinning a single file name the CLI may bump.
+   */
+  @JvmStatic fun isLockfileName(fileName: String): Boolean {
+    return fileName.startsWith(LOCKFILE_PREFIX) && fileName.endsWith(LOCKFILE_EXTENSION)
+  }
 
   /** Directory name for the Elide distribution root; used as a path segment when constructing platform-specific install paths. */
   const val ELIDE_HOME = "elide"
@@ -91,9 +107,6 @@ object Constants {
   data object Icons {
     /** Generic Icon for Elide. */
     @JvmStatic val ELIDE = load("/icons/elide.svg")
-
-    /** Icon for the project sync button. */
-    @JvmStatic val RELOAD_PROJECT = ELIDE
 
     /** Load an icon at the given [path] from the plugin resources. */
     private fun load(path: String): Icon {

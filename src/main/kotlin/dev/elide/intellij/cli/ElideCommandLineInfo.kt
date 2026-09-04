@@ -85,7 +85,7 @@ class ElideCommandLineInfo(
       return project.elideProjectIndex[workdirField.workingDirectory]?.entrypoints?.map {
         TextCompletionInfo(
           text = it.fullCommandLine,
-          description = "Run the ${it.descriptiveName}",
+          description = Constants.Strings["execution.completion.tasks.entrypoint.description", it.descriptiveName],
         )
       }.orEmpty()
     }

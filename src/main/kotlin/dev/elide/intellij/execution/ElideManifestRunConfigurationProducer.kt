@@ -18,11 +18,10 @@ import com.intellij.execution.actions.ConfigurationContext
 import com.intellij.execution.actions.ConfigurationFromContext
 import com.intellij.execution.actions.LazyRunConfigurationProducer
 import com.intellij.execution.configurations.ConfigurationFactory
-import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.util.Ref
+import com.intellij.openapi.util.io.toCanonicalPath
 import com.intellij.psi.PsiElement
-import dev.elide.intellij.Constants
 import dev.elide.intellij.project.model.ElideEntrypointInfo
 import dev.elide.intellij.project.model.fullCommandLine
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
@@ -42,9 +41,7 @@ class ElideManifestRunConfigurationProducer :
     return self.configuration is ElideRunConfiguration && other.configuration !is ElideRunConfiguration
   }
 
-  override fun getConfigurationFactory(): ConfigurationFactory {
-    return (ExternalSystemUtil.findConfigurationType(Constants.SYSTEM_ID) as ElideExternalTaskConfigurationType).factory
-  }
+  override fun getConfigurationFactory(): ConfigurationFactory = ElideExternalTaskConfigurationType.configurationFactory
 
   override fun setupConfigurationFromContext(
     configuration: ElideRunConfiguration,
@@ -54,9 +51,12 @@ class ElideManifestRunConfigurationProducer :
     val element = sourceElement.get()?.takeIf { it.language == PklLanguage } ?: return false
     val entrypointInfo = resolveEntrypointInfo(element) ?: return false
 
+    // the manifest being edited identifies the linked project, which is not necessarily the project base directory
+    val manifestDir = element.containingFile?.originalFile?.virtualFile?.parent ?: return false
+
     configuration.name = entrypointInfo.displayName
     configuration.rawCommandLine = entrypointInfo.fullCommandLine
-    configuration.settings.externalProjectPath = context.project.basePath
+    configuration.settings.externalProjectPath = manifestDir.toNioPath().toCanonicalPath()
 
     configuration.entrypointKind = entrypointInfo.kind
     configuration.entrypointValue = entrypointInfo.value

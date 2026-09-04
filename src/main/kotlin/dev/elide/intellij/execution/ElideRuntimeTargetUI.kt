@@ -24,6 +24,7 @@ import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.builder.toMutableProperty
+import dev.elide.intellij.Constants
 import java.util.function.Supplier
 
 class ElideRuntimeTargetUI<C : TargetEnvironmentConfiguration>(
@@ -33,21 +34,21 @@ class ElideRuntimeTargetUI<C : TargetEnvironmentConfiguration>(
     private val project: Project,
 ) : BoundConfigurable(config.displayName, config.getRuntimeType().helpTopic) {
   override fun createPanel(): DialogPanel = panel {
-      row("Elide Home") {
-          if (targetType is BrowsableTargetEnvironmentType) {
-              textFieldWithBrowseTargetButton(
-                  targetType = targetType,
-                  targetSupplier = targetSupplier,
-                  project = project,
-                  title = "Elide Home",
-                  property = config::elideHome.toMutableProperty(),
-              )
-          } else {
-              textField()
-                  .bindText(config::elideHome)
-                  .align(AlignX.FILL)
-                  .comment("Select Elide home directory")
-          }
+    row(Constants.Strings["execution.target.home.label"]) {
+      if (targetType is BrowsableTargetEnvironmentType) {
+        textFieldWithBrowseTargetButton(
+          targetType = targetType,
+          targetSupplier = targetSupplier,
+          project = project,
+          title = Constants.Strings["execution.target.home.label"],
+          property = config::elideHome.toMutableProperty(),
+        )
+      } else {
+        textField()
+          .bindText(config::elideHome)
+          .align(AlignX.FILL)
+          .comment(Constants.Strings["execution.target.home.comment"])
       }
+    }
   }
 }

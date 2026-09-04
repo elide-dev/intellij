@@ -12,6 +12,7 @@
  */
 package dev.elide.intellij.project.model
 
+import com.intellij.util.execution.ParametersListUtil
 import com.intellij.util.xmlb.annotations.Attribute
 import com.intellij.util.xmlb.annotations.XCollection
 import dev.elide.intellij.Constants
@@ -76,9 +77,14 @@ data class ElideEntrypointInfo(
   }
 }
 
-/** Returns the raw base command line for the Elide CLI that can be used to invoke this entrypoint. */
+/**
+ * Returns the raw base command line for the Elide CLI that can be used to invoke this entrypoint.
+ *
+ * The value is quoted the way [ElideRunConfiguration][dev.elide.intellij.execution.ElideRunConfiguration] parses it,
+ * so entrypoint paths containing spaces survive the round trip into the configuration's argument vector.
+ */
 val ElideEntrypointInfo.fullCommandLine: String
   get() = when (kind) {
     ElideEntrypointInfo.Kind.JvmMainClass -> Constants.COMMAND_RUN
-    else -> "${Constants.COMMAND_RUN} $value"
+    else -> ParametersListUtil.join(Constants.COMMAND_RUN, value)
   }

@@ -19,11 +19,9 @@ import com.intellij.execution.actions.ConfigurationContext
 import com.intellij.execution.actions.ConfigurationFromContext
 import com.intellij.execution.actions.LazyRunConfigurationProducer
 import com.intellij.execution.configurations.ConfigurationFactory
-import com.intellij.openapi.externalSystem.util.ExternalSystemUtil.findConfigurationType
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.util.Ref
 import com.intellij.psi.PsiElement
-import dev.elide.intellij.Constants
 import dev.elide.intellij.project.model.ElideEntrypointInfo
 import dev.elide.intellij.project.model.ElideEntrypointInfo.Kind
 import dev.elide.intellij.project.model.fullCommandLine
@@ -46,9 +44,7 @@ import org.jetbrains.kotlin.psi.KtDeclarationContainer
     return self.configuration is ElideRunConfiguration && other.configuration !is ElideRunConfiguration
   }
 
-  override fun getConfigurationFactory(): ConfigurationFactory {
-    return (findConfigurationType(Constants.SYSTEM_ID) as ElideExternalTaskConfigurationType).factory
-  }
+  override fun getConfigurationFactory(): ConfigurationFactory = ElideExternalTaskConfigurationType.configurationFactory
 
   override fun setupConfigurationFromContext(
     configuration: ElideRunConfiguration,
