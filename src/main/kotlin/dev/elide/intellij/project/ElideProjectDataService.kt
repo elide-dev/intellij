@@ -18,22 +18,21 @@ import com.intellij.openapi.externalSystem.model.Key
 import com.intellij.openapi.externalSystem.model.project.ProjectData
 import com.intellij.openapi.externalSystem.service.project.IdeModifiableModelsProvider
 import com.intellij.openapi.externalSystem.service.project.manage.AbstractProjectDataService
+import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil
 import com.intellij.openapi.externalSystem.util.ExternalSystemConstants
 import com.intellij.openapi.externalSystem.util.Order
+import com.intellij.openapi.module.Module
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.project.modules
+import dev.elide.intellij.Constants
 import dev.elide.intellij.project.model.ElideEntrypointInfo
 import dev.elide.intellij.project.model.ElideProjectData
 import dev.elide.intellij.project.model.ElideProjectInfo
 import dev.elide.intellij.service.elideProjectIndex
-import dev.elide.project.manifest.argValue
-import dev.elide.project.manifest.collect
-import dev.elide.project.manifest.explicitOrNull
-import dev.elide.tooling.manifest.kotlin.KotlinSettings
 import org.jetbrains.kotlin.config.CompilerSettings
 import org.jetbrains.kotlin.config.LanguageVersion
 import org.jetbrains.kotlin.idea.facet.KotlinFacet
 import org.jetbrains.kotlin.idea.facet.KotlinFacetConfigurationImpl
+import org.jetbrains.kotlin.idea.facet.KotlinFacetType
 
 /**
  * Data import service used to populate the [project index][dev.elide.intellij.service.ElideProjectIndexService]
@@ -55,56 +54,69 @@ class ElideProjectDataService : AbstractProjectDataService<ElideProjectData, Pro
 
     val data = toImport.firstOrNull()?.data ?: return
 
-    configureKotlinFacet(project, data.kotlinSettings, modelsProvider)
+    configureKotlinFacets(data, modelsProvider)
 
-    val projectIndex = project.elideProjectIndex
-    if (projectData.linkedExternalProjectPath in projectIndex) return
-    projectIndex.update(projectData.linkedExternalProjectPath, collectElideProjectInfo(data))
+    // the index is rewritten on every sync: manifest edits (new scripts, a renamed main class, removed entrypoints)
+    // must reach the gutter producers and completion without deleting the persisted index by hand
+    project.elideProjectIndex.update(projectData.linkedExternalProjectPath, collectElideProjectInfo(data))
   }
 
-  private fun configureKotlinFacet(
-    project: Project,
-    kotlinSettings: KotlinSettings?,
-    modelsProvider: IdeModifiableModelsProvider
-  ) {
-    project.modules.forEach { module ->
+  /**
+   * Configure a Kotlin facet for the modules being imported.
+   *
+   * Only modules owned by this external system are touched, and only when the manifest declares Kotlin settings:
+   * creating a facet unconditionally would attach Kotlin configuration to plain Java modules and to modules owned by
+   * other build systems in the same project.
+   */
+  private fun configureKotlinFacets(data: ElideProjectData, modelsProvider: IdeModifiableModelsProvider) {
+    val kotlinSettings = data.kotlin ?: return
+
+    for (module in modelsProvider.modules) {
+      if (!isElideModule(module)) continue
+
       val facets = modelsProvider.getModifiableFacetModel(module)
-      val kotlin = KotlinFacet.get(module) ?: KotlinFacet(module, module.name, KotlinFacetConfigurationImpl()).also {
-        facets.addFacet(it)
-      }
+      val kotlin = facets.getFacetByType(KotlinFacetType.TYPE_ID)
+        ?: KotlinFacet(module, module.name, KotlinFacetConfigurationImpl()).also { facets.addFacet(it) }
 
-      kotlin.configuration.apply {
-        val kotlinOptions = kotlinSettings ?: return@apply
+      kotlin.configuration.settings.apply {
+        useProjectSettings = false
+        apiLevel = parseLanguageVersion(kotlinSettings.apiLevel)
+        languageLevel = parseLanguageVersion(kotlinSettings.languageLevel)
 
-        settings.useProjectSettings = false
-        settings.apiLevel = LanguageVersion.fromVersionString(kotlinOptions.apiLevel.explicitOrNull()?.argValue)
-        settings.languageLevel = LanguageVersion.fromVersionString(
-          kotlinOptions.languageLevel.explicitOrNull()?.argValue,
-        )
-
-        settings.compilerSettings = CompilerSettings().apply {
-          additionalArguments = kotlinOptions.compilerOptions.collect().joinToString(" ")
+        compilerSettings = CompilerSettings().apply {
+          additionalArguments = kotlinSettings.compilerArguments.joinToString(" ")
         }
       }
     }
   }
 
+  private fun isElideModule(module: Module): Boolean {
+    return ExternalSystemApiUtil.isExternalSystemAwareModule(Constants.SYSTEM_ID, module)
+  }
+
+  /**
+   * Resolve a Kotlin language level declared by the manifest.
+   *
+   * The manifest admits the symbolic levels Elide understands; `latest` and `stable` are mapped onto the concrete
+   * versions the IDE's Kotlin plugin knows about, since [LanguageVersion.fromVersionString] only accepts `x.y`.
+   */
+  private fun parseLanguageVersion(level: String?): LanguageVersion? = when (level) {
+    null -> null
+    "latest" -> LanguageVersion.entries.last()
+    "stable" -> LanguageVersion.LATEST_STABLE
+    else -> LanguageVersion.fromVersionString(level)
+  }
+
   private fun collectElideProjectInfo(data: ElideProjectData): ElideProjectInfo {
     val entrypoints = buildList {
       // scripts can be used as tasks
-      data.scripts?.forEach { (name, _) ->
-        add(ElideEntrypointInfo.script(name))
-      }
+      data.scripts.forEach { name -> add(ElideEntrypointInfo.script(name)) }
 
       // explicit entry points
-      data.entrypoints?.forEach { entrypoint ->
-        add(ElideEntrypointInfo.generic(entrypoint))
-      }
+      data.entrypoints.forEach { entrypoint -> add(ElideEntrypointInfo.generic(entrypoint)) }
 
       // JVM main class
-      data.jvm?.main?.let { mainClassName ->
-        add(ElideEntrypointInfo.jvmMain(mainClassName))
-      }
+      data.jvmMainClass?.let { mainClassName -> add(ElideEntrypointInfo.jvmMain(mainClassName)) }
     }
 
     return ElideProjectInfo(entrypoints)

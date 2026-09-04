@@ -20,14 +20,13 @@ import com.intellij.openapi.externalSystem.model.project.*
 import com.intellij.openapi.roots.DependencyScope
 import com.intellij.openapi.util.io.toCanonicalPath
 import dev.elide.intellij.Constants
+import dev.elide.project.manifest.effectiveType
 import dev.elide.project.manifest.paths
 import dev.elide.project.manifest.resources
-import dev.elide.project.manifest.type
 import dev.elide.tooling.manifest.project.ProjectModule
 import dev.elide.tooling.manifest.sources.SourceSet
 import dev.elide.tooling.manifest.sources.SourceSetType
 import java.nio.file.Path
-import kotlin.io.path.absolutePathString
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.nameWithoutExtension
 import kotlin.io.path.pathString
@@ -44,7 +43,7 @@ object ElideProjectModel {
     val name: String,
     val sourceSet: SourceSet,
     val module: DataNode<ModuleData>,
-    val contentRoots: List<ContentRootData>,
+    val contentRoots: MutableList<ContentRootData>,
   )
 
   fun buildModel(
@@ -78,16 +77,19 @@ object ElideProjectModel {
 
     // add project library data from classpath info
     val libraries = classpaths.mapValues { (_, value) ->
-      value.entries.distinct().mapNotNull { buildLibraryData(it, projectPath, librariesRoot) }.toList()
+      value.entries.distinct().map { buildLibraryData(it, projectPath, librariesRoot) }
     }
 
     libraries.values.asSequence().flatMap { it }.distinctBy { it.getPaths(LibraryPathType.BINARY) }.forEach {
       projectNode.createChild(ProjectKeys.LIBRARY, it)
     }
 
+    // the JDK is selected once here and applied to the project and every module; contributors must not re-run it
+    val jdkName = ElideJdkSelector.selectJdk(manifest)
+
     // build modules for each source set
     val modules = manifest.sources.entries.map { (name, sourceSet) ->
-      buildSourceSetModule(projectNode, projectPath, libraries, name, sourceSet, manifest)
+      buildSourceSetModule(projectNode, projectPath, libraries, name, sourceSet, jdkName)
     }
 
     // add module dependencies based on source set types
@@ -95,34 +97,13 @@ object ElideProjectModel {
 
     // add resources roots from JVM source sets
     for (module in modules) {
-      val sourceSet = module.sourceSet
-
-      // only JVM source sets declare resources; the rest report none
-      val resourcePaths = sourceSet.resources.values.toList()
-      if (resourcePaths.isEmpty()) continue
-
-      collectRoots(projectPath, resourcePaths).forEach { (root, paths) ->
-        val containingRoot = module.contentRoots.asSequence()
-          .filter { root.startsWith(it.rootPath) }
-          .maxByOrNull { it.rootPath.length }
-          ?: return@forEach
-
-        val type = when {
-          sourceSet.type == SourceSetType.Test || module.name == "test" -> ExternalSystemSourceType.TEST_RESOURCE
-          else -> ExternalSystemSourceType.RESOURCE
-        }
-
-        if (paths.size == 1 && root == containingRoot.rootPath) containingRoot.storePath(type, paths.single())
-        else containingRoot.storePath(type, root)
-      }
+      configureResourceRoots(projectPath, module)
     }
 
-    // configure the project's JDK using intelligent selection
-    val jdkName = ElideJdkContributor.selectJdk(manifest)
     projectNode.createChild(ProjectSdkData.KEY, ProjectSdkData(jdkName))
 
     // attached additional data so we can finish the import after the project is resolved
-    projectNode.createChild(ElideProjectData.PROJECT_KEY, ElideProjectData(manifest))
+    projectNode.createChild(ElideProjectData.PROJECT_KEY, ElideProjectData.from(manifest))
 
     // invoke registered contributors
     invokeContributors(projectNode, projectPath, manifest)
@@ -145,8 +126,8 @@ object ElideProjectModel {
   }
 
   private fun configureModuleDependencies(modules: List<SourceSetModel>) {
-    val mainModules = modules.filter { it.name != "test" && it.sourceSet.type == SourceSetType.Source }
-    val otherModules = modules.filter { it.name == "test" || it.sourceSet.type != SourceSetType.Source }
+    val mainModules = modules.filter { it.sourceSet.effectiveType(it.name) == SourceSetType.Source }
+    val otherModules = modules.filter { it.sourceSet.effectiveType(it.name) != SourceSetType.Source }
 
     // other modules depend on main modules
     for (test in otherModules) {
@@ -158,13 +139,39 @@ object ElideProjectModel {
     }
   }
 
+  private fun configureResourceRoots(projectPath: Path, module: SourceSetModel) {
+    // only JVM source sets declare resources; the rest report none
+    val resourcePaths = module.sourceSet.resources.values.toList()
+    if (resourcePaths.isEmpty()) return
+
+    val type = when (module.sourceSet.effectiveType(module.name)) {
+      SourceSetType.Test -> ExternalSystemSourceType.TEST_RESOURCE
+      else -> ExternalSystemSourceType.RESOURCE
+    }
+
+    ElideSourceRoots.collect(projectPath, resourcePaths).forEach { (root, paths) ->
+      // resources may live outside every source content root, in which case they get one of their own instead of
+      // being silently dropped from the model
+      val containingRoot = module.contentRoots.asSequence()
+        .filter { root.isPathUnder(it.rootPath) }
+        .maxByOrNull { it.rootPath.length }
+        ?: ContentRootData(Constants.SYSTEM_ID, root).also {
+          module.module.createChild(ProjectKeys.CONTENT_ROOT, it)
+          module.contentRoots.add(it)
+        }
+
+      if (paths.size == 1 && root == containingRoot.rootPath) containingRoot.storePath(type, paths.single())
+      else paths.forEach { containingRoot.storePath(type, it) }
+    }
+  }
+
   private fun buildSourceSetModule(
     projectNode: DataNode<ProjectData>,
     projectPath: Path,
     libraries: Map<String, List<LibraryData>>,
     sourceSetName: String,
     sourceSet: SourceSet,
-    manifest: ProjectModule,
+    jdkName: String?,
   ): SourceSetModel {
     val module = ModuleData(
       /* id = */ sourceSetName,
@@ -178,59 +185,45 @@ object ElideProjectModel {
     val moduleNode = projectNode.createChild(ProjectKeys.MODULE, module)
 
     // Determine effective source set type (handle "test" name convention)
-    val effectiveType = if (sourceSetName == "test") SourceSetType.Test else sourceSet.type
+    val effectiveType = sourceSet.effectiveType(sourceSetName)
 
-    // add library dependencies based on source set type
-    val classpathUsages = when (effectiveType) {
-      SourceSetType.Source -> setOf(ElideClasspathUsage.COMPILE, ElideClasspathUsage.RUNTIME)
-      SourceSetType.Example -> setOf(ElideClasspathUsage.COMPILE, ElideClasspathUsage.RUNTIME)
-      SourceSetType.Test -> setOf(ElideClasspathUsage.TEST)
-      SourceSetType.Other -> emptySet()
+    // add library dependencies using the scope implied by the source set type; `Other` sets are not compiled by the
+    // IDE, so they take no libraries at all
+    val scope = when (effectiveType) {
+      SourceSetType.Source, SourceSetType.Example -> DependencyScope.COMPILE
+      SourceSetType.Test -> DependencyScope.TEST
+      SourceSetType.Other -> null
     }
 
-    for (usage in classpathUsages) libraries[sourceSetName]?.forEach { library ->
+    if (scope != null) libraries[sourceSetName]?.forEach { library ->
       val data = LibraryDependencyData(module, library, LibraryLevel.MODULE)
       data.isExported = true
-      data.scope = when (usage) {
-        ElideClasspathUsage.COMPILE -> DependencyScope.COMPILE
-        ElideClasspathUsage.RUNTIME -> DependencyScope.RUNTIME
-        ElideClasspathUsage.TEST -> DependencyScope.TEST
-      }
+      data.scope = scope
       moduleNode.createChild(ProjectKeys.LIBRARY_DEPENDENCY, data)
     }
 
     // Determine source type for IntelliJ
     val sourceType = when (effectiveType) {
-      SourceSetType.Source -> ExternalSystemSourceType.SOURCE
+      SourceSetType.Source, SourceSetType.Example -> ExternalSystemSourceType.SOURCE
       SourceSetType.Test -> ExternalSystemSourceType.TEST
-      SourceSetType.Example -> ExternalSystemSourceType.SOURCE
       SourceSetType.Other -> ExternalSystemSourceType.EXCLUDED
     }
 
-    val contentRoots = buildList {
-      collectRoots(projectPath, sourceSet.paths).onEach { (root, paths) ->
-        val data = ContentRootData(Constants.SYSTEM_ID, root)
-        for (path in paths) data.storePath(sourceType, path)
+    val contentRoots = ElideSourceRoots.collect(projectPath, sourceSet.paths).map { (root, paths) ->
+      val data = ContentRootData(Constants.SYSTEM_ID, root)
+      for (path in paths) data.storePath(sourceType, path)
 
-        moduleNode.createChild(ProjectKeys.CONTENT_ROOT, data)
-        add(data)
-      }
+      moduleNode.createChild(ProjectKeys.CONTENT_ROOT, data)
+      data
     }
 
-    // configure the module's JDK using intelligent selection
-    val jdkName = ElideJdkContributor.selectJdk(manifest)
     moduleNode.createChild(ModuleSdkData.KEY, ModuleSdkData(jdkName))
 
-    return SourceSetModel(sourceSetName, sourceSet, moduleNode, contentRoots)
+    return SourceSetModel(sourceSetName, sourceSet, moduleNode, contentRoots.toMutableList())
   }
 
-  private fun buildLibraryData(classpathEntry: String, projectPath: Path, librariesRoot: String): LibraryData? {
+  private fun buildLibraryData(classpathEntry: String, projectPath: Path, librariesRoot: String): LibraryData {
     val libraryName = parseLibraryName(classpathEntry, librariesRoot)
-    if (libraryName == null) {
-      LOG.warn("Failed to parse library name from classpath entry: $classpathEntry")
-      return null
-    }
-
     val library = LibraryData(Constants.SYSTEM_ID, libraryName)
 
     val classesPath = projectPath.resolve(classpathEntry)
@@ -253,100 +246,46 @@ object ElideProjectModel {
    * Expected path format: `{librariesRoot}/group/artifact/version/artifact-version.jar`
    * Output format: `group:artifact:version`
    *
+   * The CLI prints absolute paths, so the repository root is located anywhere in the entry rather than only at its
+   * start; entries outside a Maven repository layout fall back to a name derived from the file itself.
+   *
    * @param classpathEntry The classpath entry path.
-   * @param librariesRoot The library root prefix to strip.
-   * @return The parsed library name, or null if the path is malformed.
+   * @param librariesRoot The library root marker to strip.
+   * @return The parsed library name, never null (see [generateFallbackLibraryName]).
    */
-  private fun parseLibraryName(classpathEntry: String, librariesRoot: String): String? {
-    return try {
-      val localName = classpathEntry.removePrefix(librariesRoot)
-        .substringBeforeLast('/') // strip file name
+  internal fun parseLibraryName(classpathEntry: String, librariesRoot: String): String {
+    val entry = classpathEntry.replace('\\', '/')
+    val markers = listOf(
+      librariesRoot.replace('\\', '/').let { if (it.endsWith('/')) it else "$it/" },
+      DEFAULT_LIBRARIES_ROOT,
+    ).distinct()
 
-      if (localName.isEmpty()) {
-        return generateFallbackLibraryName(classpathEntry)
-      }
+    val localName = markers.firstNotNullOfOrNull { marker ->
+      entry.indexOf(marker).takeIf { it >= 0 }?.let { entry.substring(it + marker.length) }
+    }?.substringBeforeLast('/') // strip file name
+      ?: return generateFallbackLibraryName(entry)
 
-      val versionIndex = localName.lastIndexOf('/')
-      if (versionIndex <= 0) {
-        return generateFallbackLibraryName(classpathEntry)
-      }
+    val versionIndex = localName.lastIndexOf('/')
+    if (versionIndex <= 0) return generateFallbackLibraryName(entry)
 
-      val artifactIndex = localName.lastIndexOf('/', versionIndex - 1)
-      if (artifactIndex < 0 || artifactIndex >= versionIndex - 1) {
-        return generateFallbackLibraryName(classpathEntry)
-      }
+    val artifactIndex = localName.lastIndexOf('/', versionIndex - 1)
+    if (artifactIndex < 0 || artifactIndex >= versionIndex - 1) return generateFallbackLibraryName(entry)
 
-      val groupPath = localName.substring(0, artifactIndex)
-      val artifact = localName.substring(artifactIndex + 1, versionIndex)
-      val version = localName.substring(versionIndex + 1)
+    val groupPath = localName.substring(0, artifactIndex)
+    val artifact = localName.substring(artifactIndex + 1, versionIndex)
+    val version = localName.substring(versionIndex + 1)
 
-      if (groupPath.isEmpty() || artifact.isEmpty() || version.isEmpty()) {
-        return generateFallbackLibraryName(classpathEntry)
-      }
+    if (groupPath.isEmpty() || artifact.isEmpty() || version.isEmpty()) return generateFallbackLibraryName(entry)
 
-      "${groupPath.replace('/', '.')}:$artifact:$version"
-    } catch (e: StringIndexOutOfBoundsException) {
-      LOG.debug("Failed to parse library name from path: $classpathEntry", e)
-      generateFallbackLibraryName(classpathEntry)
-    }
+    return "${groupPath.replace('/', '.')}:$artifact:$version"
   }
 
   /**
    * Generate a fallback library name from the classpath entry when standard parsing fails.
    */
-  private fun generateFallbackLibraryName(classpathEntry: String): String {
-    val fileName = classpathEntry.substringAfterLast('/')
+  internal fun generateFallbackLibraryName(classpathEntry: String): String {
+    val fileName = classpathEntry.replace('\\', '/').substringAfterLast('/')
     val name = fileName.removeSuffix(".$SUFFIX_JAR")
     return if (name.isNotEmpty()) "unknown:$name:unknown" else "unknown:library:unknown"
-  }
-
-  private fun collectRoots(
-    projectRoot: Path,
-    paths: List<String>,
-  ): Map<String, Set<String>> {
-    if (paths.isEmpty()) return emptyMap()
-
-    // extract the non-glob section from each pattern
-    val patternRoots = paths.map { pattern -> extractStaticPrefix(pattern.absolutePath(projectRoot)) }
-
-    // group patterns by their longest common static prefix
-    return buildMap<String, MutableSet<String>> {
-      for (root in patternRoots) {
-        // find if there's an existing root that this should belong to
-        val matchingRoot = keys.find { root.startsWith(it) || it.startsWith(root) }
-
-        if (matchingRoot != null) {
-          // use the shorter path as the root (most general)
-          val actualRoot = if (root.length < matchingRoot.length) {
-            // move patterns from old root to new root
-            getOrPut(root) { remove(matchingRoot)!! }
-            root
-          } else {
-            matchingRoot
-          }
-          get(actualRoot)!!.add(root)
-        } else {
-          getOrPut(root.substringBeforeLast('/')) { mutableSetOf(root) }
-        }
-      }
-    }
-  }
-
-  private fun extractStaticPrefix(pattern: String): String {
-    val normalized = pattern.replace('\\', '/')
-
-    // Find the first occurrence of glob wildcards
-    val wildcardIndex = normalized.indexOfFirst { it == '*' || it == '?' || it == '[' || it == '{' }
-    if (wildcardIndex == -1) return normalized
-
-    // Take everything up to the last slash before the wildcard
-    val prefix = normalized.substring(0, wildcardIndex)
-    val lastSlash = prefix.lastIndexOf('/')
-
-    return if (lastSlash >= 0) prefix.substring(0, lastSlash) else "."
-  }
-
-  private fun String.absolutePath(defaultRoot: Path): String {
-    return if (startsWith('/')) this else defaultRoot.absolutePathString().removeSuffix("/") + "/$this"
   }
 }

@@ -15,17 +15,23 @@ package dev.elide.intellij.cli
 import com.intellij.openapi.project.Project
 import com.intellij.util.io.awaitExit
 import dev.elide.intellij.Constants
+import dev.elide.intellij.ElideCommandFailedException
 import dev.elide.intellij.InvalidElideHomeException
 import dev.elide.intellij.project.model.ElideClasspath
 import dev.elide.intellij.project.model.ElideClasspathUsage
 import dev.elide.intellij.service.ElideDistributionResolver
 import dev.elide.project.manifest.ElideManifests
 import dev.elide.tooling.manifest.project.ProjectModule
+import java.io.File
 import java.nio.file.Path
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.io.path.isRegularFile
 
 /**
@@ -39,10 +45,10 @@ class ElideCommandLine private constructor(
 ) {
   /**
    * Launch the Elide CLI binary as a subprocess and suspend until it finishes executing. If a non-zero exit code is
-   * returned, an exception will be thrown.
+   * returned, an [ElideCommandFailedException] carrying the captured standard error output is thrown.
    *
-   * The standard output of the process is collected and returned on exit. To observe both the standard output and
-   * error streams, use the [onOutput] callback.
+   * Both output streams are always drained, regardless of whether [onOutput] is set: a chatty child filling an unread
+   * pipe buffer would otherwise block forever. Cancelling the calling coroutine terminates the child process.
    */
   suspend operator fun invoke(
     vararg args: String,
@@ -64,26 +70,55 @@ class ElideCommandLine private constructor(
         .start()
     }
 
-    return coroutineScope {
-      launch {
-        process.inputStream.bufferedReader().forEachLine {
-          onOutput?.invoke("$it\n", false)
+    // the readers are intentionally *not* children of the calling coroutine: `forEachLine` blocks uninterruptibly
+    // until the stream reaches EOF, so a structured-concurrency scope would wait on them before it could destroy the
+    // process it is being cancelled for; instead they are joined in the `finally` block, after the process is dead
+    val readers = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    val stderr = StringBuilder()
+
+    val stdoutReader = readers.launch {
+      process.inputStream.bufferedReader().forEachLine { line -> onOutput?.invoke("$line\n", false) }
+    }
+
+    val stderrReader = readers.launch {
+      process.errorStream.bufferedReader().forEachLine { line ->
+        synchronized(stderr) { if (stderr.length < STDERR_CAPTURE_LIMIT) stderr.appendLine(line) }
+        onOutput?.invoke("$line\n", true)
+      }
+    }
+
+    try {
+      val exitCode = process.awaitExit()
+
+      stdoutReader.join()
+      stderrReader.join()
+
+      if (exitCode != 0) {
+        throw ElideCommandFailedException(command, exitCode, synchronized(stderr) { stderr.toString().trim() })
+      }
+    } finally {
+      withContext(NonCancellable) {
+        if (process.isAlive) {
+          process.destroy()
+          if (withTimeoutOrNull(TERMINATION_GRACE_MILLIS) { process.awaitExit() } == null) process.destroyForcibly()
         }
+
+        // safe to join now: the process is gone, so both streams are at EOF
+        stdoutReader.join()
+        stderrReader.join()
       }
 
-      if (onOutput != null) launch {
-        process.errorStream.bufferedReader().forEachLine {
-          onOutput("$it\n", true)
-        }
-      }
-
-      process.awaitExit().takeIf { it != 0 }?.let {
-        error("Command '${command.joinToString(" ")}' failed with exit code $it")
-      }
+      readers.cancel()
     }
   }
 
   companion object {
+    /** Upper bound on the amount of standard error output retained for failure messages. */
+    private const val STDERR_CAPTURE_LIMIT = 64 * 1024
+
+    /** Time given to a cancelled process to exit gracefully before it is killed. */
+    private const val TERMINATION_GRACE_MILLIS = 5_000L
+
     /** Returns an [ElideCommandLine] at the given [elideHome], optionally using [workDir] when invoking commands. */
     @JvmStatic fun at(elideHome: Path, workDir: Path? = null): ElideCommandLine {
       return ElideCommandLine(elideHome, workDir)
@@ -92,6 +127,19 @@ class ElideCommandLine private constructor(
     /** Returns an [ElideCommandLine] configured according to a linked external project's settings. */
     @JvmStatic fun resolve(project: Project, externalProjectPath: String, workDir: Path? = null): ElideCommandLine {
       return at(ElideDistributionResolver.getElideHome(project, externalProjectPath), workDir)
+    }
+
+    /**
+     * Split the output of `elide classpath` into individual entries.
+     *
+     * The CLI prints a platform-native classpath string, so entries are separated by [File.pathSeparator] (`;` on
+     * Windows, where a `:` split would also mangle drive letters).
+     */
+    @JvmStatic fun parseClasspath(output: String): List<String> {
+      return output.trim()
+        .split(File.pathSeparatorChar)
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
     }
   }
 }
@@ -127,5 +175,5 @@ suspend fun ElideCommandLine.classpath(
     if (!stderr) output.append(line)
   }
 
-  return ElideClasspath(usage, output.toString().trim().splitToSequence(":"))
+  return ElideClasspath(usage, ElideCommandLine.parseClasspath(output.toString()))
 }

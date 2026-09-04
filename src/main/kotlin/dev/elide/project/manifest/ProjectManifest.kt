@@ -68,6 +68,16 @@ val SourceSet.type: SourceSetType
     is SourceSetSpec -> set.type
   }
 
+/**
+ * Type of this source set, honoring the naming convention Elide applies on top of the declared type: a source set
+ * named `test` is a test source set even when it is declared as a bare glob.
+ */
+fun SourceSet.effectiveType(name: String): SourceSetType =
+  if (name == TEST_SOURCE_SET) SourceSetType.Test else type
+
+/** Name of the source set Elide treats as the project's tests. */
+const val TEST_SOURCE_SET: String = "test"
+
 /** Source paths or globs enclosed by this source set. */
 val SourceSet.paths: List<String>
   get() = when (val set = this) {

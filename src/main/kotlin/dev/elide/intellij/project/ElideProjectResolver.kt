@@ -23,25 +23,41 @@ import com.intellij.openapi.externalSystem.service.project.ExternalSystemProject
 import com.intellij.openapi.progress.runBlockingCancellable
 import dev.elide.intellij.Constants
 import dev.elide.intellij.InvalidElideHomeException
+import dev.elide.intellij.MissingManifestException
 import dev.elide.intellij.cli.ElideCommandLine
 import dev.elide.intellij.cli.classpath
 import dev.elide.intellij.cli.install
 import dev.elide.intellij.cli.manifest
+import dev.elide.intellij.project.model.ElideClasspath
 import dev.elide.intellij.project.model.ElideClasspathUsage
 import dev.elide.intellij.project.model.ElideProjectModel
 import dev.elide.intellij.service.ElideDistributionResolver
 import dev.elide.intellij.settings.ElideExecutionSettings
 import dev.elide.intellij.ui.ElideNotifications
+import dev.elide.project.manifest.effectiveType
+import dev.elide.tooling.manifest.project.ProjectModule
+import dev.elide.tooling.manifest.sources.SourceSetType
+import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.job
 import org.jetbrains.annotations.PropertyKey
 import kotlin.io.path.Path
+import kotlin.io.path.getLastModifiedTime
+import kotlin.io.path.isDirectory
+import kotlin.io.path.isRegularFile
+import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.notExists
 
 /**
  * A service capable of using the Elide manifest and lockfile to build a project model that can be understood by the
- * IDE. Generally, the model can be built without calling the Elide CLI; however, in cases where the lockfile is out of
- * date, or dependencies are not installed, a command invocation will take place in a background task.
+ * IDE. The CLI is invoked to inspect the manifest and resolve classpaths; dependency installation only runs when the
+ * lockfile is missing or older than the manifest.
  */
 class ElideProjectResolver : ExternalSystemProjectResolver<ElideExecutionSettings> {
+  /** Sync jobs currently in flight, so [cancelTask] can actually stop them (and the CLI processes they own). */
+  private val runningSyncs = ConcurrentHashMap<ExternalSystemTaskId, Job>()
+
   private fun ExternalSystemTaskNotificationListener.onStep(taskId: ExternalSystemTaskId, text: String) {
     onStatusChange(ExternalSystemTaskNotificationEvent(taskId, text))
   }
@@ -51,6 +67,9 @@ class ElideProjectResolver : ExternalSystemProjectResolver<ElideExecutionSetting
   }
 
   override fun cancelTask(id: ExternalSystemTaskId, listener: ExternalSystemTaskNotificationListener): Boolean {
+    val job = runningSyncs.remove(id) ?: return false
+    job.cancel()
+
     return true
   }
 
@@ -64,45 +83,91 @@ class ElideProjectResolver : ExternalSystemProjectResolver<ElideExecutionSetting
     listener: ExternalSystemTaskNotificationListener
   ): DataNode<ProjectData> = runBlockingCancellable {
     LOG.debug("Resolving project at '$projectPath'")
+    runningSyncs[id] = coroutineContext.job
 
-    val projectModel = runCatching {
+    try {
       // find a manifest in the project directory
       listener.onStep(id, progressMessage("resolve.steps.discovery"))
       val projectRoot = Path(projectPath)
       val manifestPath = projectRoot.resolve(Constants.MANIFEST_NAME)
 
-      if (manifestPath.notExists()) error("No Elide manifest found under $projectPath")
+      if (manifestPath.notExists()) throw MissingManifestException(projectPath)
 
-      val elideHome = settings?.elideHome ?: ElideDistributionResolver.defaultDistributionPath()
+      val elideHome = settings?.elideHome ?: resolveElideHome(id, projectPath)
       val cli = ElideCommandLine.at(elideHome, projectRoot)
 
       // call the CLI to inspect the project manifest
       listener.onStep(id, progressMessage("resolve.steps.inspect"))
+      // NOTE: the `ProcessOutputType` overload of `onTaskOutput` only exists from build 253 onward
+      @Suppress("DEPRECATION")
       val manifest = cli.manifest { out, err -> if (err) listener.onTaskOutput(id, out, false) }
 
-      // install dependencies and resolve classpath
-      listener.onStep(id, progressMessage("resolve.steps.sync"))
-      cli.install(
-        onOutput = { line, err -> listener.onTaskOutput(id, line, !err) },
-      )
+      // install dependencies only when the lockfile no longer reflects the manifest
+      if (!isLockfileCurrent(projectRoot, manifestPath)) {
+        listener.onStep(id, progressMessage("resolve.steps.sync"))
 
-      val classpaths = buildMap {
-        this["main"] = cli.classpath("main", ElideClasspathUsage.COMPILE)
-        this["test"] = cli.classpath("test", ElideClasspathUsage.COMPILE)
+        @Suppress("DEPRECATION")
+        cli.install { line, err -> listener.onTaskOutput(id, line, !err) }
+      } else {
+        LOG.debug("Lockfile is up to date, skipping dependency installation")
       }
+
+      // resolve the compile classpath of every source set declared by the manifest
+      val classpaths = resolveClasspaths(cli, manifest)
 
       // build the project model from the manifest and classpaths
       listener.onStep(id, progressMessage("resolve.steps.buildModel"))
       ElideProjectModel.buildModel(projectRoot, classpaths, manifest)
-    }.onSuccess {
-      listener.onSuccess(projectPath, id)
-    }.onFailure { cause ->
-      if (cause is InvalidElideHomeException) ElideNotifications.notifyInvalidElideHome()
-      listener.onFailure(projectPath, id, RuntimeException("Failed to load Elide project", cause))
+    } catch (cause: InvalidElideHomeException) {
+      // the platform reports the failure itself (see AbstractExternalSystemTask); only the notification is ours
+      ElideNotifications.notifyInvalidElideHome(id.findProject())
+      throw cause
+    } finally {
+      runningSyncs.remove(id)
     }
+  }
 
-    listener.onEnd(projectPath, id)
-    projectModel.getOrThrow()
+  /**
+   * Resolve the classpath of every source set in the manifest.
+   *
+   * Source sets which the IDE does not compile ([SourceSetType.Other]) are skipped; everything else is resolved with
+   * the `compile` usage, which is the only usage the CLI accepts for a source set (dependency *scope* is derived from
+   * the source set type when the model is built).
+   */
+  private suspend fun resolveClasspaths(
+    cli: ElideCommandLine,
+    manifest: ProjectModule,
+  ): Map<String, ElideClasspath> = buildMap {
+    for ((name, sourceSet) in manifest.sources) {
+      if (sourceSet.effectiveType(name) == SourceSetType.Other) continue
+      put(name, cli.classpath(name, ElideClasspathUsage.COMPILE))
+    }
+  }
+
+  /**
+   * Returns `true` when the installed dependency tree can be trusted without running `elide install`.
+   *
+   * The lockfile is considered current when it exists, is at least as recent as the manifest, and the dependency
+   * root it describes is present on disk.
+   */
+  private fun isLockfileCurrent(projectRoot: Path, manifestPath: Path): Boolean {
+    val outputDir = projectRoot.resolve(Constants.OUTPUT_DIR)
+    if (!outputDir.resolve(Constants.DEPENDENCIES_DIR).isDirectory()) return false
+
+    val lockfile = runCatching {
+      outputDir.listDirectoryEntries()
+        .filter { it.isRegularFile() && Constants.isLockfileName(it.fileName.toString()) }
+        .maxByOrNull { it.getLastModifiedTime() }
+    }.getOrNull() ?: return false
+
+    return runCatching {
+      lockfile.getLastModifiedTime() >= manifestPath.getLastModifiedTime()
+    }.getOrDefault(false)
+  }
+
+  private fun resolveElideHome(id: ExternalSystemTaskId, projectPath: String): Path {
+    val project = id.findProject() ?: return ElideDistributionResolver.defaultDistributionPath()
+    return ElideDistributionResolver.getElideHome(project, projectPath)
   }
 
   companion object {
