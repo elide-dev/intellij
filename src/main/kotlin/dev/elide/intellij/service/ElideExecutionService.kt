@@ -21,6 +21,7 @@ import com.intellij.openapi.externalSystem.model.execution.ExternalTaskExecution
 import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.project.Project
+import com.intellij.util.execution.ParametersListUtil
 import dev.elide.intellij.Constants
 
 /** Project service used to invoke the [dev.elide.intellij.cli.ElideCommandLine] when executing external tasks. */
@@ -32,7 +33,8 @@ class ElideExecutionService(private val project: Project) {
     executor: Executor?,
   ) {
     val settings = ExternalSystemTaskExecutionSettings()
-    settings.taskNames = listOf(fullCommandLine.trim())
+    // task names carry the argument vector of one Elide invocation (see ElideTaskManager.executeTasks)
+    settings.taskNames = ParametersListUtil.parse(fullCommandLine.trim())
     settings.externalProjectPath = externalProjectPath
     settings.externalSystemIdString = Constants.SYSTEM_ID.toString()
 

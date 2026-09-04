@@ -16,6 +16,8 @@ import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskId
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskNotificationEvent
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskNotificationListener
 import com.intellij.openapi.externalSystem.task.ExternalSystemTaskManager
+import com.intellij.openapi.progress.runBlockingCancellable
+import dev.elide.intellij.Constants
 import dev.elide.intellij.InvalidElideHomeException
 import dev.elide.intellij.cli.ElideCommandLine
 import dev.elide.intellij.settings.ElideExecutionSettings
@@ -23,7 +25,6 @@ import dev.elide.intellij.ui.ElideNotifications
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.job
-import kotlinx.coroutines.runBlocking
 import kotlin.io.path.Path
 
 /** Background task manager for long-running operations, such as dependency sync and project builds. */
@@ -36,28 +37,43 @@ class ElideTaskManager : ExternalSystemTaskManager<ElideExecutionSettings> {
     settings: ElideExecutionSettings,
     listener: ExternalSystemTaskNotificationListener
   ) {
-    listener.onStart(projectPath, id)
-    runBlocking {
+    // lifecycle events (start/success/failure/end) are emitted by the platform task wrapper; emitting them here as
+    // well duplicates every build tool window event
+    runBlockingCancellable {
       runningTasks[id] = coroutineContext.job
       try {
         val elide = ElideCommandLine.at(settings.elideHome, Path(projectPath))
 
-        for (task in settings.tasks) {
-          listener.onStatusChange(ExternalSystemTaskNotificationEvent(id, "Executing task $task"))
-          elide(task, environment = settings.env) { line, stderr -> listener.onTaskOutput(id, line, !stderr) }
-          listener.onSuccess(projectPath, id)
+        // `taskNames` is the argument vector of a *single* Elide invocation ("run", "src/main.kt"), the same shape
+        // `ElideRunConfiguration.rawCommandLine` parses and joins; running each element on its own would turn one
+        // command line into several bogus commands
+        val arguments = settings.tasks.filter { it.isNotBlank() }
+        if (arguments.isEmpty()) return@runBlockingCancellable
+
+        listener.onStatusChange(
+          ExternalSystemTaskNotificationEvent(id, Constants.Strings["tasks.executing", arguments.joinToString(" ")]),
+        )
+
+        // NOTE: the `ProcessOutputType` overload only exists from build 253 onward
+        @Suppress("DEPRECATION")
+        elide(args = arguments.toTypedArray(), environment = settings.env) { line, stderr ->
+          listener.onTaskOutput(id, line, !stderr)
         }
       } catch (cause: InvalidElideHomeException) {
-        ElideNotifications.notifyInvalidElideHome()
+        ElideNotifications.notifyInvalidElideHome(id.findProject())
         throw cause
       } finally {
         runningTasks.remove(id)
       }
     }
-    listener.onEnd(projectPath, id)
   }
 
   override fun cancelTask(taskId: ExternalSystemTaskId, listener: ExternalSystemTaskNotificationListener): Boolean {
-    return runningTasks.remove(taskId)?.cancel() != null
+    val job = runningTasks.remove(taskId) ?: return false
+
+    // cancelling the job unwinds `ElideCommandLine.invoke`, which destroys the CLI process it owns
+    job.cancel()
+
+    return true
   }
 }
