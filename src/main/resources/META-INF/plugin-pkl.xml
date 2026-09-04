@@ -6,6 +6,11 @@
                               implementationClass="dev.elide.intellij.execution.ElideManifestLineMarkerContributor"/>
     <psi.referenceContributor language="Pkl"
                               implementation="dev.elide.intellij.psi.ElideManifestReferencesContributor"/>
+
+    <!-- this producer resolves entrypoints from Pkl PSI, so it can only load when the Pkl plugin is present -->
+    <runConfigurationProducer
+            implementation="dev.elide.intellij.execution.ElideManifestRunConfigurationProducer"/>
+
     <localInspection language="Pkl"
                      key="elide.inspection.manifest.jvm.unresolvedMainClass.name"
                      groupKey="elide.inspection.manifest.group"

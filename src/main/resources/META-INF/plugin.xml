@@ -44,15 +44,12 @@
   </extensions>
 
   <extensionPoints>
+    <!-- extension point for third-party augmentation of the resolved project model; the plugin itself builds the
+         entire model (including SDK selection) in ElideProjectModel -->
     <extensionPoint name="projectModelContributor"
                     interface="dev.elide.intellij.project.model.ElideProjectModelContributor"
                     dynamic="true"/>
   </extensionPoints>
-
-  <extensions defaultExtensionNs="dev.elide">
-    <projectModelContributor implementation="dev.elide.intellij.project.model.ElideDependenciesContributor"/>
-    <projectModelContributor implementation="dev.elide.intellij.project.model.ElideJdkContributor"/>
-  </extensions>
 
   <extensions defaultExtensionNs="com.intellij">
     <configurationType implementation="dev.elide.intellij.execution.ElideExternalTaskConfigurationType"/>
@@ -60,7 +57,6 @@
     <runAnything.executionProvider implementation="dev.elide.intellij.action.ElideRunAnythingProvider"/>
     <executionTargetLanguageRuntimeType implementation="dev.elide.intellij.execution.ElideRuntimeType"/>
     <runConfigurationProducer implementation="dev.elide.intellij.execution.ElideJvmMainConfigurationProducer"/>
-    <runConfigurationProducer implementation="dev.elide.intellij.execution.ElideManifestRunConfigurationProducer"/>
 
     <externalSystemUnlinkedProjectAware implementation="dev.elide.intellij.project.ElideUnlinkedProjectAware"/>
     <externalIconProvider key="ELIDE" implementationClass="dev.elide.intellij.ui.ElideIconProvider"/>
