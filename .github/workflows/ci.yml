@@ -32,9 +32,34 @@ jobs:
       - name: Build plugin distribution
         run: ./gradlew buildPlugin
 
+      - name: Run unit tests
+        run: ./gradlew test
+
       - name: Upload distribution artifact
         uses: actions/upload-artifact@v4
         with:
           name: plugin-distribution
           path: build/distributions/*.zip
           retention-days: 7
+
+  schema:
+    name: Manifest Schema Drift
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # `tools/codegen.sh` needs `brine`, which CI does not have; its input -- the published Pkl schema -- is checked
+      # instead, since schema drift is what makes the committed model stale
+      - name: Verify bundled schema matches the published schema
+        run: tools/verify-schema.sh
+
+      # when `brine` does become available on the runner, also assert the generated model itself is current
+      - name: Verify generated model is current
+        run: |
+          if command -v brine >/dev/null 2>&1; then
+            tools/codegen.sh
+            git diff --exit-code -- src/main/pkl src/main/kotlin/dev/elide/tooling/manifest
+          else
+            echo "::notice::brine is unavailable on this runner; schema drift was still verified"
+          fi
