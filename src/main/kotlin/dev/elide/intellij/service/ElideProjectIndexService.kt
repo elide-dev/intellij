@@ -43,6 +43,11 @@ class ElideProjectIndexService : SerializablePersistentStateComponent<ElideProje
     updateState { it.copy(projects = it.projects + (externalProjectPath to data)) }
   }
 
+  /** Remove the index entry for the project at the given [externalProjectPath], if any. */
+  fun remove(externalProjectPath: String) {
+    updateState { it.copy(projects = it.projects - externalProjectPath) }
+  }
+
   operator fun contains(linkedProjectPath: String): Boolean = state.projects.containsKey(linkedProjectPath)
   operator fun get(linkedProjectPath: String): ElideProjectInfo? = state.projects[linkedProjectPath]
 

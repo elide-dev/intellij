@@ -42,7 +42,11 @@ class ElideSettings(
   }
 
   override fun checkSettings(old: ElideProjectSettings, new: ElideProjectSettings) {
-    // noop
+    val distributionChanged = old.elideDistributionType != new.elideDistributionType ||
+            old.elideDistributionPath != new.elideDistributionPath
+
+    // only a distribution change invalidates the resolved model; everything else is cosmetic
+    if (distributionChanged) publisher.onDistributionChange(new.externalProjectPath)
   }
 
   override fun subscribe(

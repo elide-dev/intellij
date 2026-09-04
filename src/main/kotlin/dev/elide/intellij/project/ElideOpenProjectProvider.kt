@@ -13,7 +13,6 @@
 package dev.elide.intellij.project
 
 import com.intellij.openapi.externalSystem.importing.AbstractOpenProjectProvider
-import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
 import com.intellij.openapi.externalSystem.model.ProjectSystemId
 import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode
 import com.intellij.openapi.externalSystem.service.project.trusted.ExternalSystemTrustedProjectDialog
@@ -31,7 +30,11 @@ import dev.elide.intellij.settings.ElideProjectSettings
   override fun isProjectFile(file: VirtualFile): Boolean = !file.isDirectory && file.name == Constants.MANIFEST_NAME
 
   override suspend fun linkProject(projectFile: VirtualFile, project: Project) {
-    val projectPath = getProjectDirectory(projectFile).toNioPath()
+    // the directory is derived here rather than through `AbstractOpenProjectProvider.getProjectDirectory`, whose
+    // suspending form does not exist across the whole supported build range (251+)
+    val projectDir = if (projectFile.isDirectory) projectFile else projectFile.parent ?: return
+    val projectPath = projectDir.toNioPath()
+
     if (!ExternalSystemTrustedProjectDialog.confirmLinkingUntrustedProjectAsync(
         project = project,
         systemId = Constants.SYSTEM_ID,
@@ -42,11 +45,15 @@ import dev.elide.intellij.settings.ElideProjectSettings
     val settings = ElideProjectSettings()
     settings.externalProjectPath = projectPath.toCanonicalPath()
 
-    val importSpec = ImportSpecBuilder(project, systemId)
-      .withPreviewMode(false)
-      .use(ProgressExecutionMode.IN_BACKGROUND_ASYNC)
-      .build()
-    
-    ExternalSystemUtil.linkExternalProject(settings, importSpec)
+    // NOTE: the `ImportSpec` overload of `linkExternalProject` is not available on every supported build
+    @Suppress("DEPRECATION")
+    ExternalSystemUtil.linkExternalProject(
+      /* externalSystemId = */ Constants.SYSTEM_ID,
+      /* projectSettings = */ settings,
+      /* project = */ project,
+      /* importResultCallback = */ { },
+      /* isPreviewMode = */ false,
+      /* progressExecutionMode = */ ProgressExecutionMode.IN_BACKGROUND_ASYNC,
+    )
   }
 }

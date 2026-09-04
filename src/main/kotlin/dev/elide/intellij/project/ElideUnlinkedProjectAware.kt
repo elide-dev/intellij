@@ -20,6 +20,7 @@ import com.intellij.openapi.externalSystem.settings.ExternalSystemSettingsListen
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import dev.elide.intellij.Constants
+import dev.elide.intellij.service.elideProjectIndex
 import dev.elide.intellij.settings.ElideProjectSettings
 import dev.elide.intellij.settings.ElideSettings
 
@@ -37,6 +38,16 @@ import dev.elide.intellij.settings.ElideSettings
   override fun isLinkedProject(project: Project, externalProjectPath: String): Boolean {
     val settings = ElideSettings.getSettings(project)
     return settings.getLinkedProjectSettings(externalProjectPath) != null
+  }
+
+  /**
+   * Linked Elide projects known to the IDE.
+   *
+   * This is implemented rather than inherited on purpose: the interface's default body does not exist before build
+   * 252, and the bridge Kotlin generates for it would reference a missing method on a 2025.1 IDE.
+   */
+  override fun getLinkedProjectsPaths(project: Project): Set<String> {
+    return ElideSettings.getSettings(project).linkedProjectsSettings.mapTo(mutableSetOf()) { it.externalProjectPath }
   }
 
   override fun subscribe(project: Project, listener: ExternalSystemProjectLinkListener, parentDisposable: Disposable) {
@@ -59,6 +70,10 @@ import dev.elide.intellij.settings.ElideSettings
   }
 
   override suspend fun unlinkProject(project: Project, externalProjectPath: String) {
-    // noop
+    ElideSettings.getSettings(project).unlinkExternalProject(externalProjectPath)
+
+    // drop the entrypoints resolved for this project: leaving them behind would keep feeding stale completions and
+    // gutter actions for a project the IDE no longer tracks
+    project.elideProjectIndex.remove(externalProjectPath)
   }
 }

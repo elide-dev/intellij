@@ -17,6 +17,14 @@ import com.intellij.util.messages.Topic
 
 /** Listener for changes to system-wide Elide settings. */
 interface ElideSettingsListener : ExternalSystemSettingsListener<ElideProjectSettings> {
+  /**
+   * Called when the Elide distribution configured for the linked project at [linkedProjectPath] changes.
+   *
+   * Unlike the bulk-change callbacks, this only fires for changes that invalidate a resolved project model, so
+   * listeners can re-sync without reacting to unrelated settings edits.
+   */
+  fun onDistributionChange(linkedProjectPath: String) {}
+
   companion object {
     @JvmStatic @Topic.ProjectLevel val TOPIC = Topic.create(
       "ElideProjectSettingsListener",
