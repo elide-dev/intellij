@@ -35,6 +35,7 @@ jobs:
         run: tools/deploy.sh
         env:
           ELIDE_PLUGINS_KEY: ${{ secrets.ELIDE_PLUGINS_KEY }}
+          ELIDE_PLUGINS_URL: ${{ vars.ELIDE_PLUGINS_URL }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
