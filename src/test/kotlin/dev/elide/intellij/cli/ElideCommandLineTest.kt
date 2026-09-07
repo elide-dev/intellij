@@ -151,6 +151,48 @@ class ElideCommandLineTest {
     }
   }
 
+  @Test fun `init passes the non-interactive flags and the answers after a double dash`() {
+    // `elide init` is interactive by default and writes into its working directory; a wizard-driven run must reach
+    // neither a prompt nor the wrong directory
+    val home = fakeElide("""for arg in "${'$'}@"; do echo "arg=${'$'}arg"; done; echo "cwd=${'$'}PWD"""")
+    val workDir = tempDir.resolve("new-project").also { it.createDirectories() }
+    val output = mutableListOf<String>()
+
+    runBlocking {
+      ElideCommandLine.at(home, workDir = workDir).init(
+        templateId = "ktjvm",
+        answers = linkedMapOf("project_name" to "Demo App", "tests" to "false"),
+        onOutput = { line, isStderr -> if (!isStderr) output.add(line.trim()) },
+      )
+    }
+
+    assertEquals(
+      listOf(
+        "arg=init",
+        "arg=--plain",
+        "arg=--skip-defaults",
+        "arg=--skip-run",
+        "arg=--template",
+        "arg=ktjvm",
+        "arg=--",
+        "arg=project_name=Demo App",
+        "arg=tests=false",
+      ),
+      output.dropLast(1),
+    )
+    assertEquals("cwd=${workDir.toRealPath()}", output.last())
+  }
+
+  @Test fun `templates decodes the json listing`() {
+    val listing = """[{"id":"ktjvm","title":"Kotlin","blocks":[{"id":"tests","title":"Tests","default":true}]}]"""
+    val home = fakeElide("""echo '$listing'""")
+
+    val templates = runBlocking { ElideCommandLine.at(home).templates() }
+
+    assertEquals(listOf("ktjvm"), templates.map { it.id })
+    assertEquals(listOf("tests"), templates.single().blocks.map { it.id })
+  }
+
   @Test fun `cancellation destroys the child process`() {
     val marker = tempDir.resolve("still-running")
     val home = fakeElide("""while true; do echo tick > "$marker"; sleep 0.1; done""")

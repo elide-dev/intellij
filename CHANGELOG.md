@@ -10,6 +10,12 @@ Marketplace, so entries must be user-facing and free of internal jargon.
 
 ## [Unreleased]
 
+### Added
+
+- **New Project wizard for Elide projects.** *File > New > Project > Elide* lists the project templates the selected
+  Elide distribution ships — the same ones `elide init` offers — asks for their options, and generates and imports the
+  project. Requires an Elide release whose CLI supports `elide init --templates --json`.
+
 ### Changed
 
 - The plugin is distributed under the MIT license, with sources and issue tracker at

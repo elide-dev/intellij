@@ -33,6 +33,7 @@
       <li>Attach the IDE's Java debugger to the CLI's JDWP server</li>
       <li>Run Elide commands ad hoc through Run Anything</li>
       <li>Select the Elide distribution used per project</li>
+      <li>Create new projects from the templates Elide ships, driven by <code>elide init</code></li>
     </ul>
     <p>
       Manifest editing features (completion, navigation and inspections inside <code>elide.pkl</code>) additionally
@@ -81,6 +82,7 @@
     <externalSystemUnlinkedProjectAware implementation="dev.elide.intellij.project.ElideUnlinkedProjectAware"/>
     <externalIconProvider key="ELIDE" implementationClass="dev.elide.intellij.ui.ElideIconProvider"/>
     <postStartupActivity implementation="dev.elide.intellij.startup.ElideStartupActivity"/>
+    <moduleBuilder builderClass="dev.elide.intellij.wizard.ElideNewProjectWizardBuilder"/>
     <externalSystemManager id="ELIDE" implementation="dev.elide.intellij.ElideManager"/>
     <projectConfigurable
             key="elide"

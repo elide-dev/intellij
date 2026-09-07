@@ -45,4 +45,16 @@ object ElideNotifications {
       )
       .notify(project)
   }
+
+  /** Report that `elide init` could not generate a new project's files, quoting the CLI's own [details]. */
+  fun notifyProjectGenerationFailed(project: Project, details: String) {
+    NotificationGroupManager.getInstance()
+      .getNotificationGroup("Elide Notifications")
+      .createNotification(
+        Constants.Strings["elide.notifications.generationFailed.content", details],
+        NotificationType.ERROR,
+      )
+      .setTitle(Constants.Strings["elide.notifications.generationFailed.title"])
+      .notify(project)
+  }
 }

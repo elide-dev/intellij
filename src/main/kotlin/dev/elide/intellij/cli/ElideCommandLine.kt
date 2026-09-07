@@ -186,3 +186,53 @@ suspend fun ElideCommandLine.classpath(
 
   return ElideClasspath(usage, ElideCommandLine.parseClasspath(output.toString()))
 }
+
+/**
+ * List the project templates the distribution ships, by way of `elide init --templates --json`.
+ *
+ * `--json` is newer than the flags around it: a distribution whose CLI predates it rejects the command as a usage
+ * error, which surfaces as an [ElideCommandFailedException] carrying the CLI's own diagnostic.
+ */
+suspend fun ElideCommandLine.templates(
+  onOutput: ((line: String, stderr: Boolean) -> Unit)? = null,
+): List<ElideTemplate> {
+  val output = StringBuilder()
+
+  invoke("init", "--templates", "--json") { line, stderr ->
+    onOutput?.invoke(line, stderr)
+    if (!stderr) output.append(line)
+  }
+
+  return ElideTemplates.parse(output.toString().trim())
+}
+
+/**
+ * Generate the project template identified by [templateId] into this command line's working directory, answering its
+ * questionnaire with [answers] (parameter or block id to value).
+ *
+ * `elide init` is interactive by default: `--plain` trades its full-screen editor for prompts, and `--skip-defaults`
+ * keeps those prompts from being asked at all, so every parameter left out of [answers] takes its declared default
+ * instead of blocking on a terminal that does not exist here. `--skip-run` suppresses the build/test/run follow-ups,
+ * and the `--` separator keeps answers that begin with a dash from being read as flags.
+ *
+ * `--overwrite` is deliberately never passed: a directory that already holds files a template claims fails with the
+ * CLI's own diagnostic rather than losing them.
+ */
+suspend fun ElideCommandLine.init(
+  templateId: String,
+  answers: Map<String, String>,
+  onOutput: ((line: String, stderr: Boolean) -> Unit)? = null,
+) {
+  val args = buildList {
+    add("init")
+    add("--plain")
+    add("--skip-defaults")
+    add("--skip-run")
+    add("--template")
+    add(templateId)
+    add("--")
+    answers.forEach { (id, value) -> add("$id=$value") }
+  }
+
+  invoke(args = args.toTypedArray(), onOutput = onOutput)
+}

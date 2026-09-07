@@ -25,12 +25,13 @@ Every usage is reported by `./gradlew verifyPlugin` under
 | `ExternalSystemProjectLinkListener` (interface, `onProjectLinked`, `onProjectUnlinked`) | `ElideUnlinkedProjectAware.subscribe` | 251-262 | Receiving link and unlink events for Elide projects |
 | `ProjectResolverPolicy`, `ExternalSystemProjectResolver.resolveProjectInfo(…, ProjectResolverPolicy, …)` | `ElideProjectResolver.resolveProjectInfo` | 251-262 | Resolving the Elide manifest into the external system project model during sync |
 | `com.intellij.openapi.progress.runBlockingCancellable` | `ElideProjectResolver.resolveProjectInfo`, `ElideTaskManager.executeTasks` | 251 only, stable from 252 | Running the suspending CLI calls of a sync or task under the IDE cancellation context |
+| `Placeholder` (interface, `align`, `component`) | `ElideNewProjectWizardStep.setupUI`, `renderOptions` | 251-262 | Swapping the template option controls in the New Project wizard when a different template is selected |
 
 ## Deprecated APIs
 
 | API | Used by | Used for |
 |---|---|---|
-| `ExternalSystemUtil.linkExternalProject` (positional overload) | `ElideOpenProjectProvider.linkProject` | Registering project settings and triggering the first sync; the `ImportSpec` overload only exists from build 252 |
+| `ExternalSystemUtil.linkExternalProject` (positional overload) | `ElideOpenProjectProvider.linkProject`, `ElideProjectGenerator.generate` | Registering project settings and triggering the first sync; the `ImportSpec` overload only exists from build 252 |
 | `ExternalSystemTaskNotificationListener.onTaskOutput(id, text, stdOut)` | `ElideProjectResolver.resolveProjectInfo`, `ElideTaskManager.executeTasks` | Streaming CLI output into the build tool window; the `ProcessOutputType` overload only exists from build 253 |
 | `ExternalSystemUtil.refreshProject(project, systemId, path, isPreviewMode, progressExecutionMode)` | `ElideStartupActivity.ElideAutoLinkTracker` | Re-syncing a linked project when its Elide distribution setting changes |
 
@@ -44,7 +45,12 @@ Every usage is reported by `./gradlew verifyPlugin` under
 ## Stable alternatives in use
 
 `ElideProjectSettingsControl` builds the distribution path field from `TextFieldWithBrowseButton` plus
-`installFileCompletionAndBrowseDialog` instead of the experimental `Row.textFieldWithBrowseButton` shorthand.
+`installFileCompletionAndBrowseDialog` instead of the experimental `Row.textFieldWithBrowseButton` shorthand;
+`ElideNewProjectWizardStep` builds its distribution field the same way.
+
+`ElideNewProjectWizardStep` renders the template combo box with a plain `ListCellRenderer`:
+`SimpleListCellRenderer.create` is scheduled for removal on 262, and its replacement
+`com.intellij.ui.dsl.listCellRenderer.textListCellRenderer` is internal on 251.
 
 `AbstractExternalProjectSettingsControl`, `ExternalSystemReifiedRunConfigurationExtension`, the run configuration
 command line and working directory fragments, and `com.intellij.ui.layout.selectedValueIs` carry no stability
