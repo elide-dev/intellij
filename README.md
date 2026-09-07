@@ -11,7 +11,7 @@ console output, and JDWP support.
 
 ## Requirements
 
-- IntelliJ IDEA 2025.1 or newer (builds `251` – `262.*`)
+- IntelliJ IDEA 2025.3 or newer (builds `253` – `262.*`)
 - Elide CLI installed, or a distribution directory selectable in project settings
 - Optional: the [Pkl](https://pkl-lang.org) language plugin (`org.pkl`), which enables manifest editor features
 

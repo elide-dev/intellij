@@ -12,6 +12,7 @@
  */
 package dev.elide.intellij.project
 
+import com.intellij.execution.process.ProcessOutputType
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.externalSystem.importing.ProjectResolverPolicy
 import com.intellij.openapi.externalSystem.model.DataNode
@@ -100,16 +101,15 @@ class ElideProjectResolver : ExternalSystemProjectResolver<ElideExecutionSetting
 
       // call the CLI to inspect the project manifest
       listener.onStep(id, progressMessage("resolve.steps.inspect"))
-      // NOTE: the `ProcessOutputType` overload of `onTaskOutput` only exists from build 253 onward
-      @Suppress("DEPRECATION")
-      val manifest = cli.manifest { out, err -> if (err) listener.onTaskOutput(id, out, false) }
+      val manifest = cli.manifest { out, err -> if (err) listener.onTaskOutput(id, out, ProcessOutputType.STDERR) }
 
       // install dependencies only when the lockfile no longer reflects the manifest
       if (!isLockfileCurrent(projectRoot, manifestPath)) {
         listener.onStep(id, progressMessage("resolve.steps.sync"))
 
-        @Suppress("DEPRECATION")
-        cli.install { line, err -> listener.onTaskOutput(id, line, !err) }
+        cli.install { line, err ->
+          listener.onTaskOutput(id, line, if (err) ProcessOutputType.STDERR else ProcessOutputType.STDOUT)
+        }
       } else {
         LOG.debug("Lockfile is up to date, skipping dependency installation")
       }

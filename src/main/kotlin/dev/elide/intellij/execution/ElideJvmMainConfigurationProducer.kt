@@ -25,20 +25,13 @@ import com.intellij.psi.PsiElement
 import dev.elide.intellij.project.model.ElideEntrypointInfo
 import dev.elide.intellij.project.model.ElideEntrypointInfo.Kind
 import dev.elide.intellij.project.model.fullCommandLine
+import dev.elide.intellij.psi.findKotlinMainOwner
+import dev.elide.intellij.psi.kotlinMainClassJvmName
 import dev.elide.intellij.service.elideProjectIndex
-import org.jetbrains.kotlin.idea.base.codeInsight.KotlinMainFunctionDetector
-import org.jetbrains.kotlin.idea.base.codeInsight.findMainOwner
-import org.jetbrains.kotlin.idea.run.KotlinRunConfigurationProducer.Companion.getMainClassJvmName
 import org.jetbrains.kotlin.psi.KtDeclarationContainer
 
-/**
- * Extension responsible for providing "run from gutter icon" configurations for main JVM entrypoints.
- *
- * Kotlin `main` detection uses Kotlin plugin internals (`KotlinMainFunctionDetector`, `getMainClassJvmName`), which
- * have no public equivalent; see `docs/PLATFORM_APIS.md`.
- */
-@Suppress("UnstableApiUsage") class ElideJvmMainConfigurationProducer :
-  LazyRunConfigurationProducer<ElideRunConfiguration>() {
+/** Extension responsible for providing "run from gutter icon" configurations for main JVM entrypoints. */
+class ElideJvmMainConfigurationProducer : LazyRunConfigurationProducer<ElideRunConfiguration>() {
   override fun isDumbAware(): Boolean = true
 
   override fun isPreferredConfiguration(self: ConfigurationFromContext?, other: ConfigurationFromContext?): Boolean {
@@ -58,7 +51,7 @@ import org.jetbrains.kotlin.psi.KtDeclarationContainer
   ): Boolean {
     val startClassFQName = context.location
       ?.let(::getEntryPointContainer)
-      ?.let(::getMainClassJvmName)
+      ?.let(::kotlinMainClassJvmName)
       ?: return false
 
     val (externalProject, entrypoint) = findJvmEntrypoint(context, startClassFQName) ?: return false
@@ -78,7 +71,7 @@ import org.jetbrains.kotlin.psi.KtDeclarationContainer
     context: ConfigurationContext
   ): Boolean {
     val startClassFQName = getEntryPointContainer(context.location)
-      ?.let(::getMainClassJvmName)
+      ?.let(::kotlinMainClassJvmName)
       ?: return false
 
     return configuration.entrypointKind == Kind.JvmMainClass && configuration.entrypointValue == startClassFQName
@@ -86,7 +79,7 @@ import org.jetbrains.kotlin.psi.KtDeclarationContainer
 
   override fun findExistingConfiguration(context: ConfigurationContext): RunnerAndConfigurationSettings? {
     val entryPointContainer = getEntryPointContainer(context.location) ?: return null
-    val startClassFQName = getMainClassJvmName(entryPointContainer) ?: return null
+    val startClassFQName = kotlinMainClassJvmName(entryPointContainer) ?: return null
 
     ProgressManager.checkCanceled()
     return getConfigurationSettingsList(RunManager.getInstance(context.project)).find { configurationSettings ->
@@ -97,7 +90,7 @@ import org.jetbrains.kotlin.psi.KtDeclarationContainer
 
   private fun getEntryPointContainer(location: Location<*>?): KtDeclarationContainer? {
     val element = location?.psiElement ?: return null
-    return KotlinMainFunctionDetector.getInstanceDumbAware(location.project).findMainOwner(element)
+    return findKotlinMainOwner(element)
   }
 
   private fun findJvmEntrypoint(

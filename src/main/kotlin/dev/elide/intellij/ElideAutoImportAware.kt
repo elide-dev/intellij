@@ -17,6 +17,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.io.FileUtil
 import dev.elide.intellij.settings.ElideSettings
 import java.io.File
+import java.nio.file.Path
 
 /**
  * Maps file system changes onto the linked Elide project they affect, so the IDE can offer (or perform) a re-import.
@@ -47,17 +48,28 @@ class ElideAutoImportAware : ExternalSystemAutoImportAware {
     return findLinkedProject(candidate, project)
   }
 
-  override fun getAffectedExternalProjectFiles(projectPath: String?, project: Project): List<File?> {
+  /**
+   * The files whose modification marks the project out of date.
+   *
+   * This is `ExternalSystemAutoImportAware.getAffectedExternalProjectFilePaths`, added in build 262; it carries no
+   * `override` because the plugin compiles against 261, where the interface only declares the [File] form. The JVM
+   * still dispatches to it on 262, so the deprecated form below is only reached on older builds.
+   */
+  fun getAffectedExternalProjectFilePaths(projectPath: String?, project: Project): List<Path> {
     if (projectPath == null) return emptyList()
 
     return buildList {
-      File(projectPath, Constants.MANIFEST_NAME).takeIf { it.exists() }?.let { add(it) }
+      File(projectPath, Constants.MANIFEST_NAME).takeIf { it.exists() }?.let { add(it.toPath()) }
 
       // the lockfile carries a version in its name, so every candidate in the output directory is watched
       File(projectPath, Constants.OUTPUT_DIR).listFiles { candidate ->
         candidate.isFile && Constants.isLockfileName(candidate.name)
-      }?.forEach { add(it) }
+      }?.forEach { add(it.toPath()) }
     }
+  }
+
+  override fun getAffectedExternalProjectFiles(projectPath: String?, project: Project): List<File> {
+    return getAffectedExternalProjectFilePaths(projectPath, project).map(Path::toFile)
   }
 
   private fun findLinkedProject(start: File, project: Project): String? {

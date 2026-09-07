@@ -28,8 +28,8 @@ import dev.elide.intellij.settings.ElideSettings
  * Tracking service used to link Elide projects when they are opened by the IDE. This class enables the auto-import
  * and project sync features automatically, by configuring which files should be tracked by Intellij.
  *
- * `ExternalSystemProjectLinkListener` is experimental and `getLinkedProjectsPaths` is internal from build 253; both
- * are inherent to implementing this extension point (`docs/PLATFORM_APIS.md`).
+ * `ExternalSystemProjectLinkListener` is experimental and `getLinkedProjectsPaths` is internal; both are inherent to
+ * implementing this extension point (see `docs/PLATFORM_APIS.md`).
  */
 @Suppress("UnstableApiUsage") class ElideUnlinkedProjectAware : ExternalSystemUnlinkedProjectAware {
   override val systemId: ProjectSystemId = Constants.SYSTEM_ID
@@ -46,8 +46,8 @@ import dev.elide.intellij.settings.ElideSettings
   /**
    * Linked Elide projects known to the IDE.
    *
-   * This is implemented rather than inherited on purpose: builds 251 and 252 do not declare the method at all, and
-   * the bridge Kotlin generates for an inherited default body would reference a method missing on those IDEs.
+   * The interface declares this method with a body that throws, so implementing it is mandatory for the auto-link
+   * machinery to see Elide projects.
    */
   override fun getLinkedProjectsPaths(project: Project): Set<String> {
     return ElideSettings.getSettings(project).linkedProjectsSettings.mapTo(mutableSetOf()) { it.externalProjectPath }

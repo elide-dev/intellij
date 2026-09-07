@@ -14,6 +14,7 @@ package dev.elide.intellij.wizard
 
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
 import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode
 import com.intellij.openapi.externalSystem.service.project.manage.ExternalProjectsManagerImpl
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
@@ -66,15 +67,10 @@ class ElideProjectGenerator(private val project: Project, private val scope: Cor
 
     withContext(Dispatchers.EDT) {
       ExternalProjectsManagerImpl.getInstance(project).runWhenInitialized {
-        // NOTE: the `ImportSpec` overload of `linkExternalProject` only exists from build 252
-        @Suppress("DEPRECATION")
         ExternalSystemUtil.linkExternalProject(
-          /* externalSystemId = */ Constants.SYSTEM_ID,
           /* projectSettings = */ settings,
-          /* project = */ project,
-          /* importResultCallback = */ { },
-          /* isPreviewMode = */ false,
-          /* progressExecutionMode = */ ProgressExecutionMode.IN_BACKGROUND_ASYNC,
+          /* importSpec = */ ImportSpecBuilder(project, Constants.SYSTEM_ID)
+            .use(ProgressExecutionMode.IN_BACKGROUND_ASYNC),
         )
       }
     }

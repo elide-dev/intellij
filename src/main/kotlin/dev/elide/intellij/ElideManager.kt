@@ -31,6 +31,7 @@ import dev.elide.intellij.service.ElideDistributionResolver
 import dev.elide.intellij.settings.*
 import dev.elide.intellij.tasks.ElideTaskManager
 import java.io.File
+import java.nio.file.Path
 
 /**
  * Coordinator service for Elide as an external build system.
@@ -57,7 +58,10 @@ class ElideManager : ExternalSystemAutoImportAware, ExternalSystemConfigurableAw
         ElideExecutionSettings,
         > {
 
-  private val autoImportDelegate = CachingExternalSystemAutoImportAware(ElideAutoImportAware())
+  private val autoImport = ElideAutoImportAware()
+
+  // only the path lookup is worth caching; the wrapper forwards the file lists untouched
+  private val autoImportDelegate = CachingExternalSystemAutoImportAware(autoImport)
 
   override fun getSystemId(): ProjectSystemId = Constants.SYSTEM_ID
 
@@ -100,8 +104,13 @@ class ElideManager : ExternalSystemAutoImportAware, ExternalSystemConfigurableAw
     return autoImportDelegate.getAffectedExternalProjectPath(changedFileOrDirPath, project)
   }
 
-  override fun getAffectedExternalProjectFiles(projectPath: String, project: Project): List<File?> {
-    return autoImportDelegate.getAffectedExternalProjectFiles(projectPath, project)
+  /** See [ElideAutoImportAware.getAffectedExternalProjectFilePaths]: the 262 form of the method below. */
+  fun getAffectedExternalProjectFilePaths(projectPath: String?, project: Project): List<Path> {
+    return autoImport.getAffectedExternalProjectFilePaths(projectPath, project)
+  }
+
+  override fun getAffectedExternalProjectFiles(projectPath: String, project: Project): List<File> {
+    return autoImport.getAffectedExternalProjectFiles(projectPath, project)
   }
 
   override fun getConfigurable(project: Project): Configurable {

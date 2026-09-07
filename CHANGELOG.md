@@ -21,12 +21,20 @@ Marketplace, so entries must be user-facing and free of internal jargon.
 - The plugin is distributed under the MIT license, with sources and issue tracker at
   [elide-dev/intellij](https://github.com/elide-dev/intellij).
 - Change notes shown in the plugin manager are generated from this changelog.
+- The plugin now requires IntelliJ IDEA 2025.3 or newer. Earlier IDEs keep the last published build that supports them.
+- Project linking, sync and build output now use the current IntelliJ external system APIs, replacing calls the
+  platform has deprecated or scheduled for removal.
+- Gutter run and debug actions for Kotlin `main` functions no longer rely on Kotlin plugin internals.
 
 ### Fixed
 
+- Opening a project that contains an `elide.pkl` manifest links and syncs it again. The startup activity failed with an
+  internal error before reaching the manifest scan, and Elide tasks were not configured to run inside the IDE process.
 - The Elide tool window and project icons follow the IDE theme; previously they were drawn in a near-white stroke and
   were effectively invisible under light themes.
 - The plugin logo declares the 40x40 size expected by the plugin manager and the JetBrains Marketplace.
+- Gutter run actions for JUnit tests no longer log "Slow operations are prohibited on EDT" errors while the IDE
+  updates run actions, and they now work while the IDE is still indexing.
 
 ## [0.7.0] - 2026-09-04
 

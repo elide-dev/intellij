@@ -2,7 +2,7 @@
 
 Inventory of the experimental, internal and deprecated IntelliJ Platform APIs the plugin calls, and what each one is
 used for. Builds refer to the range declared by `intellij.sinceBuild` / `intellij.untilBuild` in
-`gradle/libs.versions.toml` (251 to 262).
+`gradle/libs.versions.toml` (253 to 262). The plugin compiles against the build named by `intellij.target-ide` (261).
 
 Every usage is reported by `./gradlew verifyPlugin` under
 `build/reports/pluginVerifier/IU-<build>/plugins/dev.elide/<version>/`, in `internal-api-usages.txt`,
@@ -10,39 +10,44 @@ Every usage is reported by `./gradlew verifyPlugin` under
 
 ## Internal APIs
 
-| API | Used by | Builds | Used for |
-|---|---|---|---|
-| `KotlinMainFunctionDetector`, `KotlinMainFunctionDetector.Companion.getInstanceDumbAware` | `ElideJvmMainConfigurationProducer.getEntryPointContainer` | 251-262 | Detecting whether a Kotlin file or class declares a runnable `main`, including `suspend fun main` and parameterless forms, when offering the gutter run/debug action |
-| `KotlinRunConfigurationProducer.Companion.getMainClassJvmName` | `ElideJvmMainConfigurationProducer.setupConfigurationFromContext`, `isConfigurationFromContext`, `findExistingConfiguration` | 251-262 | Computing the JVM facade name (`MainKt`, `@JvmName` overrides) passed to the Elide CLI as the entrypoint |
-| `ExternalSystemUnlinkedProjectAware.getLinkedProjectsPaths` | `ElideUnlinkedProjectAware` | 253-262 | Telling the IDE which Elide project paths are currently linked, so unlinked projects can be offered for import |
+| API | Used by | Used for |
+|---|---|---|
+| `ExternalSystemUnlinkedProjectAware.getLinkedProjectsPaths` | `ElideUnlinkedProjectAware` | Telling the IDE which Elide project paths are currently linked, so unlinked projects can be offered for import. The interface declares the method with a body that throws, so an implementation is mandatory |
 
 ## Experimental APIs
 
-| API | Used by | Builds | Used for |
-|---|---|---|---|
-| `AbstractOpenProjectProvider` (class, constructor, `systemId`, `isProjectFile`, `linkProject`) | `ElideOpenProjectProvider` | 251-262 | Recognising `elide.pkl` as a project file and linking its directory as an Elide external project |
-| `AbstractOpenProjectProvider.linkToExistingProjectAsync` | `ElideUnlinkedProjectAware.linkAndLoadProjectAsync` | 251-262 | Linking and loading an Elide project from the unlinked project notification |
-| `ExternalSystemProjectLinkListener` (interface, `onProjectLinked`, `onProjectUnlinked`) | `ElideUnlinkedProjectAware.subscribe` | 251-262 | Receiving link and unlink events for Elide projects |
-| `ProjectResolverPolicy`, `ExternalSystemProjectResolver.resolveProjectInfo(…, ProjectResolverPolicy, …)` | `ElideProjectResolver.resolveProjectInfo` | 251-262 | Resolving the Elide manifest into the external system project model during sync |
-| `com.intellij.openapi.progress.runBlockingCancellable` | `ElideProjectResolver.resolveProjectInfo`, `ElideTaskManager.executeTasks` | 251 only, stable from 252 | Running the suspending CLI calls of a sync or task under the IDE cancellation context |
-| `Placeholder` (interface, `align`, `component`) | `ElideNewProjectWizardStep.setupUI`, `renderOptions` | 251-262 | Swapping the template option controls in the New Project wizard when a different template is selected |
+| API | Used by | Used for |
+|---|---|---|
+| `AbstractOpenProjectProvider` (class, constructor, `systemId`, `isProjectFile`, `linkProject`) | `ElideOpenProjectProvider` | Recognising `elide.pkl` as a project file and linking its directory as an Elide external project |
+| `AbstractOpenProjectProvider.linkToExistingProjectAsync` | `ElideUnlinkedProjectAware.linkAndLoadProjectAsync` | Linking and loading an Elide project from the unlinked project notification |
+| `ExternalSystemProjectLinkListener` (interface, `onProjectLinked`, `onProjectUnlinked`) | `ElideUnlinkedProjectAware.subscribe` | Receiving link and unlink events for Elide projects |
+| `ProjectResolverPolicy`, `ExternalSystemProjectResolver.resolveProjectInfo(…, ProjectResolverPolicy, …)` | `ElideProjectResolver.resolveProjectInfo` | Resolving the Elide manifest into the external system project model during sync |
+| `Placeholder` (interface, `align`, `component`) | `ElideNewProjectWizardStep.setupUI`, `renderOptions` | Swapping the template option controls in the New Project wizard when a different template is selected |
 
 ## Deprecated APIs
 
 | API | Used by | Used for |
 |---|---|---|
-| `ExternalSystemUtil.linkExternalProject` (positional overload) | `ElideOpenProjectProvider.linkProject`, `ElideProjectGenerator.generate` | Registering project settings and triggering the first sync; the `ImportSpec` overload only exists from build 252 |
-| `ExternalSystemTaskNotificationListener.onTaskOutput(id, text, stdOut)` | `ElideProjectResolver.resolveProjectInfo`, `ElideTaskManager.executeTasks` | Streaming CLI output into the build tool window; the `ProcessOutputType` overload only exists from build 253 |
-| `ExternalSystemUtil.refreshProject(project, systemId, path, isPreviewMode, progressExecutionMode)` | `ElideStartupActivity.ElideAutoLinkTracker` | Re-syncing a linked project when its Elide distribution setting changes |
+| `ExternalSystemAutoImportAware.getAffectedExternalProjectFiles` | `ElideAutoImportAware`, `ElideManager` | Listing the manifest and lockfile the IDE watches for auto-import. Scheduled for removal on 262, which replaces it with `getAffectedExternalProjectFilePaths`; both classes declare the replacement as well, without `override`, because the 261 compile target does not declare it yet. The JVM dispatches to the replacement on 262, so the deprecated method is only reached on 253 to 261 |
+| `ExternalSystemUnlinkedProjectAware.linkAndLoadProject` | `ElideUnlinkedProjectAware` | Not called by the plugin. The interface declares the method as a Kotlin default with `DeprecationLevel.ERROR`, and Kotlin emits the bridge for it in every implementing class |
 
 ## Signatures missing on part of the range
 
 | Signature | Available | Handling in code |
 |---|---|---|
-| `ExternalSystemUnlinkedProjectAware.getLinkedProjectsPaths` | from 253 | `ElideUnlinkedProjectAware` implements the method, so no bridge referencing it is generated for 251 and 252 |
-| `AbstractOpenProjectProvider.getProjectDirectory` (suspending form) | from 253; blocking form on 251 and 252 | `ElideOpenProjectProvider.linkProject` derives the project directory from the `VirtualFile` |
+| `ExternalSystemAutoImportAware.getAffectedExternalProjectFilePaths` | from 262 | `ElideAutoImportAware` and `ElideManager` declare a matching method without `override` |
+| `AbstractOpenProjectProvider.getProjectDirectory` | internal on the whole range | `ElideOpenProjectProvider.linkProject` derives the project directory from the `VirtualFile` |
 
 ## Stable alternatives in use
+
+Kotlin `main` detection for the gutter run and debug actions is implemented in `dev.elide.intellij.psi`
+(`findKotlinMainOwner`, `kotlinMainClassJvmName`) over Kotlin compiler PSI, `KotlinPsiHeuristics` and
+`ClassUtil.getJVMClassName`, instead of the internal `KotlinMainFunctionDetector` and
+`KotlinRunConfigurationProducer.getMainClassJvmName`.
+
+Project linking and re-sync use `ExternalSystemUtil.linkExternalProject(settings, ImportSpec)` and
+`ExternalSystemUtil.refreshProject(path, ImportSpec)`; build output is streamed with
+`ExternalSystemTaskNotificationListener.onTaskOutput(id, text, ProcessOutputType)`.
 
 `ElideProjectSettingsControl` builds the distribution path field from `TextFieldWithBrowseButton` plus
 `installFileCompletionAndBrowseDialog` instead of the experimental `Row.textFieldWithBrowseButton` shorthand;
@@ -50,7 +55,7 @@ Every usage is reported by `./gradlew verifyPlugin` under
 
 `ElideNewProjectWizardStep` renders the template combo box with a plain `ListCellRenderer`:
 `SimpleListCellRenderer.create` is scheduled for removal on 262, and its replacement
-`com.intellij.ui.dsl.listCellRenderer.textListCellRenderer` is internal on 251.
+`com.intellij.ui.dsl.listCellRenderer.textListCellRenderer` is internal on the whole range.
 
 `AbstractExternalProjectSettingsControl`, `ExternalSystemReifiedRunConfigurationExtension`, the run configuration
 command line and working directory fragments, and `com.intellij.ui.layout.selectedValueIs` carry no stability

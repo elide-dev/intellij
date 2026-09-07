@@ -15,14 +15,13 @@ package dev.elide.intellij.startup
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
 import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode
-import com.intellij.openapi.externalSystem.util.ExternalSystemConstants
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.project.BaseProjectDirectories.Companion.getBaseDirectories
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.io.toCanonicalPath
-import com.intellij.openapi.util.registry.Registry
 import dev.elide.intellij.Constants
 import dev.elide.intellij.settings.ElideProjectSettings
 import dev.elide.intellij.settings.ElideSettings
@@ -32,13 +31,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** Startup activity used to detect an Elide project and sync it if needed. */
 class ElideStartupActivity : ProjectActivity {
   override suspend fun execute(project: Project) {
-    // request to run external system APIs in-process, as opposed to calling them in a separate background process;
-    // this simplifies the setup of components like the project resolver, and allows them to use the full intellij API
-    // (there is no dedicated API for this: `ExternalSystemApiUtil.isInProcessMode` reads the same registry key)
-    val inProcessKey = Registry.get(
-      Constants.SYSTEM_ID.id + ExternalSystemConstants.USE_IN_PROCESS_COMMUNICATION_REGISTRY_KEY_SUFFIX,
-    )
-    if (!inProcessKey.asBoolean()) inProcessKey.setValue(true)
+    // in-process execution of the resolver and task manager is declared by the `ELIDE.system.in.process` registry
+    // key in `plugin.xml`, which is what `ExternalSystemApiUtil.isInProcessMode` reads
 
     // subscriptions are owned by a project service, so a second run of this activity (project reopened within the
     // same IDE session) does not stack duplicate listeners
@@ -58,16 +52,10 @@ class ElideStartupActivity : ProjectActivity {
         .getLinkedProjectSettings(externalProjectPath)
         ?: ElideProjectSettings().also { it.externalProjectPath = externalProjectPath }
 
-      // NOTE: `ImportSpecBuilder` exists on every supported build, but its `withPreviewMode` setter and the
-      // `linkExternalProject(settings, ImportSpec)` / `refreshProject(path, ImportSpec)` overloads do not (251),
-      // so the deprecated -- but present everywhere -- parameter lists are used instead
       ExternalSystemUtil.linkExternalProject(
-        /* externalSystemId = */ Constants.SYSTEM_ID,
         /* projectSettings = */ projectSettings,
-        /* project = */ project,
-        /* importResultCallback = */ { },
-        /* isPreviewMode = */ false,
-        /* progressExecutionMode = */ ProgressExecutionMode.IN_BACKGROUND_ASYNC,
+        /* importSpec = */ ImportSpecBuilder(project, Constants.SYSTEM_ID)
+          .use(ProgressExecutionMode.IN_BACKGROUND_ASYNC),
       )
     }
   }
@@ -91,13 +79,10 @@ class ElideStartupActivity : ProjectActivity {
         handler = object : ElideSettingsListener {
           // only re-sync the project whose distribution actually changed
           override fun onDistributionChange(linkedProjectPath: String) {
-            @Suppress("DEPRECATION")
             ExternalSystemUtil.refreshProject(
-              /* project = */ project,
-              /* externalSystemId = */ Constants.SYSTEM_ID,
               /* externalProjectPath = */ linkedProjectPath,
-              /* isPreviewMode = */ false,
-              /* progressExecutionMode = */ ProgressExecutionMode.IN_BACKGROUND_ASYNC,
+              /* importSpec = */ ImportSpecBuilder(project, Constants.SYSTEM_ID)
+                .use(ProgressExecutionMode.IN_BACKGROUND_ASYNC),
             )
           }
         },

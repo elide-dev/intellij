@@ -13,6 +13,7 @@
 package dev.elide.intellij.project
 
 import com.intellij.openapi.externalSystem.importing.AbstractOpenProjectProvider
+import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
 import com.intellij.openapi.externalSystem.model.ProjectSystemId
 import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode
 import com.intellij.openapi.externalSystem.service.project.trusted.ExternalSystemTrustedProjectDialog
@@ -35,8 +36,8 @@ import dev.elide.intellij.settings.ElideProjectSettings
   override fun isProjectFile(file: VirtualFile): Boolean = !file.isDirectory && file.name == Constants.MANIFEST_NAME
 
   override suspend fun linkProject(projectFile: VirtualFile, project: Project) {
-    // the directory is derived here rather than through `AbstractOpenProjectProvider.getProjectDirectory`, whose
-    // suspending form only exists from build 253; 251 and 252 declare a blocking one
+    // the directory is derived here rather than through `AbstractOpenProjectProvider.getProjectDirectory`, which is
+    // internal API
     val projectDir = if (projectFile.isDirectory) projectFile else projectFile.parent ?: return
     val projectPath = projectDir.toNioPath()
 
@@ -50,15 +51,10 @@ import dev.elide.intellij.settings.ElideProjectSettings
     val settings = ElideProjectSettings()
     settings.externalProjectPath = projectPath.toCanonicalPath()
 
-    // NOTE: the `ImportSpec` overload of `linkExternalProject` only exists from build 252
-    @Suppress("DEPRECATION")
     ExternalSystemUtil.linkExternalProject(
-      /* externalSystemId = */ Constants.SYSTEM_ID,
       /* projectSettings = */ settings,
-      /* project = */ project,
-      /* importResultCallback = */ { },
-      /* isPreviewMode = */ false,
-      /* progressExecutionMode = */ ProgressExecutionMode.IN_BACKGROUND_ASYNC,
+      /* importSpec = */ ImportSpecBuilder(project, Constants.SYSTEM_ID)
+        .use(ProgressExecutionMode.IN_BACKGROUND_ASYNC),
     )
   }
 }

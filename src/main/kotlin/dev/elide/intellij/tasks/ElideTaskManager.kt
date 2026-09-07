@@ -12,6 +12,7 @@
  */
 package dev.elide.intellij.tasks
 
+import com.intellij.execution.process.ProcessOutputType
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskId
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskNotificationEvent
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskNotificationListener
@@ -54,10 +55,8 @@ class ElideTaskManager : ExternalSystemTaskManager<ElideExecutionSettings> {
           ExternalSystemTaskNotificationEvent(id, Constants.Strings["tasks.executing", arguments.joinToString(" ")]),
         )
 
-        // NOTE: the `ProcessOutputType` overload only exists from build 253 onward
-        @Suppress("DEPRECATION")
         elide(args = arguments.toTypedArray(), environment = settings.env) { line, stderr ->
-          listener.onTaskOutput(id, line, !stderr)
+          listener.onTaskOutput(id, line, if (stderr) ProcessOutputType.STDERR else ProcessOutputType.STDOUT)
         }
       } catch (cause: InvalidElideHomeException) {
         ElideNotifications.notifyInvalidElideHome(id.findProject())

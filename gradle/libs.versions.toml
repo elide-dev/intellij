@@ -3,8 +3,10 @@ buildconfig = "5.6.8"
 buildTimeTracker = "4.3.0"
 
 intellij-platform = "2.16.0"
-intellij-target-ide = "2026.1.1"
-intellij-sinceBuild = "251"
+# the compile target stays on a 261 build: 2026.2 platform classes target JVM 25, which builds 253 to 261 (JBR 21)
+# cannot load
+intellij-target-ide = "2026.1.5"
+intellij-sinceBuild = "253"
 intellij-untilBuild = "262.*"
 
 pkl-plugin = "0.37.0"

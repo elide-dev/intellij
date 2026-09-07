@@ -13,20 +13,19 @@
 package dev.elide.intellij.execution
 
 import com.intellij.execution.Location
-import com.intellij.execution.PsiLocation
 import com.intellij.execution.RunManager
 import com.intellij.execution.RunnerAndConfigurationSettings
 import com.intellij.execution.actions.ConfigurationContext
 import com.intellij.execution.actions.ConfigurationFromContext
 import com.intellij.execution.actions.LazyRunConfigurationProducer
 import com.intellij.execution.configurations.ConfigurationFactory
-import com.intellij.execution.junit.JUnitUtil
 import com.intellij.openapi.progress.ProgressManager
-import com.intellij.openapi.util.io.toCanonicalPath
 import com.intellij.openapi.util.Ref
+import com.intellij.openapi.util.io.toCanonicalPath
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
+import com.intellij.psi.PsiModifier
 import com.intellij.psi.util.ClassUtil
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.execution.ParametersListUtil
@@ -38,6 +37,8 @@ import java.nio.file.Path
 import java.util.regex.Pattern
 import org.jetbrains.kotlin.asJava.toLightClass
 import org.jetbrains.kotlin.asJava.toLightMethods
+import org.jetbrains.kotlin.lexer.KtTokens
+import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
@@ -104,37 +105,82 @@ class ElideJUnitTestConfigurationProducer : LazyRunConfigurationProducer<ElideRu
   }
 
   override fun findExistingConfiguration(context: ConfigurationContext): RunnerAndConfigurationSettings? {
+    // resolving the target walks PSI, so the (usually empty) candidate list is checked first
+    val candidates = getConfigurationSettingsList(RunManager.getInstance(context.project))
+    if (candidates.isEmpty()) return null
+
     val target = findTestTarget(context.location) ?: return null
 
     ProgressManager.checkCanceled()
-    return getConfigurationSettingsList(RunManager.getInstance(context.project)).find { configurationSettings ->
+    return candidates.find { configurationSettings ->
       val configuration = (configurationSettings.configuration as ElideRunConfiguration)
       configuration.entrypointKind == Kind.JvmTest && configuration.entrypointValue == target.entrypointValue
     }
   }
 
-  /** Resolves a JUnit test class or method at [location], covering both Java and Kotlin sources. */
+  /**
+   * Resolves a JUnit test class or method at [location], covering both Java and Kotlin sources.
+   *
+   * Test detection reads annotation names off the source declarations instead of resolving them through
+   * [com.intellij.execution.junit.JUnitUtil]: the platform resolves configurations from context on the EDT during
+   * action updates, and any index or resolve access there trips the "Slow operations are prohibited on EDT"
+   * assertion (and would fail outright while indexing, despite this producer being dumb-aware).
+   */
   private fun findTestTarget(location: Location<*>?): TestTarget? {
     val element = location?.psiElement ?: return null
 
-    // resolve a candidate method/class pair; Kotlin declarations go through their light-class counterparts
-    var method = element.getParentOfType<KtNamedFunction>(strict = false)?.toLightMethods()?.firstOrNull()
-      ?: PsiTreeUtil.getParentOfType(element, PsiMethod::class.java, false)
+    // Kotlin declarations are inspected as Kotlin PSI and only converted to their light counterparts once the target
+    // is known to be a test, since light members are what carry the JVM names used in test ids
+    val ktFunction = element.getParentOfType<KtNamedFunction>(strict = false)
+    val ktClass = element.getParentOfType<KtClassOrObject>(strict = false)
+    val javaMethod = PsiTreeUtil.getParentOfType(element, PsiMethod::class.java, false)
+    val javaClass = javaMethod?.containingClass ?: PsiTreeUtil.getParentOfType(element, PsiClass::class.java, false)
+
+    val isTestClass = ktClass?.let(::isTestClassDeclaration) ?: javaClass?.let(::isTestClassDeclaration) ?: false
+    if (!isTestClass) return null
+
+    // clicks on non-test members inside a test class fall back to a class-level target
+    val method = when {
+      ktFunction != null -> ktFunction.takeIf(::isTestDeclaration)?.toLightMethods()?.firstOrNull()
+      else -> javaMethod?.takeIf(::isTestDeclaration)
+    }
 
     val psiClass = method?.containingClass
-      ?: element.getParentOfType<KtClassOrObject>(strict = false)?.toLightClass()
-      ?: PsiTreeUtil.getParentOfType(element, PsiClass::class.java, false)
+      ?: ktClass?.toLightClass()
+      ?: javaClass
       ?: return null
-
-    if (!JUnitUtil.isTestClass(psiClass)) return null
-    if (method != null && !JUnitUtil.isTestMethod(PsiLocation.fromPsiElement(method))) {
-      // clicks on non-test members inside a test class fall back to a class-level target
-      method = null
-    }
 
     // anonymous and local classes have no JVM class name usable in a test id
     val jvmClassName = ClassUtil.getJVMClassName(psiClass) ?: return null
     return TestTarget(psiClass, method, jvmClassName)
+  }
+
+  /** True if the Kotlin [function] declares a JUnit test annotation. */
+  private fun isTestDeclaration(function: KtNamedFunction): Boolean =
+    function.annotationEntries.any { it.shortName?.asString() in TEST_ANNOTATIONS }
+
+  /** True if the Java [method] declares a JUnit test annotation. */
+  private fun isTestDeclaration(method: PsiMethod): Boolean =
+    method.annotations.any { it.nameReferenceElement?.referenceName in TEST_ANNOTATIONS }
+
+  /** True if the Kotlin [declaration] is a runnable class holding test methods, directly or in a nested class. */
+  private fun isTestClassDeclaration(declaration: KtClassOrObject): Boolean {
+    if (declaration is KtClass && declaration.isInterface()) return false
+    if (declaration.hasModifier(KtTokens.ABSTRACT_KEYWORD)) return false
+
+    return declaration.declarations.any {
+      when (it) {
+        is KtNamedFunction -> isTestDeclaration(it)
+        is KtClassOrObject -> isTestClassDeclaration(it)
+        else -> false
+      }
+    }
+  }
+
+  /** True if the Java [psiClass] is a runnable class holding test methods, directly or in a nested class. */
+  private fun isTestClassDeclaration(psiClass: PsiClass): Boolean {
+    if (psiClass.isInterface || psiClass.hasModifierProperty(PsiModifier.ABSTRACT)) return false
+    return psiClass.methods.any(::isTestDeclaration) || psiClass.innerClasses.any(::isTestClassDeclaration)
   }
 
   /** Returns the external project path of the linked Elide project containing [element], or `null` if none does. */
@@ -155,6 +201,19 @@ class ElideJUnitTestConfigurationProducer : LazyRunConfigurationProducer<ElideRu
   }
 
   internal companion object {
+    /**
+     * Simple names of the annotations marking a JUnit test method, covering JUnit 4 (`org.junit.Test`) and the
+     * JUnit 5 method kinds. Names are matched textually: resolving them would pull in the stub indices, which is
+     * prohibited on the EDT where the platform resolves configurations from context.
+     */
+    private val TEST_ANNOTATIONS = setOf(
+      "Test",
+      "ParameterizedTest",
+      "RepeatedTest",
+      "TestFactory",
+      "TestTemplate",
+    )
+
     /**
      * Builds the `--test-name-pattern` regex matching the JVM test id `pkg.Class#method` for [jvmClassName] and an
      * optional [methodName]; class-level patterns also cover `@Nested` classes via the `$` separator. Verified

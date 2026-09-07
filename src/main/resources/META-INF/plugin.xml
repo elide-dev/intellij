@@ -79,6 +79,12 @@
          the Debug executor, and ProgramRunner.getRunner takes the first match in extension order -->
     <programRunner implementation="dev.elide.intellij.execution.ElideDebugRunner" order="first"/>
 
+    <!-- the resolver and task manager run in the IDE process rather than a forked one, so they can use the full
+         platform API; `ExternalSystemApiUtil.isInProcessMode` reads exactly this key -->
+    <registryKey key="ELIDE.system.in.process"
+                 defaultValue="true"
+                 description="Run Elide project resolution and tasks inside the IDE process"/>
+
     <externalSystemUnlinkedProjectAware implementation="dev.elide.intellij.project.ElideUnlinkedProjectAware"/>
     <externalIconProvider key="ELIDE" implementationClass="dev.elide.intellij.ui.ElideIconProvider"/>
     <postStartupActivity implementation="dev.elide.intellij.startup.ElideStartupActivity"/>
