@@ -12,7 +12,7 @@
  */
 
 import org.jetbrains.intellij.platform.gradle.CustomPluginRepositoryType
-import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
 
 plugins {
   alias(libs.plugins.kotlin.jvm)
@@ -39,24 +39,50 @@ repositories {
     defaultRepositories()
   }
 
-  maven {
-    name = "elide-snapshots"
-    url = uri("https://maven.elide.dev")
-    content {
-      includeGroup("dev.elide")
-      includeGroup("org.pkl-lang")
+  mavenCentral()
+}
+
+fun renderChangelogSection(changelog: String, version: String): String {
+  val lines = changelog.lines()
+  val headings = lines.withIndex().filter { it.value.startsWith("## ") }
+  val start = headings.firstOrNull { it.value.startsWith("## [$version]") }
+    ?: headings.firstOrNull { it.value.startsWith("## [Unreleased]") }
+    ?: error("CHANGELOG.md has no section for $version, and no Unreleased section to fall back to")
+  val end = headings.firstOrNull { it.index > start.index }?.index ?: lines.size
+
+  // fold the section into blocks first: bullets wrap across lines, and only their joined text can be rendered
+  val blocks = mutableListOf<Pair<String, String>>()
+  for (raw in lines.subList(start.index + 1, end)) {
+    val line = raw.trim()
+    when {
+      line.isEmpty() -> Unit
+      line.startsWith("### ") -> blocks += "h" to line.removePrefix("### ")
+      line.startsWith("- ") -> blocks += "li" to line.removePrefix("- ")
+      blocks.lastOrNull()?.first == "li" -> blocks += "li" to "${blocks.removeAt(blocks.lastIndex).second} $line"
+      else -> blocks += "p" to line
     }
   }
 
-  maven {
-    name = "oss-snapshots"
-    url = uri("https://oss.sonatype.org/content/repositories/snapshots")
-    content { includeGroup("dev.elide") }
-  }
+  fun inline(text: String) = text
+    .replace("&", "&amp;")
+    .replace("<", "&lt;")
+    .replace(">", "&gt;")
+    .replace(Regex("`([^`]+)`"), "<code>$1</code>")
+    .replace(Regex("""\[([^]]+)]\(([^)]+)\)"""), """<a href="$2">$1</a>""")
 
-  mavenLocal()
-  mavenCentral()
-  google()
+  return buildString {
+    var inList = false
+    fun closeList() = if (inList) append("</ul>").also { inList = false } else this
+    for ((kind, text) in blocks) when (kind) {
+      "h" -> closeList().append("<p><b>${inline(text)}</b></p>")
+      "li" -> {
+        if (!inList) append("<ul>").also { inList = true }
+        append("<li>${inline(text)}</li>")
+      }
+      else -> closeList().append("<p>${inline(text)}</p>")
+    }
+    closeList()
+  }
 }
 
 dependencies {
@@ -75,6 +101,12 @@ dependencies {
   }
 }
 
+configurations.runtimeClasspath {
+  // provided by intellij
+  exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
+  exclude(group = "org.jetbrains", module = "annotations")
+}
+
 // The manifest decoding tests are plain JVM tests over the generated model, so the IntelliJ platform test framework
 // is deliberately absent from the test classpath: its JUnit `LauncherSessionListener` requires a running IDE test
 // harness and fails to instantiate outside one.
@@ -91,13 +123,23 @@ intellijPlatform {
       untilBuild = libs.versions.intellij.untilBuild.get()
     }
 
-    changeNotes = "Initial release."
+    // `project.version` is qualified on purpose: inside this block, a bare `version` resolves to the plugin
+    // configuration's own `version` property, not the project's
+    changeNotes = providers.fileContents(layout.projectDirectory.file("CHANGELOG.md")).asText.map { changelog ->
+      renderChangelogSection(changelog, project.version.toString())
+    }
   }
 
   pluginVerification {
     ides {
       recommended()
     }
+
+    failureLevel = listOf(
+      FailureLevel.COMPATIBILITY_WARNINGS,
+      FailureLevel.COMPATIBILITY_PROBLEMS,
+      FailureLevel.INVALID_PLUGIN,
+    )
   }
 
   signing {
@@ -108,6 +150,11 @@ intellijPlatform {
 
   publishing {
     token = providers.environmentVariable("ELIDE_JB_TOKEN")
+
+    channels = provider {
+      // derive channel from the version qualifier
+      listOf(version.toString().substringAfter('-', "").substringBefore('.').ifEmpty { "default" })
+    }
   }
 }
 

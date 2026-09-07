@@ -28,8 +28,39 @@ jobs:
       - name: Install xmllint
         run: sudo apt-get install -y libxml2-utils
 
+      - name: Verify plugin project configuration
+        run: ./gradlew verifyPluginProjectConfiguration
+
       - name: Build plugin distribution
         run: ./gradlew buildPlugin
+
+      - name: Run IntelliJ Plugin Verifier
+        run: ./gradlew verifyPlugin
+
+      - name: Extract release notes
+        run: tools/changelog-section.sh "${GITHUB_REF_NAME#v}" > release-notes.md
+
+      - name: Detect publishing credentials
+        id: credentials
+        env:
+          TOKEN: ${{ secrets.ELIDE_JB_TOKEN }}
+          CERT_CHAIN: ${{ secrets.ELIDE_JB_CERT_CHAIN }}
+        run: |
+          if [[ -n "$TOKEN" && -n "$CERT_CHAIN" ]]; then
+            echo "marketplace=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "marketplace=no" >> "$GITHUB_OUTPUT"
+            echo "::warning::Marketplace credentials are not configured; skipping publication to JetBrains Marketplace"
+          fi
+
+      - name: Publish plugin to JetBrains Marketplace
+        if: steps.credentials.outputs.marketplace == 'yes'
+        run: ./gradlew publishPlugin
+        env:
+          ELIDE_JB_TOKEN: ${{ secrets.ELIDE_JB_TOKEN }}
+          ELIDE_JB_CERT_CHAIN: ${{ secrets.ELIDE_JB_CERT_CHAIN }}
+          ELIDE_JB_KEY: ${{ secrets.ELIDE_JB_KEY }}
+          ELIDE_JB_KEY_PASSWORD: ${{ secrets.ELIDE_JB_KEY_PASSWORD }}
 
       - name: Publish plugin to Elide repository
         run: tools/deploy.sh
@@ -41,4 +72,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: build/distributions/*.zip
-          generate_release_notes: true
+          body_path: release-notes.md

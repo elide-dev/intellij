@@ -16,6 +16,9 @@ import com.intellij.openapi.externalSystem.service.settings.AbstractExternalProj
 import com.intellij.openapi.externalSystem.util.ExternalSystemUiUtil
 import com.intellij.openapi.externalSystem.util.PaintAwarePanel
 import com.intellij.openapi.ui.DialogPanel
+import com.intellij.openapi.ui.TextComponentAccessor
+import com.intellij.openapi.ui.TextFieldWithBrowseButton
+import com.intellij.ui.components.installFileCompletionAndBrowseDialog
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
@@ -31,7 +34,7 @@ import javax.swing.ListCellRenderer
  *
  * @see ElideConfigurable
  */
-@Suppress("UnstableApiUsage") class ElideProjectSettingsControl(
+class ElideProjectSettingsControl(
   initialSettings: ElideProjectSettings
 ) : AbstractExternalProjectSettingsControl<ElideProjectSettings>(initialSettings) {
   private lateinit var projectControls: DialogPanel
@@ -45,7 +48,23 @@ import javax.swing.ListCellRenderer
         val distributionTypeBox = comboBox(ElideDistributionSetting.entries, DistributionTypeRenderer)
           .bindItem(::distributionType) { distributionType = it ?: ElideDistributionSetting.AutoDetect }
 
-        textFieldWithBrowseButton(Constants.sdkFileChooser(), null) { it.path }
+        // this is what the `Row.textFieldWithBrowseButton` shorthand does; that shorthand is experimental on every
+        // supported build, while the component API behind it is stable (see `docs/PLATFORM_APIS.md`)
+        val distributionPathField = TextFieldWithBrowseButton().apply {
+          isOpaque = false
+          textField.isOpaque = false
+
+          installFileCompletionAndBrowseDialog(
+            /* project = */ null,
+            /* component = */ this,
+            /* textField = */ textField,
+            /* fileChooserDescriptor = */ Constants.sdkFileChooser(),
+            /* textComponentAccessor = */ TextComponentAccessor.TEXT_FIELD_WHOLE_TEXT,
+            /* fileChosen = */ { it.path },
+          )
+        }
+
+        cell(distributionPathField)
           .bindText(getter = { distributionPath }, setter = { distributionPath = it })
           .visibleIf(distributionTypeBox.component.selectedValueIs(ElideDistributionSetting.Custom))
 

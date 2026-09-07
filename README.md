@@ -1,5 +1,8 @@
 # Elide IntelliJ Plugin
 
+[![CI](https://github.com/elide-dev/intellij/actions/workflows/ci.yml/badge.svg)](https://github.com/elide-dev/intellij/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 JetBrains IDE integration for the [Elide](https://elide.dev) runtime and build tooling.
 
 The plugin registers Elide as an IDE *external system*: an Elide project (`elide.pkl`) is imported like a Gradle or
@@ -22,6 +25,9 @@ https://plugins.elide.dev/intellij
 ```
 
 Then install **Elide** from the marketplace tab.
+
+Plugin ZIPs are also attached to every [GitHub release](https://github.com/elide-dev/intellij/releases) and can be
+installed with **Settings → Plugins → ⚙ → Install Plugin from Disk**.
 
 ## Importing a project
 
@@ -94,10 +100,13 @@ Auto-detection uses `$ELIDE_HOME` if set, otherwise the first existing candidate
 ## Building
 
 ```bash
-./gradlew buildPlugin
+./gradlew buildPlugin      # plugin ZIP -> build/distributions/
+./gradlew runIde           # sandboxed IDE with the plugin installed
+make verify                # descriptor checks + IntelliJ Plugin Verifier
 ```
 
-The plugin ZIP is written to `build/distributions/`.
+Development setup, verification expectations, and the repository layout are documented in
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Manifest schema codegen
 
@@ -112,16 +121,28 @@ tools/codegen.sh          # or: make codegen
 
 ## Release workflow
 
-Releases are triggered by pushing a version tag. Steps:
+Releases are triggered by pushing a version tag:
 
-1. Update `.version` with the new version (e.g. `0.6.0`)
-2. Commit: `chore: bump version to 0.6.0`
-3. Tag and push:
+1. `make bump [major|minor|patch]` — validates that `CHANGELOG.md` has an `Unreleased` section, dates it under the new
+   version, writes `.version`, commits, and tags locally.
+2. Push the commit and tag:
    ```bash
-   git tag v0.6.0 && git push origin v0.6.0
+   git push origin HEAD v0.8.0
    ```
-4. The `Release` workflow builds the plugin, publishes it to the Elide plugin repository, and creates a GitHub Release
-   with auto-generated notes and the plugin ZIP attached.
+3. The `Release` workflow builds and verifies the plugin, publishes it to the JetBrains Marketplace and the Elide plugin
+   repository, and creates a GitHub Release whose notes are the changelog section for that version.
 
-**Commit convention:** commits should follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`,
-`fix:`, `chore:`, etc.). A commitlint check enforces this on every PR.
+**Commit convention:** commits follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`,
+`chore:`, etc.). A commitlint check enforces this on every PR.
+
+## Project documents
+
+- [CHANGELOG.md](CHANGELOG.md) — release notes, and the source of the plugin's change notes
+- [CONTRIBUTING.md](CONTRIBUTING.md) — development setup and contribution workflow
+- [SECURITY.md](SECURITY.md) — vulnerability reporting
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community expectations
+- [docs/PLATFORM_APIS.md](docs/PLATFORM_APIS.md) — experimental, internal and deprecated platform APIs the plugin uses
+
+## License
+
+MIT — see [LICENSE](LICENSE).

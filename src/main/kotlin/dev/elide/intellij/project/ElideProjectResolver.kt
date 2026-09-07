@@ -73,6 +73,8 @@ class ElideProjectResolver : ExternalSystemProjectResolver<ElideExecutionSetting
     return true
   }
 
+  // `ProjectResolverPolicy` and this overload of `resolveProjectInfo` are experimental, and there is no stable way
+  // to implement an external system resolver; see `docs/PLATFORM_APIS.md`
   @Suppress("UnstableApiUsage")
   override fun resolveProjectInfo(
     id: ExternalSystemTaskId,

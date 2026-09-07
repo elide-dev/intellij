@@ -1,0 +1,65 @@
+name: Bug report
+description: Report incorrect or unexpected behavior in the Elide plugin
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a report. Please do not use this form for security issues — see
+        [SECURITY.md](https://github.com/elide-dev/intellij/blob/main/SECURITY.md).
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Settings | Plugins | Elide
+      placeholder: "0.7.0"
+    validations:
+      required: true
+  - type: input
+    id: ide
+    attributes:
+      label: IDE and build
+      description: Help | About, "Copy" button
+      placeholder: "IntelliJ IDEA 2026.1.1 (Ultimate Edition), build IU-261.23567.138"
+    validations:
+      required: true
+  - type: input
+    id: elide-version
+    attributes:
+      label: Elide CLI version
+      description: Output of `elide --version`
+      placeholder: "1.5.1"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 15.5 (arm64)"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the relevant part of the `elide.pkl` manifest when the problem involves project sync.
+      placeholder: |
+        1. Open a project containing …
+        2. Run …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include stack traces or the relevant excerpt from Help | Show Log in Finder/Explorer.
+      render: text
+    validations:
+      required: true

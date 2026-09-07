@@ -23,7 +23,12 @@ import com.intellij.openapi.vfs.VirtualFile
 import dev.elide.intellij.Constants
 import dev.elide.intellij.settings.ElideProjectSettings
 
-/** Service used to link an Elide project with the IDE, enabling auto-import, sync, and other features. */
+/**
+ * Service used to link an Elide project with the IDE, enabling auto-import, sync, and other features.
+ *
+ * The base class is experimental across the whole supported build range, and is the only entry point for linking an
+ * external system project; see `docs/PLATFORM_APIS.md`.
+ */
 @Suppress("UnstableApiUsage") class ElideOpenProjectProvider : AbstractOpenProjectProvider() {
   override val systemId: ProjectSystemId = Constants.SYSTEM_ID
 
@@ -31,7 +36,7 @@ import dev.elide.intellij.settings.ElideProjectSettings
 
   override suspend fun linkProject(projectFile: VirtualFile, project: Project) {
     // the directory is derived here rather than through `AbstractOpenProjectProvider.getProjectDirectory`, whose
-    // suspending form does not exist across the whole supported build range (251+)
+    // suspending form only exists from build 253; 251 and 252 declare a blocking one
     val projectDir = if (projectFile.isDirectory) projectFile else projectFile.parent ?: return
     val projectPath = projectDir.toNioPath()
 
@@ -45,7 +50,7 @@ import dev.elide.intellij.settings.ElideProjectSettings
     val settings = ElideProjectSettings()
     settings.externalProjectPath = projectPath.toCanonicalPath()
 
-    // NOTE: the `ImportSpec` overload of `linkExternalProject` is not available on every supported build
+    // NOTE: the `ImportSpec` overload of `linkExternalProject` only exists from build 252
     @Suppress("DEPRECATION")
     ExternalSystemUtil.linkExternalProject(
       /* externalSystemId = */ Constants.SYSTEM_ID,

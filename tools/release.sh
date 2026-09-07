@@ -52,19 +52,37 @@ while IFS= read -r msg; do echo "  $msg"; done <<< "$COMMITS"
 echo ""
 echo "Detected bump: $BUMP  →  $CURRENT_VERSION → $NEW_VERSION"
 echo ""
+# the released version's change notes come from the changelog, so refuse to cut a release with an empty Unreleased
+# section: the plugin would be published with the previous version's notes, or none at all
+UNRELEASED=$(awk '/^## \[Unreleased\]/ { found = 1; next } found && /^## / { exit } found { print }' CHANGELOG.md)
+if [[ -z "$(printf '%s' "$UNRELEASED" | tr -d '[:space:]')" ]]; then
+  echo "Error: the '## [Unreleased]' section of CHANGELOG.md is empty; describe the release before tagging it." >&2
+  exit 1
+fi
+
 echo "Will:"
 echo "  1. Write $NEW_VERSION to .version"
-echo "  2. Commit: chore: bump version to $NEW_VERSION"
-echo "  3. Tag: v$NEW_VERSION"
+echo "  2. Move the CHANGELOG.md 'Unreleased' section under '[$NEW_VERSION]'"
+echo "  3. Commit: chore: release v$NEW_VERSION"
+echo "  4. Tag: v$NEW_VERSION"
 if [[ "$PUSH" == true ]]; then
-echo "  4. Push commit and tag to origin"
+echo "  5. Push commit and tag to origin"
 fi
 echo ""
 read -rp "Proceed? [y/N] " reply
 [[ "$reply" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 0; }
 
 echo "$NEW_VERSION" > .version
-git add .version
+
+# open a fresh, empty Unreleased section and date the released one
+RELEASE_DATE=$(date +%Y-%m-%d)
+awk -v heading="## [$NEW_VERSION] - $RELEASE_DATE" '
+  /^## \[Unreleased\]/ { print; print ""; print heading; next }
+  { print }
+' CHANGELOG.md > CHANGELOG.md.tmp
+mv CHANGELOG.md.tmp CHANGELOG.md
+
+git add .version CHANGELOG.md
 git commit -m "chore: release v$NEW_VERSION" -m "[skip ci]"
 git tag "v$NEW_VERSION"
 

@@ -31,7 +31,12 @@ import org.jetbrains.kotlin.idea.base.codeInsight.findMainOwner
 import org.jetbrains.kotlin.idea.run.KotlinRunConfigurationProducer.Companion.getMainClassJvmName
 import org.jetbrains.kotlin.psi.KtDeclarationContainer
 
-/** Extension responsible for providing "run from gutter icon" configurations for main JVM entrypoints. */
+/**
+ * Extension responsible for providing "run from gutter icon" configurations for main JVM entrypoints.
+ *
+ * Kotlin `main` detection uses Kotlin plugin internals (`KotlinMainFunctionDetector`, `getMainClassJvmName`), which
+ * have no public equivalent; see `docs/PLATFORM_APIS.md`.
+ */
 @Suppress("UnstableApiUsage") class ElideJvmMainConfigurationProducer :
   LazyRunConfigurationProducer<ElideRunConfiguration>() {
   override fun isDumbAware(): Boolean = true

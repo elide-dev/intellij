@@ -14,20 +14,35 @@
 <idea-plugin>
   <id>dev.elide</id>
   <name>Elide</name>
-  <vendor url="https://elide.dev">Elide Technologies Inc.</vendor>
+  <vendor url="https://elide.dev" email="engineering@elide.dev">Elide Technologies Inc.</vendor>
 
   <description><![CDATA[
-    <a href=https://github.com/elide-dev/elide>Elide</a> is a fast batteries-included runtime, with support for
-    Kotlin, JavaScript, TypeScript, and Python. This plugin adds support for the following features:
+    <p>
+      IDE integration for <a href="https://elide.dev">Elide</a>, a fast batteries-included runtime and build tool with
+      support for Kotlin, Java, JavaScript, TypeScript, and Python.
+    </p>
+    <p>
+      A directory containing an <code>elide.pkl</code> manifest is imported like any other external build system: its
+      dependencies become IDE libraries, and Elide commands run from the IDE with completion, console output, and
+      debugger support.
+    </p>
     <ul>
-      <li>Import Elide projects in the IDE (currently only for Kotlin/JVM)</li>
-      <li>Install dependencies on project sync, with support for sources and documentation</li>
-      <li>Run configurations for entry points declared in the Elide project manifest</li>
-      <li>Run main entry points from the gutter in JVM projects</li>
-      <li>Debug JVM entry points with the IDE's Java debugger, over the CLI's JDWP server</li>
-      <li>Run common Elide tasks from the IDE (`build`, `install`, `run`)</li>
-      <li>Use a custom Elide distribution for running tasks</li>
+      <li>Import and sync Elide projects, including dependency sources and documentation</li>
+      <li>Run configurations for entrypoints declared in the project manifest, with command line completion</li>
+      <li>Run and debug JVM <code>main</code> functions and JUnit tests from the editor gutter</li>
+      <li>Attach the IDE's Java debugger to the CLI's JDWP server</li>
+      <li>Run Elide commands ad hoc through Run Anything</li>
+      <li>Select the Elide distribution used per project</li>
     </ul>
+    <p>
+      Manifest editing features (completion, navigation and inspections inside <code>elide.pkl</code>) additionally
+      require the Pkl language plugin; a forked version with enhanced Elide compatibility is available from the Elide
+      plugin repository at <code>https://plugins.elide.dev/intellij</code>, for the original see
+      <code>https://pkl-lang.org/intellij/current/installation.html</code>.
+    </p>
+    <p>
+      Source code and issue tracker: <a href="https://github.com/elide-dev/intellij">elide-dev/intellij</a>.
+    </p>
   ]]></description>
 
   <depends>com.intellij.modules.platform</depends>
