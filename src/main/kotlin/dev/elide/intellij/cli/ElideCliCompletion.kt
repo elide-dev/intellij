@@ -89,12 +89,6 @@ object ElideCliCompletion {
       .flatMap { it.variants(includeShort) }
   }
 
-  /** Returns the flags accepted by this invocation's command, or the root ones when it names none. */
-  private fun ElideCli.Invocation.applicableFlags(): List<ElideCli.Flag> {
-    val declared = command?.flags ?: ElideCli.ROOT_ONLY_FLAGS
-    return (declared + ElideCli.GLOBAL_FLAGS).distinct()
-  }
-
   /** Returns whether the last token is a flag whose value is the word currently being completed. */
   private fun List<String>.endsWithFlagValue(invocation: ElideCli.Invocation): Boolean {
     val last = lastOrNull() ?: return false

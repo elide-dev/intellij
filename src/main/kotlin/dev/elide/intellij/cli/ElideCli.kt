@@ -113,7 +113,14 @@ object ElideCli {
     val commandIndex: Int,
     /** Index of the first standalone `--` in the argument vector, or `-1` when there is none. */
     val passthroughIndex: Int,
-  )
+  ) {
+    /**
+     * Returns the flags this invocation accepts: those its command declares, plus the global ones.
+     *
+     * A vector naming no command is a root invocation, which accepts [ROOT_ONLY_FLAGS] instead of a command's own.
+     */
+    fun applicableFlags(): List<Flag> = ((command?.flags ?: ROOT_ONLY_FLAGS) + GLOBAL_FLAGS).distinct()
+  }
 
   /** Separator after which arguments belong to the program or tool being invoked, rather than to Elide. */
   const val PASSTHROUGH = "--"
@@ -254,6 +261,14 @@ object ElideCli {
     descriptionKey = "cli.flag.test-name-pattern",
   )
 
+  /** Flag for `elide test` selecting which reporter the run emits its results through. */
+  val REPORTER: Flag = Flag(
+    long = "reporter",
+    value = FlagValue.REQUIRED,
+    values = listOf("console", "junit", "tap"),
+    descriptionKey = "cli.flag.reporter",
+  )
+
   /** Flags the CLI declares as global: they are accepted before and after the command. */
   val GLOBAL_FLAGS: List<Flag> = listOf(
     PROJECT_PATH,
@@ -373,12 +388,7 @@ object ElideCli {
       Flag("test-timeout", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.test-timeout"),
       Flag("only", descriptionKey = "cli.flag.only"),
       Flag("concurrency", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.concurrency"),
-      Flag(
-        long = "reporter",
-        value = FlagValue.REQUIRED,
-        values = listOf("console", "junit"),
-        descriptionKey = "cli.flag.reporter",
-      ),
+      REPORTER,
       Flag("reporter-outfile", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.reporter-outfile"),
     ),
     descriptionKey = "cli.command.test",
@@ -499,5 +509,26 @@ object ElideCli {
     }
 
     return Invocation(null, -1, passthroughIndex)
+  }
+
+  /**
+   * Returns the index in [args] of the token naming [flag] among the arguments [invocation]'s command parses, or
+   * `-1` when the flag is absent from them.
+   */
+  fun flagIndex(args: List<String>, invocation: Invocation, flag: Flag): Int {
+    val flags = invocation.applicableFlags()
+    val end = if (invocation.passthroughIndex >= 0) invocation.passthroughIndex else args.size
+
+    var index = invocation.commandIndex + 1
+    while (index < end) {
+      val token = args[index]
+      if (flag.matches(token)) return index
+
+      // a flag such as `--reporter tap` hides its value in the next token, which names no flag of its own
+      if (flags.any { it.takesNextToken(token) }) index++
+      index++
+    }
+
+    return -1
   }
 }

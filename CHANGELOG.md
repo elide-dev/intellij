@@ -15,6 +15,10 @@ Marketplace, so entries must be user-facing and free of internal jargon.
 - **New Project wizard for Elide projects.** *File > New > Project > Elide* lists the project templates the selected
   Elide distribution ships — the same ones `elide init` offers — asks for their options, and generates and imports the
   project. Requires an Elide release whose CLI supports `elide init --templates --json`.
+- **Test results for `elide test`.** Test runs now report into the IDE's test runner instead of the console. The CLI's
+  own log goes to the Build window. The tree is fed by the CLI's TAP reporter, which the run is launched with, so it
+  requires Elide 1.5.2 or newer; naming `--reporter=console` or `--reporter=junit` on the command line keeps that
+  reporter's console output instead.
 
 ### Changed
 
@@ -45,8 +49,8 @@ Marketplace, so entries must be user-facing and free of internal jargon.
 
 - Debugging for JVM entrypoint run configurations, over the Elide CLI's JDWP server (`elide run --debugger`).
 - Run configuration producer and gutter actions for JUnit test classes and methods in linked Elide projects.
-- Command-line completion matching the Elide 1.5 CLI: commands, positional arguments, and global and per-command
-  options with their short forms and enumerated values.
+- Command-line completion matching the Elide 1.5 CLI: commands, positional arguments, and global and per-command options
+  with their short forms and enumerated values.
 - The manifest model is generated from Elide's published Pkl schema, and the schema mirror is drift-checked in CI.
 
 ### Fixed

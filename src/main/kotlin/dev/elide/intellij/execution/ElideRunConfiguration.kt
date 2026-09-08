@@ -16,11 +16,13 @@ import com.intellij.execution.Executor
 import com.intellij.execution.configurations.ConfigurationFactory
 import com.intellij.execution.configurations.RunProfileState
 import com.intellij.execution.configurations.RuntimeConfigurationError
+import com.intellij.execution.executors.DefaultDebugExecutor
 import com.intellij.execution.runners.ExecutionEnvironment
 import com.intellij.execution.target.LanguageRuntimeType
 import com.intellij.execution.target.TargetEnvironmentAwareRunProfile
 import com.intellij.execution.target.TargetEnvironmentConfiguration
 import com.intellij.openapi.externalSystem.service.execution.ExternalSystemRunConfiguration
+import com.intellij.openapi.externalSystem.service.execution.ExternalSystemRunnableState
 import com.intellij.openapi.project.Project
 import com.intellij.util.execution.ParametersListUtil
 import dev.elide.intellij.Constants
@@ -98,15 +100,26 @@ class ElideRunConfiguration(
   override fun getState(executor: Executor, env: ExecutionEnvironment): RunProfileState? {
     // keyed on the runner rather than the executor: only ElideDebugRunner knows how to attach to the JDWP server the
     // debugger flag starts, and the platform's own debug runner needs the state it builds itself
-    if (ElideDebugRunner.RUNNER_ID != env.runner.runnerId) return super.getState(executor, env)
+    if (ElideDebugRunner.RUNNER_ID == env.runner.runnerId) {
+      // the debugger flag is added to a *copy* of the settings: the command line the user typed is persisted as-is,
+      // and re-running the same configuration without the debugger must not inherit the flag
+      val debugSettings = settings.clone().apply { taskNames = debuggerCommandLine(taskNames) }
 
-    // the debugger flag is added to a *copy* of the settings: the command line the user typed is persisted as-is, and
-    // re-running the same configuration without the debugger must not inherit the flag
-    val debugSettings = settings.clone().apply { taskNames = debuggerCommandLine(taskNames) }
+      // `debug = false` keeps the platform from allocating the debug port and fork socket its own debug runner needs;
+      // ElideDebugRunnableState brings the connection the CLI's JDWP server expects instead
+      return ElideDebugRunnableState(debugSettings, project, this, env).also { copyUserDataTo(it) }
+    }
 
-    // `debug = false` keeps the platform from allocating the debug port and fork socket its own debug runner needs;
-    // ElideDebugRunnableState brings the connection the CLI's JDWP server expects instead
-    return ElideDebugRunnableState(debugSettings, project, this, env).also { copyUserDataTo(it) }
+    // a test run streams TAP so ElideTestsExecutionConsoleManager can render it as a test tree; like the debugger
+    // flag this goes on a copy of the settings, leaving the persisted command line as the user wrote it
+    val tapCommandLine = tapCommandLine(settings.taskNames) ?: return super.getState(executor, env)
+    val tapSettings = settings.clone().apply { taskNames = tapCommandLine }
+
+    // the debug flag mirrors the platform's own reading of the executor: this state differs from the one
+    // `super.getState` builds only in the command line it runs
+    val debug = DefaultDebugExecutor.EXECUTOR_ID == executor.id
+
+    return ExternalSystemRunnableState(tapSettings, project, debug, this, env).also { copyUserDataTo(it) }
   }
 
   override fun readExternal(element: Element) {
@@ -178,5 +191,56 @@ class ElideRunConfiguration(
         null -> true
       }
     }
+
+    /**
+     * Returns [taskNames] with the TAP reporter selected, or `null` when the command line is not a test run the
+     * IDE should take over the console of.
+     *
+     * A command line that already names a reporter to `test` is left alone, whichever one it names: the user asked
+     * for that output, and `--reporter=tap` typed by hand is honoured the same way, so both reach the test tree. A
+     * `--reporter` past the `--` separator belongs to the test runner and does not count as one.
+     */
+    fun tapCommandLine(taskNames: List<String>): List<String>? {
+      val invocation = ElideCli.parse(taskNames)
+      if (invocation.command != ElideCli.TEST) return null
+      if (reporter(taskNames, invocation) != null) return null
+
+      // the flag belongs to `test`, so it lands right after it, before any path narrowing the run and before the
+      // `--` separator, where the CLI would hand it to the test runner instead
+      val option = "${ElideCli.REPORTER.longOption}=$TAP_REPORTER"
+      return taskNames.toMutableList().apply { add(invocation.commandIndex + 1, option) }
+    }
+
+    /** Returns whether a run of [taskNames] streams TAP 13 on standard output. */
+    fun emitsTap(taskNames: List<String>): Boolean {
+      val invocation = ElideCli.parse(taskNames)
+
+      return invocation.command == ElideCli.TEST && reporter(taskNames, invocation) == TAP_REPORTER
+    }
+
+    /**
+     * The reporter [taskNames] selects, in either the attached or the separated form, or `null` for none.
+     *
+     * Only the reporter Elide itself parses counts: [ElideCli.flagIndex] ignores a `--reporter` sitting past the
+     * `--` separator, which the CLI forwards to the test runner, and one standing as another flag's value.
+     *
+     * A `--reporter` with no value token behind it reads as the empty reporter, the value its attached form
+     * `--reporter=` carries. The CLI rejects either way of writing it, but the flag is named, and answering `null`
+     * for it would have [tapCommandLine] add a second `--reporter` to a command line that already shows one.
+     */
+    private fun reporter(taskNames: List<String>, invocation: ElideCli.Invocation): String? {
+      val index = ElideCli.flagIndex(taskNames, invocation, ElideCli.REPORTER)
+      if (index < 0) return null
+
+      val option = checkNotNull(ElideCli.REPORTER.longOption)
+      val token = taskNames[index]
+      // the separated form keeps its value in the next token, which a `--reporter` last on the line does not have
+      if (token == option) return taskNames.getOrNull(index + 1) ?: ""
+
+      return token.substringAfter('=')
+    }
+
+    /** Value of `--reporter` that makes the CLI stream TAP 13 on standard output. */
+    private const val TAP_REPORTER = "tap"
   }
 }

@@ -30,6 +30,7 @@
       <li>Import and sync Elide projects, including dependency sources and documentation</li>
       <li>Run configurations for entrypoints declared in the project manifest, with command line completion</li>
       <li>Run and debug JVM <code>main</code> functions and JUnit tests from the editor gutter</li>
+      <li>Report <code>elide test</code> runs in the IDE's test runner, with jump-to-source for JVM tests</li>
       <li>Attach the IDE's Java debugger to the CLI's JDWP server</li>
       <li>Run Elide commands ad hoc through Run Anything</li>
       <li>Select the Elide distribution used per project</li>
@@ -78,6 +79,10 @@
     <!-- `order="first"`: the platform's ExternalSystemTaskDebugRunner claims every ExternalSystemRunConfiguration for
          the Debug executor, and ProgramRunner.getRunner takes the first match in extension order -->
     <programRunner implementation="dev.elide.intellij.execution.ElideDebugRunner" order="first"/>
+
+    <!-- renders `elide test` runs as a test tree, decoding the CLI's TAP 13 stream -->
+    <externalSystemExecutionConsoleManager
+            implementation="dev.elide.intellij.execution.test.ElideTestsExecutionConsoleManager"/>
 
     <!-- the resolver and task manager run in the IDE process rather than a forked one, so they can use the full
          platform API; `ExternalSystemApiUtil.isInProcessMode` reads exactly this key -->

@@ -50,6 +50,19 @@ class ElideCliTest {
     assertNull(ElideCli.parse(listOf("--", "run")).command)
   }
 
+  @Test fun `flag lookup ignores passthrough arguments and other flags' values`() {
+    val runnerArgs = listOf("test", "-t", "--reporter=tap", "--", "--reporter=junit")
+    val invocation = ElideCli.parse(runnerArgs)
+
+    // `-t` takes the following token as its pattern, and everything past `--` goes to the test runner, so neither
+    // `--reporter` here is one the `test` command reads
+    assertEquals(-1, ElideCli.flagIndex(runnerArgs, invocation, ElideCli.REPORTER))
+    assertEquals(1, ElideCli.flagIndex(runnerArgs, invocation, ElideCli.TEST_NAME_PATTERN))
+
+    val chosen = listOf("-p", "./app", "test", "src/api", "--reporter", "junit")
+    assertEquals(4, ElideCli.flagIndex(chosen, ElideCli.parse(chosen), ElideCli.REPORTER))
+  }
+
   @Test fun `flag matching covers every form the CLI accepts`() {
     assertTrue(ElideCli.TEST_NAME_PATTERN.matches("--test-name-pattern"))
     assertTrue(ElideCli.TEST_NAME_PATTERN.matches("--test-name-pattern=abc"))

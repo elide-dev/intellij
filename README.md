@@ -63,6 +63,18 @@ Run and debug icons appear in the gutter for:
 - Kotlin and Java `main` functions whose class is an entrypoint of a linked Elide project.
 - JUnit test classes and methods in a linked Elide project.
 
+### Test results
+
+An `elide test` run configuration shows its results in the IDE's test runner instead of plain console output: a tree of
+suites and tests with pass, fail and skip states, per-test timings and captured output, filtering, sorting and
+jump-to-source for JVM tests reported under their class and method names (a method renamed by `@DisplayName` carries no
+source location and is not navigable).
+
+The test invocation's build output goes to the **Build** tool window rather than into the test tree.
+
+> The tree is fed by the CLI's TAP reporter: the plugin runs `elide test --reporter=tap`, manually requesting
+> `--reporter=console` or `--reporter=junit` keeps that reporter's own console output and no test tree.
+
 ## Debugging
 
 Run configurations offered by the plugin can be debugged using Elide's own JDWP support. The IDE will launch the Elide

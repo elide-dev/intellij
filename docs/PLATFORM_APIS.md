@@ -13,6 +13,8 @@ Every usage is reported by `./gradlew verifyPlugin` under
 | API | Used by | Used for |
 |---|---|---|
 | `ExternalSystemUnlinkedProjectAware.getLinkedProjectsPaths` | `ElideUnlinkedProjectAware` | Telling the IDE which Elide project paths are currently linked, so unlinked projects can be offered for import. The interface declares the method with a body that throws, so an implementation is mandatory |
+| `GeneralIdBasedToSMTRunnerEventsConvertor` (class, constructor) | `ElideTestsExecutionConsole.startSession` | Publishing the events decoded from the CLI's TAP stream into the test tree of an `elide test` run, addressed by the node ids TAP numbers a test's start and output with. The only public route to the same class is `OutputToGeneralTestEventsConverter`, which reaches it by way of TeamCity service-message text and would mean re-encoding every decoded event as a string for the platform to parse back |
+| `StartBuildEventImpl` (class, constructor) | `ElideTestsExecutionConsoleManager.quietened` | Re-issuing an `elide test` run's start event to the Build window with a descriptor that does not raise that window on failure, since a failed test fails the build and the failures are already shown in the test tree. `StartBuildEvent.builder` is the public replacement and is not declared on 253 |
 
 ## Experimental APIs
 
@@ -23,6 +25,8 @@ Every usage is reported by `./gradlew verifyPlugin` under
 | `ExternalSystemProjectLinkListener` (interface, `onProjectLinked`, `onProjectUnlinked`) | `ElideUnlinkedProjectAware.subscribe` | Receiving link and unlink events for Elide projects |
 | `ProjectResolverPolicy`, `ExternalSystemProjectResolver.resolveProjectInfo(…, ProjectResolverPolicy, …)` | `ElideProjectResolver.resolveProjectInfo` | Resolving the Elide manifest into the external system project model during sync |
 | `Placeholder` (interface, `align`, `component`) | `ElideNewProjectWizardStep.setupUI`, `renderOptions` | Swapping the template option controls in the New Project wizard when a different template is selected |
+| `BuildViewSettingsProvider` (interface, `isExecutionViewHidden`) | `ElideTestsExecutionConsole` | Yielding the run's build view to the test tree, so an `elide test` run shows results rather than a build log |
+| `BuildProgressObservable.addListener` | `ElideTestsExecutionConsoleManager.forwardBuildEvents` | Subscribing to an `elide test` run's build events, so the events the test tree does not render are passed on to the Build window |
 
 ## Deprecated APIs
 

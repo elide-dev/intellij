@@ -1,0 +1,30 @@
+TAP version 13
+# start 1: guest js runs in the same session as the jvm tests
+ok 1 - guest js runs in the same session as the jvm tests
+# start 2: guest suite > reports under its own file
+ok 2 - guest suite > reports under its own file
+# start 3: guest typescript runs too
+ok 3 - guest typescript runs too
+# start 4: polyglot.GreeterTest > fails with comparison()
+not ok 4 - polyglot.GreeterTest > fails with comparison()
+  ---
+  message: "org.opentest4j.AssertionFailedError: expected: <expected value> but was: <actual value>"
+  detail: |
+    	org.opentest4j.AssertionFailedError: expected: <expected value> but was: <actual value>
+    		at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:1210)
+    		at kotlin.test.junit5.JUnit5Asserter.assertEquals(JUnitSupport.kt:32)
+    		at kotlin.test.AssertionsKt__AssertionsKt.assertEquals(Assertions.kt:63)
+    		at kotlin.test.AssertionsKt.assertEquals(Unknown Source)
+    		at kotlin.test.AssertionsKt__AssertionsKt.assertEquals$default(Assertions.kt:62)
+    		at kotlin.test.AssertionsKt.assertEquals$default(Unknown Source)
+    		at polyglot.GreeterTest.fails with comparison(GreeterTest.kt:15)
+  ...
+# start 5: polyglot.GreeterTest > prints output()
+# out 5: jvm test output line
+ok 5 - polyglot.GreeterTest > prints output()
+ok 6 - polyglot.GreeterTest > is ignored() # SKIP Reason: public final void polyglot.GreeterTest.is ignored() is @Disabled
+# start 6: polyglot.GreeterTest > greets by name()
+ok 7 - polyglot.GreeterTest > greets by name()
+# start 7: polyglot.JavaGreeterTest > greetingIsNotBlank()
+ok 8 - polyglot.JavaGreeterTest > greetingIsNotBlank()
+1..8
