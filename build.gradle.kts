@@ -12,6 +12,7 @@
  */
 
 import org.jetbrains.intellij.platform.gradle.CustomPluginRepositoryType
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
 
 plugins {
@@ -92,12 +93,17 @@ dependencies {
   testImplementation(kotlin("test"))
   testImplementation(libs.junit.jupiter)
   testRuntimeOnly(libs.junit.platform.launcher)
+  // tests are written in JUnit 5; JUnit 4 is only on the runtime classpath because the platform test framework's
+  // `JUnit5TestSessionListener` and its rules load `org.junit.runners` classes
+  testRuntimeOnly(libs.junit4)
 
   intellijPlatform {
     intellijIdea(libs.versions.intellij.target.ide.get())
     bundledPlugin("com.intellij.java")
     bundledPlugin("org.jetbrains.kotlin")
     plugin(id = "org.pkl", version = libs.versions.pkl.plugin.get())
+    testFramework(TestFrameworkType.Platform)
+    testFramework(TestFrameworkType.JUnit5)
   }
 }
 
@@ -107,9 +113,8 @@ configurations.runtimeClasspath {
   exclude(group = "org.jetbrains", module = "annotations")
 }
 
-// The manifest decoding tests are plain JVM tests over the generated model, so the IntelliJ platform test framework
-// is deliberately absent from the test classpath: its JUnit `LauncherSessionListener` requires a running IDE test
-// harness and fails to instantiate outside one.
+// The IntelliJ platform test framework drives the PSI and run-configuration tests through its JUnit 5 fixtures, next
+// to the plain Jupiter tests over the generated model.
 tasks.test {
   useJUnitPlatform()
 }

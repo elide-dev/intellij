@@ -12,7 +12,6 @@
  */
 package dev.elide.intellij.psi
 
-import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.ClassUtil
 import com.intellij.psi.util.PsiTreeUtil
@@ -30,36 +29,31 @@ import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
 import org.jetbrains.kotlin.psi.psiUtil.parentsWithSelf
 
 /**
- * Locate the Kotlin file or class declaring the `main` function that covers [element], or return `null` when the
- * element is not part of a JVM entrypoint.
+ * Locate the Kotlin file or class declaring the `main` function that covers [element] within [file], or return `null`
+ * when the file declares no JVM entrypoint.
  *
  * The lookup is a PSI-only heuristic: no resolution is performed, so it also answers while indices are unavailable,
  * and it accepts every JVM `main` shape the compiler does (`fun main()`, `fun main(args: Array<String>)`,
  * `fun main(vararg args: String)`, `Array<String>.main()`, `suspend` forms, and `@JvmStatic` mains in an object or a
  * companion). `@JvmName` on the function is honored.
  */
-fun findKotlinMainOwner(element: PsiElement): KtDeclarationContainer? {
-  val file = element.containingFile as? KtFile ?: return null
-
-  // entrypoints are run from the project's own sources; library and generated files are not offered
-  val virtualFile = file.virtualFile ?: return null
-  if (!ProjectFileIndex.getInstance(file.project).isInSourceContent(virtualFile)) return null
-
+internal fun findKotlinMainOwner(file: KtFile, element: PsiElement): KtDeclarationContainer? {
   for (parent in element.parentsWithSelf) {
     if (parent is KtClassOrObject && parent.hasMainFunction()) return parent
   }
 
   if (file.hasMainFunction()) return file
 
-  // the caret may sit above a declaration rather than inside it (on the file itself, or on a leading comment)
-  return PsiTreeUtil.findChildrenOfType(element, KtClassOrObject::class.java).firstOrNull { it.hasMainFunction() }
+  // the caret needs not sit inside the entrypoint declaration: the platform's own producers offer a file's `main`
+  // from anywhere in that file, and an Elide entrypoint has to win the same locations
+  return PsiTreeUtil.findChildrenOfType(file, KtClassOrObject::class.java).firstOrNull { it.hasMainFunction() }
 }
 
 /**
  * The JVM binary name of the class the entrypoint in [container] is compiled into: the file facade for a top-level
  * `main` (respecting `@file:JvmName`), and the class or object itself otherwise.
  */
-fun kotlinMainClassJvmName(container: KtDeclarationContainer): String? = when (container) {
+internal fun kotlinMainClassJvmName(container: KtDeclarationContainer): String? = when (container) {
   is KtFile -> container.javaFileFacadeFqName.asString()
   is KtClassOrObject -> when {
     !container.isValid -> null

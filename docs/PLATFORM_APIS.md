@@ -40,10 +40,10 @@ Every usage is reported by `./gradlew verifyPlugin` under
 
 ## Stable alternatives in use
 
-Kotlin `main` detection for the gutter run and debug actions is implemented in `dev.elide.intellij.psi`
-(`findKotlinMainOwner`, `kotlinMainClassJvmName`) over Kotlin compiler PSI, `KotlinPsiHeuristics` and
-`ClassUtil.getJVMClassName`, instead of the internal `KotlinMainFunctionDetector` and
-`KotlinRunConfigurationProducer.getMainClassJvmName`.
+JVM `main` detection for the gutter run and debug actions is implemented in `dev.elide.intellij.psi`
+(`findJvmMainClassName`, `findKotlinMainOwner`, `kotlinMainClassJvmName`, `findJavaMainClass`) over Java PSI, Kotlin
+compiler PSI, `KotlinPsiHeuristics` and `ClassUtil.getJVMClassName`, instead of the internal
+`KotlinMainFunctionDetector` and `KotlinRunConfigurationProducer.getMainClassJvmName`.
 
 Project linking and re-sync use `ExternalSystemUtil.linkExternalProject(settings, ImportSpec)` and
 `ExternalSystemUtil.refreshProject(path, ImportSpec)`; build output is streamed with

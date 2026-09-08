@@ -35,6 +35,9 @@ Marketplace, so entries must be user-facing and free of internal jargon.
 - The plugin logo declares the 40x40 size expected by the plugin manager and the JetBrains Marketplace.
 - Gutter run actions for JUnit tests no longer log "Slow operations are prohibited on EDT" errors while the IDE
   updates run actions, and they now work while the IDE is still indexing.
+- Running or debugging a Java `main` method from the editor gutter now uses the Elide run configuration for the
+  entrypoint declared in the manifest, instead of the IDE's default JVM application configuration. Kotlin entrypoints
+  already did.
 
 ## [0.7.0] - 2026-09-04
 
