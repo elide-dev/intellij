@@ -19,6 +19,10 @@ Marketplace, so entries must be user-facing and free of internal jargon.
   own log goes to the Build window. The tree is fed by the CLI's TAP reporter, which the run is launched with, so it
   requires Elide 1.5.2 or newer; naming `--reporter=console` or `--reporter=junit` on the command line keeps that
   reporter's console output instead.
+- **Coverage for `elide test`.** *Run with Coverage* on an Elide test configuration collects coverage and shows it in
+  the editor, the project view and the coverage tool window. Kotlin, Java, JavaScript and TypeScript coverage from a
+  single run lands in one suite. Reports written by a run the IDE did not start — from a terminal, say — are attached
+  as they appear.
 
 ### Changed
 

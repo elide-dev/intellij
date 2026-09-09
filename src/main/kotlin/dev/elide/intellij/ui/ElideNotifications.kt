@@ -57,4 +57,16 @@ object ElideNotifications {
       .setTitle(Constants.Strings["elide.notifications.generationFailed.title"])
       .notify(project)
   }
+
+  /** Report that coverage reports produced outside the IDE were attached as the suite named [suiteName]. */
+  fun notifyCoverageAttached(project: Project, suiteName: String) {
+    NotificationGroupManager.getInstance()
+      .getNotificationGroup("Elide Notifications")
+      .createNotification(
+        Constants.Strings["elide.notifications.coverageAttached.content", suiteName],
+        NotificationType.INFORMATION,
+      )
+      .setTitle(Constants.Strings["elide.notifications.coverageAttached.title"])
+      .notify(project)
+  }
 }

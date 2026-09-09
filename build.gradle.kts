@@ -88,6 +88,9 @@ fun renderChangelogSection(changelog: String, version: String): String {
 
 dependencies {
   implementation(libs.kotlinx.serialization.json)
+  // the JVM half of an `elide test --coverage` run is a JaCoCo execution file, which only class analysis turns into
+  // the line coverage the IDE displays; the guest half is already LCOV, which the platform parses
+  implementation(libs.jacoco.core)
 
   testImplementation(platform(libs.junit.bom))
   testImplementation(kotlin("test"))
@@ -101,6 +104,10 @@ dependencies {
     intellijIdea(libs.versions.intellij.target.ide.get())
     bundledPlugin("com.intellij.java")
     bundledPlugin("org.jetbrains.kotlin")
+    // `com.intellij.coverage`: the coverage engine, runner and LCOV reader behind "Run with Coverage", and the
+    // `ProjectData` model both of them speak
+    bundledModule("intellij.platform.coverage")
+    bundledModule("intellij.platform.coverage.agent")
     plugin(id = "org.pkl", version = libs.versions.pkl.plugin.get())
     testFramework(TestFrameworkType.Platform)
     testFramework(TestFrameworkType.JUnit5)

@@ -75,6 +75,28 @@ The test invocation's build output goes to the **Build** tool window rather than
 > The tree is fed by the CLI's TAP reporter: the plugin runs `elide test --reporter=tap`, manually requesting
 > `--reporter=console` or `--reporter=junit` keeps that reporter's own console output and no test tree.
 
+### Coverage
+
+**Run with Coverage** on an `elide test` configuration adds `--coverage` to the run and loads the reports the CLI
+writes: line highlighting in the editor, per-file and per-directory percentages in the project view, and an entry in
+**Run → Show Coverage Data**.
+
+One suite covers every language of the run. Kotlin and Java coverage is read from the JaCoCo execution data the run
+leaves under `.dev/artifacts/coverage`, resolved against the classes in `.dev/jvm/classes` and the project's source
+roots; JavaScript, TypeScript and the other guest languages come from the LCOV reports under `.dev/reports/coverage`.
+The two are merged into a single LCOV report, kept with the IDE's own coverage data rather than in the project.
+
+Coverage collected without the IDE is attached the same way: an `elide test --coverage` run from a terminal, the
+IDE's own included, or from a run configuration whose command line already carries the flag, shows up within a few
+seconds of the run finishing, as *Elide coverage (project directory)*. The reports are looked for rather than
+listened for: they sit outside every content root, where the IDE's virtual file system does not follow them.
+
+Each run replaces the coverage of the previous one of the same configuration, or of the same project for a run
+started elsewhere; the IDE is not asked whether to merge the two, since an Elide report always describes a whole run.
+
+> Only `elide test` writes coverage files. `--coverage` on other commands prints the CLI's own summary table and
+> leaves nothing behind, so those runs offer no coverage action.
+
 ## Debugging
 
 Run configurations offered by the plugin can be debugged using Elide's own JDWP support. The IDE will launch the Elide

@@ -23,6 +23,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.io.toCanonicalPath
 import dev.elide.intellij.Constants
+import dev.elide.intellij.execution.coverage.ElideCoverageWatcher
 import dev.elide.intellij.settings.ElideProjectSettings
 import dev.elide.intellij.settings.ElideSettings
 import dev.elide.intellij.settings.ElideSettingsListener
@@ -38,6 +39,9 @@ class ElideStartupActivity : ProjectActivity {
     // same IDE session) does not stack duplicate listeners
     val tracker = project.getService(ElideAutoLinkTracker::class.java)
     tracker.subscribeToSettingsChanges(project)
+
+    // coverage written by a run the IDE did not start — from a terminal, say — is attached when it appears
+    ElideCoverageWatcher.getInstance(project).start()
 
     // every base directory holding a manifest is a linked Elide project, not just the first one found
     for (baseDir in project.getBaseDirectories()) {

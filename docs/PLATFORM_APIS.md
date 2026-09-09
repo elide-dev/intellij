@@ -15,6 +15,7 @@ Every usage is reported by `./gradlew verifyPlugin` under
 | `ExternalSystemUnlinkedProjectAware.getLinkedProjectsPaths` | `ElideUnlinkedProjectAware` | Telling the IDE which Elide project paths are currently linked, so unlinked projects can be offered for import. The interface declares the method with a body that throws, so an implementation is mandatory |
 | `GeneralIdBasedToSMTRunnerEventsConvertor` (class, constructor) | `ElideTestsExecutionConsole.startSession` | Publishing the events decoded from the CLI's TAP stream into the test tree of an `elide test` run, addressed by the node ids TAP numbers a test's start and output with. The only public route to the same class is `OutputToGeneralTestEventsConverter`, which reaches it by way of TeamCity service-message text and would mean re-encoding every decoded event as a string for the platform to parse back |
 | `StartBuildEventImpl` (class, constructor) | `ElideTestsExecutionConsoleManager.quietened` | Re-issuing an `elide test` run's start event to the Build window with a descriptor that does not raise that window on failure, since a failed test fails the build and the failures are already shown in the test tree. `StartBuildEvent.builder` is the public replacement and is not declared on 253 |
+| `CoverageEngine.coverageProjectViewStatisticsApplicableTo` | `ElideCoverageEngine` | Declaring that a file, but not a directory, carries a coverage percentage of its own in the Project view. The base implementation answers `false` for everything, which leaves an attached Elide suite with no per-file figures there; the method is the only way the platform asks |
 
 ## Experimental APIs
 
@@ -27,6 +28,7 @@ Every usage is reported by `./gradlew verifyPlugin` under
 | `Placeholder` (interface, `align`, `component`) | `ElideNewProjectWizardStep.setupUI`, `renderOptions` | Swapping the template option controls in the New Project wizard when a different template is selected |
 | `BuildViewSettingsProvider` (interface, `isExecutionViewHidden`) | `ElideTestsExecutionConsole` | Yielding the run's build view to the test tree, so an `elide test` run shows results rather than a build log |
 | `BuildProgressObservable.addListener` | `ElideTestsExecutionConsoleManager.forwardBuildEvents` | Subscribing to an `elide test` run's build events, so the events the test tree does not render are passed on to the Build window |
+| `RunContentDescriptor.isHiddenContent` | `ElideCoverageProgramRunner.hideOutsideBuildView` | Keeping a coverage run of an external system configuration from publishing its content twice, exactly as the platform's own `ExternalSystemTaskRunner` does for an ordinary run |
 
 ## Deprecated APIs
 

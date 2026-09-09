@@ -137,7 +137,14 @@ object ElideCli {
   private val COLOR = Flag("color", descriptionKey = "cli.flag.color")
   private val NO_COLOR = Flag("no-color", descriptionKey = "cli.flag.no-color")
 
-  private val COVERAGE = Flag(
+  /**
+   * Flag that turns on coverage collection for the run.
+   *
+   * Global, and therefore accepted before and after the command, but only `elide test` writes a report file: for
+   * other commands the CLI prints a summary table and nothing else. Spelled "on" as a bare flag, `=auto` or
+   * `=true`; any other value, `--coverage=false` among them, turns collection off.
+   */
+  val COVERAGE: Flag = Flag(
     long = "coverage",
     value = FlagValue.OPTIONAL_EQUALS,
     values = listOf("auto"),

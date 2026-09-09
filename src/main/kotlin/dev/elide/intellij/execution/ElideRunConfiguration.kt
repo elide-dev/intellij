@@ -27,6 +27,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.util.execution.ParametersListUtil
 import dev.elide.intellij.Constants
 import dev.elide.intellij.cli.ElideCli
+import dev.elide.intellij.execution.coverage.ElideCoverageProgramRunner
 import dev.elide.intellij.project.model.ElideEntrypointInfo
 import dev.elide.intellij.project.model.ElideEntrypointInfo.Kind
 import org.jdom.Element
@@ -110,16 +111,18 @@ class ElideRunConfiguration(
       return ElideDebugRunnableState(debugSettings, project, this, env).also { copyUserDataTo(it) }
     }
 
-    // a test run streams TAP so ElideTestsExecutionConsoleManager can render it as a test tree; like the debugger
-    // flag this goes on a copy of the settings, leaving the persisted command line as the user wrote it
-    val tapCommandLine = tapCommandLine(settings.taskNames) ?: return super.getState(executor, env)
-    val tapSettings = settings.clone().apply { taskNames = tapCommandLine }
+    // a run started under the coverage executor collects coverage, and a test run streams TAP so
+    // ElideTestsExecutionConsoleManager can render it as a test tree; like the debugger flag both go on a copy of
+    // the settings, leaving the persisted command line as the user wrote it
+    val coverage = ElideCoverageProgramRunner.RUNNER_ID == env.runner.runnerId
+    val commandLine = executionCommandLine(settings.taskNames, coverage) ?: return super.getState(executor, env)
+    val runSettings = settings.clone().apply { taskNames = commandLine }
 
     // the debug flag mirrors the platform's own reading of the executor: this state differs from the one
     // `super.getState` builds only in the command line it runs
     val debug = DefaultDebugExecutor.EXECUTOR_ID == executor.id
 
-    return ExternalSystemRunnableState(tapSettings, project, debug, this, env).also { copyUserDataTo(it) }
+    return ExternalSystemRunnableState(runSettings, project, debug, this, env).also { copyUserDataTo(it) }
   }
 
   override fun readExternal(element: Element) {
@@ -191,6 +194,42 @@ class ElideRunConfiguration(
         null -> true
       }
     }
+
+    /**
+     * Returns the command line a run of [taskNames] executes, or `null` when it is the one the user typed.
+     *
+     * Two flags are added by the IDE rather than by hand: `--coverage`, when the run was started under the coverage
+     * executor and [coverage] is therefore set, and `--reporter=tap`, which every test run the IDE renders as a
+     * test tree needs. A run that needs neither keeps its command line, and with it the state the platform builds.
+     */
+    fun executionCommandLine(taskNames: List<String>, coverage: Boolean): List<String>? {
+      val withCoverage = if (coverage) coverageCommandLine(taskNames) else null
+
+      return tapCommandLine(withCoverage ?: taskNames) ?: withCoverage
+    }
+
+    /**
+     * Returns [taskNames] with coverage collection turned on, or [taskNames] itself when it already asks for it.
+     *
+     * `--coverage` is a global flag, so it is placed right after the command the way `--reporter` is: before any
+     * path narrowing the run, and before the `--` separator, past which it would belong to the test runner. A
+     * command line that names the flag is left alone whatever value it carries — `--coverage=false` turns
+     * collection off, and a run configuration that says so was written that way on purpose.
+     */
+    fun coverageCommandLine(taskNames: List<String>): List<String> {
+      val invocation = ElideCli.parse(taskNames)
+      if (ElideCli.flagIndex(taskNames, invocation, ElideCli.COVERAGE) >= 0) return taskNames
+
+      return taskNames.toMutableList().apply { add(invocation.commandIndex + 1, ElideCli.COVERAGE.option) }
+    }
+
+    /**
+     * Returns whether a run of [taskNames] can produce coverage the IDE can display.
+     *
+     * Only `elide test` writes coverage to disk: the flag is global, and `elide run --coverage` does report, but it
+     * prints a summary table and leaves no report file behind, so there is nothing for the IDE to attach.
+     */
+    fun supportsCoverage(taskNames: List<String>): Boolean = ElideCli.parse(taskNames).command == ElideCli.TEST
 
     /**
      * Returns [taskNames] with the TAP reporter selected, or `null` when the command line is not a test run the
