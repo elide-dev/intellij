@@ -33,7 +33,13 @@ class ElideProjectDataTest {
       .use { it.reader().readText() },
   )
 
-  private val data = ElideProjectData.from(manifest)
+  // the build task listing does not come from the manifest: the resolver reads it from the CLI and passes it through
+  private val buildTasks = listOf(
+    ElideBuildTaskInfo("app", "Package compiled classes into a JAR archive"),
+    ElideBuildTaskInfo("write-classpath-files"),
+  )
+
+  private val data = ElideProjectData.from(manifest, buildTasks)
 
   @Test fun `collects entrypoints scripts and jvm main from the manifest`() {
     assertEquals(listOf("src/main/kotlin/Main.kt"), data.entrypoints)

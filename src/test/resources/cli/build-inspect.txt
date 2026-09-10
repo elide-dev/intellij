@@ -1,0 +1,40 @@
+10 tasks available:
+
+  app   Package compiled classes into a JAR archive
+    no options declared
+
+  compile-java-main   Compile main Java source files
+    no options declared
+
+  compile-java-test   Compile test Java source files
+    no options declared
+
+  compile-kotlin-main   Compile main Kotlin source files to bytecode
+    no options declared
+
+  maven-dependencies   Resolve and download Maven dependencies
+    --fresh   Re-download dependencies even if present in the local cache
+    --direct   Copy artifacts to the project repository instead of symlinking
+
+  other-thing   Package compiled classes into a JAR archive
+    no options declared
+
+  run   Run the main JVM application
+    --debugger   Attach JDWP debugger, optionally specify host:port
+    --args   Space-separated program arguments
+
+  run-app   Run the main JVM application
+    --debugger   Attach JDWP debugger, optionally specify host:port
+    --args   Space-separated program arguments
+
+  run-other-thing   Run the main JVM application
+    --debugger   Attach JDWP debugger, optionally specify host:port
+    --args   Space-separated program arguments
+
+  write-classpath-files
+    no options declared
+
+Global options:
+  --no-cache   Disable the build cache for this run
+  --offline   Disable all network access during the build
+  --insights   Inject Insights API scripts or a class

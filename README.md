@@ -48,8 +48,9 @@ completes as you type, scoped to the linked project:
 
 - project entrypoints declared in the manifest,
 - CLI commands (`run`, `install`, `build`, `test`, etc.),
-- positional arguments for commands that take them,
-- global and command-specific flags with their short forms and enumerated values
+- positional arguments for commands that take them, including the build tasks of the linked project after `build`,
+- global and command-specific flags with their short forms and enumerated values,
+- the options a named build task declares, such as `--fresh` after `build maven-dependencies`
 
 Ad-hoc commands can be run without creating a configuration through **Run Anything** (double-⌃, or double-Ctrl, then
 type `elide …`), which offers the same completions and runs in the linked project's directory.

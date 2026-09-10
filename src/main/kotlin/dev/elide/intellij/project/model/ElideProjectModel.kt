@@ -46,10 +46,17 @@ object ElideProjectModel {
     val contentRoots: MutableList<ContentRootData>,
   )
 
+  /**
+   * Build the IDE's model of the project at [projectPath] from its [manifest] and resolved [classpaths].
+   *
+   * [buildTasks] is the task listing the CLI printed for the project, which the manifest alone does not describe; it
+   * is carried into [ElideProjectData] for the completion of `elide build` command lines.
+   */
   fun buildModel(
     projectPath: Path,
     classpaths: Map<String, ElideClasspath>,
     manifest: ProjectModule,
+    buildTasks: List<ElideBuildTaskInfo> = emptyList(),
   ): DataNode<ProjectData> {
     val projectData = ProjectData(
       /* owner = */ Constants.SYSTEM_ID,
@@ -103,7 +110,7 @@ object ElideProjectModel {
     projectNode.createChild(ProjectSdkData.KEY, ProjectSdkData(jdkName))
 
     // attached additional data so we can finish the import after the project is resolved
-    projectNode.createChild(ElideProjectData.PROJECT_KEY, ElideProjectData.from(manifest))
+    projectNode.createChild(ElideProjectData.PROJECT_KEY, ElideProjectData.from(manifest, buildTasks))
 
     // invoke registered contributors
     invokeContributors(projectNode, projectPath, manifest)

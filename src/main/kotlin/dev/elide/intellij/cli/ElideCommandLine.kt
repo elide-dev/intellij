@@ -17,6 +17,7 @@ import com.intellij.util.io.awaitExit
 import dev.elide.intellij.Constants
 import dev.elide.intellij.ElideCommandFailedException
 import dev.elide.intellij.InvalidElideHomeException
+import dev.elide.intellij.project.model.ElideBuildTaskInfo
 import dev.elide.intellij.project.model.ElideClasspath
 import dev.elide.intellij.project.model.ElideClasspathUsage
 import dev.elide.intellij.service.ElideDistributionResolver
@@ -185,6 +186,25 @@ suspend fun ElideCommandLine.classpath(
   }
 
   return ElideClasspath(usage, ElideCommandLine.parseClasspath(output.toString()))
+}
+
+/**
+ * List the tasks the project's build graph declares, by way of `elide build --inspect`.
+ *
+ * `--inspect` only prints the task table, it builds nothing. The flag must stay its own token: `elide build` reads
+ * `--inspect=…` as a build target instead, which starts a real build.
+ */
+suspend fun ElideCommandLine.buildTasks(
+  onOutput: ((line: String, stderr: Boolean) -> Unit)? = null,
+): List<ElideBuildTaskInfo> {
+  val output = StringBuilder()
+
+  invoke("build", "--inspect") { line, stderr ->
+    onOutput?.invoke(line, stderr)
+    if (!stderr) output.append(line)
+  }
+
+  return ElideBuildTasks.parse(output.toString())
 }
 
 /**

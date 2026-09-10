@@ -26,6 +26,7 @@ import dev.elide.intellij.Constants
 import dev.elide.intellij.InvalidElideHomeException
 import dev.elide.intellij.MissingManifestException
 import dev.elide.intellij.cli.ElideCommandLine
+import dev.elide.intellij.cli.buildTasks
 import dev.elide.intellij.cli.classpath
 import dev.elide.intellij.cli.install
 import dev.elide.intellij.cli.manifest
@@ -40,6 +41,7 @@ import dev.elide.tooling.manifest.project.ProjectModule
 import dev.elide.tooling.manifest.sources.SourceSetType
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.job
 import org.jetbrains.annotations.PropertyKey
@@ -103,6 +105,18 @@ class ElideProjectResolver : ExternalSystemProjectResolver<ElideExecutionSetting
       listener.onStep(id, progressMessage("resolve.steps.inspect"))
       val manifest = cli.manifest { out, err -> if (err) listener.onTaskOutput(id, out, ProcessOutputType.STDERR) }
 
+      // the CLI owns the project's build graph, so its task list is read from it rather than derived from the
+      // manifest; the listing is only used for completion, and a distribution that fails to produce one (or has no
+      // `--inspect` at all) must not fail the sync
+      val buildTasks = try {
+        cli.buildTasks()
+      } catch (cause: CancellationException) {
+        throw cause
+      } catch (cause: Exception) {
+        LOG.warn("Failed to list build tasks of project at '$projectPath'", cause)
+        emptyList()
+      }
+
       // install dependencies only when the lockfile no longer reflects the manifest
       if (!isLockfileCurrent(projectRoot, manifestPath)) {
         listener.onStep(id, progressMessage("resolve.steps.sync"))
@@ -119,7 +133,7 @@ class ElideProjectResolver : ExternalSystemProjectResolver<ElideExecutionSetting
 
       // build the project model from the manifest and classpaths
       listener.onStep(id, progressMessage("resolve.steps.buildModel"))
-      ElideProjectModel.buildModel(projectRoot, classpaths, manifest)
+      ElideProjectModel.buildModel(projectRoot, classpaths, manifest, buildTasks)
     } catch (cause: InvalidElideHomeException) {
       // the platform reports the failure itself (see AbstractExternalSystemTask); only the notification is ours
       ElideNotifications.notifyInvalidElideHome(id.findProject())

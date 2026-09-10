@@ -25,7 +25,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.ModificationTracker
 import com.intellij.openapi.util.SimpleModificationTracker
 import dev.elide.intellij.Constants
-import dev.elide.intellij.project.model.ElideEntrypointInfo
+import dev.elide.intellij.project.model.ElideProjectInfo
 import dev.elide.intellij.service.elideProjectIndex
 import javax.swing.Icon
 import javax.swing.text.JTextComponent
@@ -85,20 +85,18 @@ class ElideCommandLineInfo(
     snapshot()
   }
 
-  private fun entrypoints(): List<ElideEntrypointInfo> {
-    return project.elideProjectIndex[workingDirectoryField.workingDirectory]?.entrypoints.orEmpty()
+  private fun projectInfo(): ElideProjectInfo? {
+    return project.elideProjectIndex[workingDirectoryField.workingDirectory]
   }
 
   private fun ElideCliCompletion.Variant.toCompletionInfo(): TextCompletionInfo {
-    val description = when (descriptionArg) {
-      null -> Constants.Strings[descriptionKey]
-      else -> Constants.Strings[descriptionKey, descriptionArg]
-    }
+    // the index form takes no spread, and a variant's description is formatted with as many arguments as it declares
+    val description = Constants.Strings.get(descriptionKey, *descriptionArgs.toTypedArray())
 
     return TextCompletionInfo(text, description)
   }
 
-  /** Commands, entrypoints and positional arguments accepted at the caret. */
+  /** Commands, entrypoints, project tasks and positional arguments accepted at the caret. */
   private inner class TaskCompletionTableInfo : CompletionTableInfo {
     override val emptyState: String = Constants.Strings["execution.completion.tasks.emptyState"]
 
@@ -111,7 +109,7 @@ class ElideCommandLineInfo(
     override val completionModificationTracker: ModificationTracker = completionTracker
 
     override suspend fun collectCompletionInfo(): List<TextCompletionInfo> {
-      return ElideCliCompletion.tasks(typedTokens, entrypoints()).map { it.toCompletionInfo() }
+      return ElideCliCompletion.tasks(typedTokens, projectInfo()).map { it.toCompletionInfo() }
     }
 
     override suspend fun collectTableCompletionInfo(): List<TextCompletionInfo> {
@@ -132,12 +130,12 @@ class ElideCommandLineInfo(
     override val completionModificationTracker: ModificationTracker = completionTracker
 
     override suspend fun collectCompletionInfo(): List<TextCompletionInfo> {
-      return ElideCliCompletion.flags(typedTokens, includeShort = true).map { it.toCompletionInfo() }
+      return ElideCliCompletion.flags(typedTokens, projectInfo(), includeShort = true).map { it.toCompletionInfo() }
     }
 
     // the table renders one row per variant, so the short forms are left out to keep it half as long
     override suspend fun collectTableCompletionInfo(): List<TextCompletionInfo> {
-      return ElideCliCompletion.flags(typedTokens, includeShort = false).map { it.toCompletionInfo() }
+      return ElideCliCompletion.flags(typedTokens, projectInfo(), includeShort = false).map { it.toCompletionInfo() }
     }
   }
 }

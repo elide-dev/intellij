@@ -26,6 +26,11 @@ Marketplace, so entries must be user-facing and free of internal jargon.
 - **Build icons for manifest artifacts.** Every key of an `elide.pkl` `artifacts` mapping — JARs, native images,
   container images, static sites — carries a gutter icon that runs `elide build <artifact>`, with a run configuration
   named after the artifact (requires the Pkl plugin).
+- **Completion for the project's build tasks.** After `build` on an Elide command line — in a run configuration or in
+  **Run Anything** — the tasks of the linked project are offered with the descriptions the CLI gives them: the
+  manifest's artifacts, plus the tasks Elide derives for source sets, dependencies and entrypoints. Naming a task
+  then offers the options that task declares (`--fresh` for dependency resolution, `--debugger` and `--args` for a
+  JVM run, …). Both are read from the CLI (`elide build --inspect`) during project sync.
 
 ### Changed
 
@@ -49,6 +54,8 @@ Marketplace, so entries must be user-facing and free of internal jargon.
 - Running or debugging a Java `main` method from the editor gutter now uses the Elide run configuration for the
   entrypoint declared in the manifest, instead of the IDE's default JVM application configuration. Kotlin entrypoints
   already did.
+- `elide build` command lines complete the `--` separator, and stop completing Elide's own flags after it: everything
+  following it reaches the tool a build task runs, not Elide.
 
 ## [0.7.0] - 2026-09-04
 

@@ -22,11 +22,16 @@ import dev.elide.intellij.cli.ElideCli
 data class ElideProjectInfo(
   /** Resolved entrypoints from the project's manifest. */
   @XCollection val entrypoints: List<ElideEntrypointInfo> = emptyList(),
+  /** Tasks `elide build` accepts as targets in this project, as the CLI listed them during sync. */
+  @XCollection val buildTasks: List<ElideBuildTaskInfo> = emptyList(),
 ) {
   companion object {
-    /** Returns the entrypoints [data] exposes, in the order they are offered as run targets and completions. */
+    /**
+     * Returns the targets [data] exposes: entrypoints, in the order they are offered as run targets and completions,
+     * and the build tasks the CLI listed for the project.
+     */
     @JvmStatic fun from(data: ElideProjectData): ElideProjectInfo = ElideProjectInfo(
-      buildList {
+      entrypoints = buildList {
         // scripts can be used as tasks
         data.scripts.forEach { name -> add(ElideEntrypointInfo.script(name)) }
 
@@ -40,6 +45,7 @@ data class ElideProjectInfo(
           data.jvmMainClass?.let { mainClassName -> add(ElideEntrypointInfo.jvmMain(mainClassName)) }
         }
       },
+      buildTasks = data.buildTasks,
     )
   }
 }

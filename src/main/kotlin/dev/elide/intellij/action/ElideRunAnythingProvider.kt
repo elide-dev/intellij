@@ -45,12 +45,12 @@ class ElideRunAnythingProvider : RunAnythingCommandLineProvider() {
     val projectPath = (dataContext.getData(EXECUTING_CONTEXT) ?: RunAnythingContext.ProjectContext(project))
       .workingDirectory()
 
-    val entrypoints = projectPath?.let { project.elideProjectIndex[it] }?.entrypoints.orEmpty()
+    val info = projectPath?.let { project.elideProjectIndex[it] }
 
     // the popup prefixes every variant with the parameters already completed, so only the next token is suggested
     val typed = commandLine.completedParameters
-    val tasks = ElideCliCompletion.tasks(typed, entrypoints)
-    val flags = ElideCliCompletion.flags(typed, includeShort = false)
+    val tasks = ElideCliCompletion.tasks(typed, info)
+    val flags = ElideCliCompletion.flags(typed, info, includeShort = false)
 
     return (tasks + flags).asSequence().map { it.text }
   }

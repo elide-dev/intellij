@@ -381,8 +381,11 @@ object ElideCli {
       Flag("no-cache", descriptionKey = "cli.flag.no-cache"),
       Flag("offline", descriptionKey = "cli.flag.offline"),
     ),
-    // the project's own task names are only known after an `--inspect` run; these groups always exist
+    // the project's own task names, and the options those tasks declare, are only known after an `--inspect` run;
+    // these groups always exist
     positionals = listOf("deps", "compile", "test", "clean"),
+    // `elide build --help`: "Anything after '--' is passed through to the subprocess unchanged"
+    passthrough = true,
     descriptionKey = "cli.command.build",
   )
 

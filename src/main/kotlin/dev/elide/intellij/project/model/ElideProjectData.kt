@@ -32,6 +32,8 @@ data class ElideProjectData(
   val entrypoints: List<String> = emptyList(),
   val jvmMainClass: String? = null,
   val scripts: List<String> = emptyList(),
+  /** Tasks the CLI lists for the project's build graph; see [ElideBuildTaskInfo]. */
+  val buildTasks: List<ElideBuildTaskInfo> = emptyList(),
 ) : Serializable {
   /** Kotlin facet configuration derived from the manifest's `kotlin` block. */
   data class KotlinFacetData(
@@ -46,8 +48,16 @@ data class ElideProjectData(
     /** Key used to store [ElideProjectData] in a project node during resolution. */
     @JvmField val PROJECT_KEY: Key<ElideProjectData> = Key.create(ElideProjectData::class.java, 100)
 
-    /** Collect the manifest facts needed after import into a serializable payload. */
-    @JvmStatic fun from(manifest: ProjectModule): ElideProjectData = ElideProjectData(
+    /**
+     * Collect the manifest facts needed after import into a serializable payload.
+     *
+     * [buildTasks] cannot be derived from the manifest: the CLI owns the build graph, so the resolver reads the task
+     * list from it and passes it through here.
+     */
+    @JvmStatic fun from(
+      manifest: ProjectModule,
+      buildTasks: List<ElideBuildTaskInfo> = emptyList(),
+    ): ElideProjectData = ElideProjectData(
       kotlin = manifest.kotlin?.let { kotlin ->
         KotlinFacetData(
           apiLevel = kotlin.apiLevel.explicitOrNull()?.argValue,
@@ -58,6 +68,7 @@ data class ElideProjectData(
       entrypoints = manifest.entrypoint.orEmpty(),
       jvmMainClass = manifest.jvm?.main,
       scripts = manifest.scripts.keys.toList(),
+      buildTasks = buildTasks,
     )
   }
 }
