@@ -1,0 +1,5 @@
+[ 14ms] ⇥ Dependencies ready (Up to date)
+[ 15ms] ⇥ Kotlin main compilation skipped (From cache)
+[ 15ms] ⇥ Java main compilation skipped (No sources)
+[103ms] ✓ JVM main application completed successfully (87ms)
+[103ms] ✓ Build successful in 90ms

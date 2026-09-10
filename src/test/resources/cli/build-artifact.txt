@@ -1,0 +1,6 @@
+[ 13ms] error: No compiled classes found for JAR packaging in artifact 'app'
+[ 13ms] ✗ Failed to package jar 'app' (0ms)
+[ 68ms] ✓ Resolved 17 Maven dependencies (45ms)
+[194ms] ✓ Compiled 1 main Kotlin source file (125ms)
+[194ms] ⇥ Java main compilation skipped (No sources)
+[194ms] ✗ Build failed in (182ms)

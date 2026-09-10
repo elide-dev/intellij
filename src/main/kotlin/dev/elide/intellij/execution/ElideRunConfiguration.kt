@@ -12,6 +12,7 @@
  */
 package dev.elide.intellij.execution
 
+import com.intellij.build.BuildViewManager
 import com.intellij.execution.Executor
 import com.intellij.execution.configurations.ConfigurationFactory
 import com.intellij.execution.configurations.RunProfileState
@@ -30,6 +31,7 @@ import dev.elide.intellij.cli.ElideCli
 import dev.elide.intellij.execution.coverage.ElideCoverageProgramRunner
 import dev.elide.intellij.project.model.ElideEntrypointInfo
 import dev.elide.intellij.project.model.ElideEntrypointInfo.Kind
+import dev.elide.intellij.project.model.buildCommandLine
 import org.jdom.Element
 import javax.swing.Icon
 
@@ -115,14 +117,23 @@ class ElideRunConfiguration(
     // ElideTestsExecutionConsoleManager can render it as a test tree; like the debugger flag both go on a copy of
     // the settings, leaving the persisted command line as the user wrote it
     val coverage = ElideCoverageProgramRunner.RUNNER_ID == env.runner.runnerId
-    val commandLine = executionCommandLine(settings.taskNames, coverage) ?: return super.getState(executor, env)
+    val commandLine = executionCommandLine(settings.taskNames, coverage) ?: settings.taskNames
     val runSettings = settings.clone().apply { taskNames = commandLine }
 
     // the debug flag mirrors the platform's own reading of the executor: this state differs from the one
     // `super.getState` builds only in the command line it runs
     val debug = DefaultDebugExecutor.EXECUTOR_ID == executor.id
 
-    return ExternalSystemRunnableState(runSettings, project, debug, this, env).also { copyUserDataTo(it) }
+    return ExternalSystemRunnableState(runSettings, project, debug, this, env).also { state ->
+      copyUserDataTo(state)
+
+      // a build belongs in the Build window, the way it does for every other build system: naming a progress
+      // listener of its own sends the run's build tree there instead of to a view of the Run window, and the
+      // platform's own runner hides the run content whose console that view would have been
+      if (buildsArtifacts(commandLine)) {
+        state.putUserData(PROGRESS_LISTENER_KEY, BuildViewManager::class.java)
+      }
+    }
   }
 
   override fun readExternal(element: Element) {
@@ -232,6 +243,19 @@ class ElideRunConfiguration(
      * prints a summary table and leaves no report file behind, so there is nothing for the IDE to attach.
      */
     fun supportsCoverage(taskNames: List<String>): Boolean = ElideCli.parse(taskNames).command == ElideCli.TEST
+
+    /**
+     * Returns whether a run of [taskNames] assembles artifacts, and therefore belongs in the Build window.
+     *
+     * The vector is read the way the task manager runs it: a configuration created for a task of the tool window
+     * carries the target's model name (`:compile-kotlin-main`), which reaches the CLI as `elide build`, so the
+     * translation happens here too rather than only at the point of execution.
+     */
+    fun buildsArtifacts(taskNames: List<String>): Boolean {
+      val commandLine = buildCommandLine(taskNames) ?: taskNames
+
+      return ElideCli.parse(commandLine).command == ElideCli.BUILD
+    }
 
     /**
      * Returns [taskNames] with the TAP reporter selected, or `null` when the command line is not a test run the

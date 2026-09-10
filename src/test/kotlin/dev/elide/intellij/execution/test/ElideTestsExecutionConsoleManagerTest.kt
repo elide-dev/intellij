@@ -27,6 +27,7 @@ import com.intellij.testFramework.junit5.fixture.projectFixture
 import dev.elide.intellij.Constants
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /** Covers which of an `elide test` run's build events reach the Build window while the test tree owns the run. */
 @TestApplication
@@ -48,20 +49,27 @@ class ElideTestsExecutionConsoleManagerTest {
 
     val source = project.getService(ExternalSystemRunConfigurationViewManager::class.java)
 
-    // standard output is the TAP stream the test tree renders; standard error is the CLI's own log
+    // standard output addressed to the run itself is the TAP stream the test tree renders; standard error is the
+    // CLI's own log, and standard output addressed to a node of the build tree is that node's console
+    val diagnostic = Any()
     source.onEvent(taskId, output(taskId, "# out 1: jvm test output line\n", ProcessOutputType.STDOUT))
     source.onEvent(taskId, output(taskId, "ok 1 - polyglot.GreeterTest > prints output()\n", ProcessOutputType.STDOUT))
     source.onEvent(taskId, output(taskId, "error: kotlinc: Return type mismatch\n", ProcessOutputType.STDERR))
+    source.onEvent(taskId, output(diagnostic, "src/test/Greeter.kt:4:1\n", ProcessOutputType.STDOUT))
     // another run's events belong to that run's own build view
     source.onEvent(otherRun, output(otherRun, "not this run's log\n", ProcessOutputType.STDERR))
     source.onEvent(taskId, FinishBuildEvent.builder(taskId, "finished", SuccessResultImpl()).build())
 
     assertEquals(
-      listOf("error: kotlinc: Return type mismatch\n", "finished"),
+      listOf("error: kotlinc: Return type mismatch\n", "src/test/Greeter.kt:4:1\n", "finished"),
       forwarded.map { (it as? OutputBuildEvent)?.message ?: it.message },
     )
+
+    // the CLI's log is what this window is for, so it is drawn as ordinary text rather than as the error output
+    // the stream it arrived on would otherwise make it
+    assertTrue(forwarded.filterIsInstance<OutputBuildEvent>().all { it.isStdOut })
   }
 
-  private fun output(taskId: ExternalSystemTaskId, text: String, type: ProcessOutputType) =
-    OutputBuildEvent.builder(text).withParentId(taskId).withOutputType(type).build()
+  private fun output(parentId: Any, text: String, type: ProcessOutputType) =
+    OutputBuildEvent.builder(text).withParentId(parentId).withOutputType(type).build()
 }

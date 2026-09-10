@@ -16,11 +16,15 @@ import com.intellij.execution.process.ProcessOutputType
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskId
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskNotificationEvent
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskNotificationListener
+import com.intellij.openapi.externalSystem.model.task.event.ExternalSystemBuildEvent
 import com.intellij.openapi.externalSystem.task.ExternalSystemTaskManager
 import com.intellij.openapi.progress.runBlockingCancellable
 import dev.elide.intellij.Constants
 import dev.elide.intellij.InvalidElideHomeException
 import dev.elide.intellij.cli.ElideCommandLine
+import dev.elide.intellij.execution.ElideRunConfiguration
+import dev.elide.intellij.execution.build.ELIDE_PROGRESS_OUTPUT
+import dev.elide.intellij.execution.build.ElideBuildEventPublisher
 import dev.elide.intellij.project.model.buildCommandLine
 import dev.elide.intellij.settings.ElideExecutionSettings
 import dev.elide.intellij.ui.ElideNotifications
@@ -44,7 +48,8 @@ class ElideTaskManager : ExternalSystemTaskManager<ElideExecutionSettings> {
     runBlockingCancellable {
       runningTasks[id] = coroutineContext.job
       try {
-        val elide = ElideCommandLine.at(settings.elideHome, Path(projectPath))
+        val workDir = Path(projectPath)
+        val elide = ElideCommandLine.at(settings.elideHome, workDir)
 
         // `taskNames` is either the argument vector of a *single* Elide invocation ("run", "src/main.kt"), the same
         // shape `ElideRunConfiguration.rawCommandLine` parses and joins — running each element on its own would turn
@@ -59,8 +64,26 @@ class ElideTaskManager : ExternalSystemTaskManager<ElideExecutionSettings> {
           ExternalSystemTaskNotificationEvent(id, Constants.Strings["tasks.executing", arguments.joinToString(" ")]),
         )
 
-        elide(args = arguments.toTypedArray(), environment = settings.env) { line, stderr ->
-          listener.onTaskOutput(id, line, if (stderr) ProcessOutputType.STDERR else ProcessOutputType.STDOUT)
+        // the CLI reports every step of the build it runs on standard error, which becomes a node of the build
+        // tree; standard output carries what the program under `run` prints, and is left alone
+        val progress = ElideBuildEventPublisher(id, workDir, System.currentTimeMillis()) { event ->
+          listener.onStatusChange(ExternalSystemBuildEvent(id, event))
+        }
+
+        // a TAP run is the exception: `ElideTestsExecutionConsoleManager` tells the run's TAP stream from the CLI's
+        // log by the stream each arrived on, which is all the build event dispatcher passes on, so its log keeps
+        // the type of the stream it was written to
+        val tap = ElideRunConfiguration.emitsTap(arguments)
+
+        try {
+          elide(args = arguments.toTypedArray(), environment = settings.env) { line, stderr ->
+            val claimed = stderr && progress.accept(line)
+            listener.onTaskOutput(id, line, outputType(stderr, progress = claimed && !tap))
+          }
+        } finally {
+          // a failed or cancelled run reports the reason on its way out, and that reason is the last thing the log
+          // holds: publishing it is what puts a build that never got as far as a step on the tree
+          progress.flush()
         }
       } catch (cause: InvalidElideHomeException) {
         ElideNotifications.notifyInvalidElideHome(id.findProject())
@@ -78,5 +101,15 @@ class ElideTaskManager : ExternalSystemTaskManager<ElideExecutionSettings> {
     job.cancel()
 
     return true
+  }
+
+  /**
+   * Type one line of output is reported with: the CLI's own log carries a type of its own, so the consoles draw it
+   * as ordinary text rather than as the error output the stream it arrives on would otherwise make it.
+   */
+  private fun outputType(stderr: Boolean, progress: Boolean): ProcessOutputType = when {
+    progress -> ELIDE_PROGRESS_OUTPUT
+    stderr -> ProcessOutputType.STDERR
+    else -> ProcessOutputType.STDOUT
   }
 }

@@ -36,6 +36,19 @@ Marketplace, so entries must be user-facing and free of internal jargon.
   descriptions the CLI gives them. Double-clicking a task, or **Run** in its context menu, runs `elide build <task>`;
   the same menu binds a task to a keyboard shortcut, or runs it before every sync or build. The list is read from the
   CLI (`elide build --inspect`) during project sync.
+- **Structured build progress.** Every Elide run now reports its steps as a tree instead of plain console text: one
+  node per build step the CLI ran, with its duration, the reason a skipped step gave, and compiler diagnostics
+  nested under the step that produced them and navigable to the file and line they name. A diagnostic reads as the
+  message its tool gave, with the file and line beside it, and the console next to the tree shows the block the CLI
+  rendered for it: the position relative to the project root, the message in the colour of its severity, and the
+  source excerpt with its frame dimmed and the line it points at picked out. Every location a run prints is a link
+  to the file and line it names, in that console and in the run's own log. Steps that succeeded are shown once
+  **Show successful steps** is turned on in the window's toolbar. The CLI's own log is drawn as ordinary console
+  text rather than in the red of error output, which is what the stream it is written to used to make it; what the
+  program under `elide run` writes to standard error is still shown as error output.
+- **`elide build` reports to the Build window.** Build run configurations — including the ones started from an
+  artifact's gutter icon or the tool window's task list — now report into the **Build** tool window instead of
+  opening a Run window tab. Runs, tests and the other commands are unchanged.
 
 ### Changed
 

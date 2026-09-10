@@ -89,6 +89,10 @@
     <externalSystemExecutionConsoleManager
             implementation="dev.elide.intellij.execution.test.ElideTestsExecutionConsoleManager"/>
 
+    <!-- links the source locations every other Elide run prints, in the run's console and in the build tree's -->
+    <externalSystemExecutionConsoleManager
+            implementation="dev.elide.intellij.execution.ElideExecutionConsoleManager"/>
+
     <!-- merges the reports a coverage run writes into one suite spanning every language of the run -->
     <coverageEngine implementation="dev.elide.intellij.execution.coverage.ElideCoverageEngine"/>
     <coverageRunner implementation="dev.elide.intellij.execution.coverage.ElideCoverageRunner"/>

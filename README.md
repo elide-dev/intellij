@@ -73,6 +73,35 @@ A build icon appears next to each key of the manifest's `artifacts` mapping — 
 and static sites alike — and runs `elide build <artifact>` for it. It offers no debug or coverage action: assembling
 an artifact starts no debuggable process and writes no coverage report.
 
+### Build progress
+
+Every Elide run reports its steps as a tree, the way other build systems do: one node per build step the CLI ran —
+dependency resolution, each compilation, each artifact, the entrypoint itself — with the CLI's own duration for it,
+the reason a step it skipped gave (*Up to date*, *From cache*, *No sources*), and compiler diagnostics nested under
+the step that produced them, navigable to the file, line and column they name.
+
+A diagnostic reads as the message its tool gave, with the file and line it named beside it (`Hello.kt:8`).
+Selecting it shows, in the console next to the tree, the block the CLI rendered for it: the position, relative to
+the project root whether the tool printed it that way or absolute, the message in the colour of its severity, and
+the source excerpt with its frame dimmed and the line it points at picked out. Selecting the step instead shows
+every diagnostic its tools reported, in the order they arrived.
+
+Every location an Elide run prints is a link to the file and line it names — the one above a diagnostic, and the
+ones in the run's own log, whichever form the tool that reported it used (a path, or a `file://` URI). Text that
+only reads like a path is left alone: a location becomes a link when it names a file the project has.
+
+An `elide build` run, including the ones started from an artifact's gutter icon or from the tool window's task list,
+reports into the **Build** tool window; `elide run` and the other commands keep the Run window, where the same tree
+sits beside the console.
+
+The console beside the tree keeps the whole log, drawn as ordinary text: the CLI writes its account of the build to
+standard error, which a console would otherwise show entirely in red. Only what the program under `elide run` writes
+to standard error is still shown as error output.
+
+> The tree hides steps that succeeded until **Show successful steps** (the eye icon in the window's toolbar) is
+> turned on — an IDE-wide setting shared with the other build systems. Failures, warnings and running steps are
+> always shown.
+
 ### Test results
 
 An `elide test` run configuration shows its results in the IDE's test runner instead of plain console output: a tree of

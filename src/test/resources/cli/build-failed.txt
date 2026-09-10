@@ -1,0 +1,10 @@
+[ 76ms] ✓ Resolved 19 Maven dependencies (55ms)
+[171ms] error: kotlinc: Unresolved reference 'boom'.
+In file: src/main/com/example/Hello.kt:8:3
+
+  6 │ fun main() {
+  7 │   println(old())
+→ 8 │   boom()
+  9 │ }
+[173ms] ✗ Kotlin main compilation failed (96ms)
+[174ms] ✗ Build failed in (162ms)

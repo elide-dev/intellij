@@ -7,7 +7,7 @@
 .kotlin/
 .gradle/
 local.properties
-build/
+/build/
 
 .elide/
 .intellijPlatform/

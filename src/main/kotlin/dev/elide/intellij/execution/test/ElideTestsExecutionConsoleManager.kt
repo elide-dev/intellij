@@ -21,7 +21,9 @@ import com.intellij.build.events.FailureResult
 import com.intellij.build.events.FinishBuildEvent
 import com.intellij.build.events.OutputBuildEvent
 import com.intellij.build.events.StartBuildEvent
+import com.intellij.build.events.impl.OutputBuildEventImpl
 import com.intellij.build.events.impl.StartBuildEventImpl
+import com.intellij.execution.filters.Filter
 import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessHandler
 import com.intellij.execution.process.ProcessListener
@@ -46,6 +48,7 @@ import com.intellij.openapi.util.Key
 import com.intellij.ui.SimpleTextAttributes
 import dev.elide.intellij.Constants
 import dev.elide.intellij.execution.ElideRunConfiguration
+import dev.elide.intellij.execution.build.elideSourceFilters
 
 /**
  * Replaces the plain console of an `elide test` run with the IDE's test tree, decoding the TAP 13 stream the CLI
@@ -107,6 +110,15 @@ class ElideTestsExecutionConsoleManager :
   override fun getRestartActions(consoleView: ElideTestsExecutionConsole): Array<AnAction> = AnAction.EMPTY_ARRAY
 
   /**
+   * Links the source locations a test run's own log prints, which the Build window's tree shows beside its nodes.
+   */
+  override fun getCustomExecutionFilters(
+    project: Project,
+    task: ExternalSystemTask,
+    env: ExecutionEnvironment?,
+  ): Array<Filter> = elideSourceFilters(project, task)
+
+  /**
    * Says so when a finished run reported no tests at all, instead of leaving an empty tree with no explanation.
    */
   private fun explainEmptyTree(console: ElideTestsExecutionConsole) {
@@ -147,7 +159,7 @@ class ElideTestsExecutionConsoleManager :
 
     project.getService(ExternalSystemRunConfigurationViewManager::class.java).addListener({ buildId, event ->
       if (buildId == taskId) {
-        if (!carriesTapStream(event)) buildWindow.onEvent(buildId, quietened(event))
+        if (!carriesTapStream(taskId, event)) buildWindow.onEvent(buildId, plain(quietened(event)))
         if (event is FinishBuildEvent) {
           raiseBuildWindowOnBuildFailure(project, event, testsRoot)
           Disposer.dispose(disposable)
@@ -156,8 +168,35 @@ class ElideTestsExecutionConsoleManager :
     }, disposable)
   }
 
-  /** Whether [event] carries a line of the run's TAP stream, which the test tree owns. */
-  private fun carriesTapStream(event: BuildEvent): Boolean = event is OutputBuildEvent && event.outputType.isStdout
+  /**
+   * Whether [event] carries a line of the run's TAP stream, which the test tree owns.
+   *
+   * The stream is the run's own output, so it arrives on standard output addressed to the run's root node; output
+   * addressed to a node of the tree is the account of a build step, which [ElideBuildEventPublisher] writes there.
+   */
+  private fun carriesTapStream(taskId: ExternalSystemTaskId, event: BuildEvent): Boolean =
+    event is OutputBuildEvent && event.outputType.isStdout && event.parentId == taskId
+
+  /**
+   * [event], with the CLI's own log drawn as ordinary output rather than as the error output its stream makes it.
+   *
+   * Everything this run forwards on standard error is the CLI's account of the build — the TAP stream is what the
+   * program itself writes, and it is not forwarded — so a build that reports every step it ran in the red the
+   * Build window's console keeps for standard error reads as a build that went wrong.
+   */
+  private fun plain(event: BuildEvent): BuildEvent {
+    if (event !is OutputBuildEvent || event.outputType.isStdout) return event
+
+    return OutputBuildEventImpl(
+      /* eventId = */ event.id,
+      /* parentId = */ event.parentId,
+      /* eventTime = */ event.eventTime,
+      /* message = */ event.message,
+      /* hint = */ null,
+      /* description = */ event.description,
+      /* outputType = */ ProcessOutputType.STDOUT,
+    )
+  }
 
   /** A start event whose descriptor no longer raises the Build window when the run fails. */
   private fun quietened(event: BuildEvent): BuildEvent {

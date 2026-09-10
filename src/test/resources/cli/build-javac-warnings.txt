@@ -1,0 +1,10 @@
+[ 66ms] ✓ Resolved 15 Maven dependencies (43ms)
+[ 72ms] warning: javac: location of system modules is not set in conjunction with -source 21
+  not setting the location of system modules may lead to class files that cannot run on JDK 21
+    --release 21 is recommended instead of -source 21 -target 21 because it sets the location of system modules automatically
+javac: /home/me/app/src/main/java/com/example/App.java uses or overrides a deprecated API.
+In file: /home/me/app/src/main/java/com/example/App.java
+javac: Recompile with -Xlint:deprecation for details.
+In file: /home/me/app/src/main/java/com/example/App.java
+[ 90ms] ✓ Compiled 2 main Java sources (24ms)
+[ 90ms] ✓ Build successful in 78ms

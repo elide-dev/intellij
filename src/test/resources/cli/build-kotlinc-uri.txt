@@ -1,0 +1,5 @@
+[ 21ms] ✓ jvm-main-resources (1ms)
+[176ms] ✓ Resolved 59 Maven dependencies (147ms)
+[ 3.1s] error: kotlinc: file:///home/me/app/src/main/kotlin/dev/example/App.kt:11:16 Unresolved reference 'Strin'.
+[ 3.1s] ✗ Kotlin main compilation failed (2.9s)
+[ 3.1s] ✗ Build failed in (3.1s)
