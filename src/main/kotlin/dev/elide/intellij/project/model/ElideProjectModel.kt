@@ -17,6 +17,7 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.externalSystem.model.DataNode
 import com.intellij.openapi.externalSystem.model.ProjectKeys
 import com.intellij.openapi.externalSystem.model.project.*
+import com.intellij.openapi.externalSystem.model.task.TaskData
 import com.intellij.openapi.roots.DependencyScope
 import com.intellij.openapi.util.io.toCanonicalPath
 import dev.elide.intellij.Constants
@@ -111,6 +112,25 @@ object ElideProjectModel {
 
     // attached additional data so we can finish the import after the project is resolved
     projectNode.createChild(ElideProjectData.PROJECT_KEY, ElideProjectData.from(manifest, buildTasks))
+
+    // Elide's build graph belongs to the project rather than to any one module, so its tasks hang off the project
+    // node, under the list the tool window shows them in; running one from there goes through the same task manager
+    // as a run configuration
+    if (buildTasks.isNotEmpty()) {
+      val tasksNode = projectNode.createChild(ElideBuildTasksData.KEY, ElideBuildTasksData())
+
+      for (task in buildTasks) {
+        tasksNode.createChild(
+          ProjectKeys.TASK,
+          TaskData(
+            /* owner = */ Constants.SYSTEM_ID,
+            /* name = */ task.taskName,
+            /* linkedExternalProjectPath = */ projectPath.pathString,
+            /* description = */ task.description.ifEmpty { null },
+          ),
+        )
+      }
+    }
 
     // invoke registered contributors
     invokeContributors(projectNode, projectPath, manifest)

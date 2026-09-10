@@ -14,6 +14,7 @@ package dev.elide.intellij.project.model
 
 import com.intellij.util.xmlb.annotations.Attribute
 import com.intellij.util.xmlb.annotations.XCollection
+import dev.elide.intellij.cli.ElideCli
 import java.io.Serializable
 
 /**
@@ -51,4 +52,46 @@ data class ElideBuildTaskInfo(
   private companion object {
     private const val serialVersionUID: Long = 1L
   }
+}
+
+/**
+ * Prefix marking an external system task name as a target of the project's build graph.
+ *
+ * The CLI takes a target with or without it (`elide build :app` and `elide build app` name the same one) and rejects
+ * it anywhere else — `elide :app` resolves no file and no script — so a task name carrying the prefix names a build
+ * target and nothing else. That is what lets [buildCommandLine] tell the targets the platform asks for by name (the
+ * tool window's "Run", task activation, keymap shortcuts) from the argument vector a run configuration was written
+ * with.
+ */
+const val BUILD_TARGET_PREFIX: String = ":"
+
+/** The name this task carries in the project model, and therefore in the settings of a run that executes it. */
+val ElideBuildTaskInfo.taskName: String get() = "$BUILD_TARGET_PREFIX$name"
+
+/** Returns the build target [taskName] names, or `null` when it names none. */
+fun buildTargetName(taskName: String): String? {
+  return taskName.removePrefix(BUILD_TARGET_PREFIX).takeIf { it.length < taskName.length && it.isNotEmpty() }
+}
+
+/**
+ * Returns the argument vector that builds the targets [taskNames] opens with, or `null` when it names none and is
+ * therefore an Elide argument vector already.
+ *
+ * The shape follows the one `elide build` documents — `build [TARGET…] [--OPTION…]` — so the leading targets are
+ * translated and everything behind them passed through: a configuration created for a task of the tool window
+ * keeps working once options are typed into it.
+ *
+ * The prefix is dropped on the way out, since the bare name is the form the manifest and the `--inspect` listing
+ * use, and the CLI takes either.
+ */
+fun buildCommandLine(taskNames: List<String>): List<String>? {
+  val targets = taskNames.asSequence()
+    .map(::buildTargetName)
+    .takeWhile { it != null }
+    .filterNotNull()
+    .toList()
+
+  if (targets.isEmpty()) return null
+
+  return listOf(ElideCli.BUILD.name) + targets + taskNames.drop(targets.size)
 }

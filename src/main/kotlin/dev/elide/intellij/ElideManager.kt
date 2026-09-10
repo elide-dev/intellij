@@ -17,9 +17,11 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.externalSystem.ExternalSystemAutoImportAware
 import com.intellij.openapi.externalSystem.ExternalSystemConfigurableAware
 import com.intellij.openapi.externalSystem.ExternalSystemManager
+import com.intellij.openapi.externalSystem.ExternalSystemUiAware
 import com.intellij.openapi.externalSystem.model.ProjectSystemId
 import com.intellij.openapi.externalSystem.service.project.ExternalSystemProjectResolver
 import com.intellij.openapi.externalSystem.service.project.autoimport.CachingExternalSystemAutoImportAware
+import com.intellij.openapi.externalSystem.service.ui.DefaultExternalSystemUiAware
 import com.intellij.openapi.externalSystem.task.ExternalSystemTaskManager
 import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.openapi.options.Configurable
@@ -32,6 +34,7 @@ import dev.elide.intellij.settings.*
 import dev.elide.intellij.tasks.ElideTaskManager
 import java.io.File
 import java.nio.file.Path
+import javax.swing.Icon
 
 /**
  * Coordinator service for Elide as an external build system.
@@ -50,7 +53,8 @@ import java.nio.file.Path
  * actions, etc. Some additional parts, such as the [dev.elide.intellij.startup.ElideStartupActivity], are used
  * to complement those features and improve the experience (e.g., by scanning for a project on startup).
  */
-class ElideManager : ExternalSystemAutoImportAware, ExternalSystemConfigurableAware, ExternalSystemManager<
+class ElideManager : ExternalSystemAutoImportAware, ExternalSystemConfigurableAware, ExternalSystemUiAware,
+  ExternalSystemManager<
         ElideProjectSettings,
         ElideSettingsListener,
         ElideSettings,
@@ -64,6 +68,20 @@ class ElideManager : ExternalSystemAutoImportAware, ExternalSystemConfigurableAw
   private val autoImportDelegate = CachingExternalSystemAutoImportAware(autoImport)
 
   override fun getSystemId(): ProjectSystemId = Constants.SYSTEM_ID
+
+  // the tool window resolves its icons through the manager (see `ExternalSystemUiUtil.getUiAware`); only the task
+  // icon is ours, the rest stays with the platform's defaults
+  override fun getTaskIcon(): Icon = Constants.Icons.ELIDE
+
+  override fun getProjectIcon(): Icon? = DefaultExternalSystemUiAware.INSTANCE.projectIcon
+
+  override fun getExternalProjectConfigDescriptor(): FileChooserDescriptor? {
+    return DefaultExternalSystemUiAware.INSTANCE.externalProjectConfigDescriptor
+  }
+
+  override fun getProjectRepresentationName(targetProjectPath: String, rootProjectPath: String?): String {
+    return DefaultExternalSystemUiAware.INSTANCE.getProjectRepresentationName(targetProjectPath, rootProjectPath)
+  }
 
   override fun getSettingsProvider(): Function<Project, ElideSettings> = Function { project ->
     ElideSettings.getSettings(project)

@@ -21,6 +21,7 @@ import com.intellij.openapi.progress.runBlockingCancellable
 import dev.elide.intellij.Constants
 import dev.elide.intellij.InvalidElideHomeException
 import dev.elide.intellij.cli.ElideCommandLine
+import dev.elide.intellij.project.model.buildCommandLine
 import dev.elide.intellij.settings.ElideExecutionSettings
 import dev.elide.intellij.ui.ElideNotifications
 import java.util.concurrent.ConcurrentHashMap
@@ -45,10 +46,13 @@ class ElideTaskManager : ExternalSystemTaskManager<ElideExecutionSettings> {
       try {
         val elide = ElideCommandLine.at(settings.elideHome, Path(projectPath))
 
-        // `taskNames` is the argument vector of a *single* Elide invocation ("run", "src/main.kt"), the same shape
-        // `ElideRunConfiguration.rawCommandLine` parses and joins; running each element on its own would turn one
-        // command line into several bogus commands
-        val arguments = settings.tasks.filter { it.isNotBlank() }
+        // `taskNames` is either the argument vector of a *single* Elide invocation ("run", "src/main.kt"), the same
+        // shape `ElideRunConfiguration.rawCommandLine` parses and joins — running each element on its own would turn
+        // one command line into several bogus commands — or the build targets the external system itself asks for by
+        // name: the tool window's "Run", task activation and keymap shortcuts all execute a task by the name it
+        // carries in the project model, and those reach the CLI through `build`
+        val tasks = settings.tasks.filter { it.isNotBlank() }
+        val arguments = buildCommandLine(tasks) ?: tasks
         if (arguments.isEmpty()) return@runBlockingCancellable
 
         listener.onStatusChange(

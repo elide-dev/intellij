@@ -41,6 +41,11 @@ A directory is an Elide project when it contains an `elide.pkl` manifest.
 The **Elide** tool window shows the linked projects and their module structure, with the reload actions for keeping them
 in sync.
 
+Under **Tasks**, it lists the build targets the CLI reports for the project (`elide build --inspect`): the manifest's
+artifacts, plus the targets Elide derives for source sets, dependencies and entrypoints. Double-click one, or use
+**Run** from its context menu, to run `elide build <target>`; the same menu assigns it a keyboard shortcut or runs it
+before a sync or build.
+
 ## Running
 
 The plugin contributes the **Elide** run configuration type, used to invoke the Elide CLI. The command-line field

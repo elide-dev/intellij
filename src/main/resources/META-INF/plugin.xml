@@ -116,6 +116,8 @@
                 factoryClass="dev.elide.intellij.ui.ElideToolWindowFactory"
                 anchor="right"
                 icon="/icons/toolWindowElide.svg"/>
+    <!-- labels the task nodes of the tool window's tree; the platform's default contributor builds them -->
+    <externalSystemViewContributor implementation="dev.elide.intellij.ui.ElideViewContributor"/>
     <notificationGroup id="Elide Notifications"
                        displayType="BALLOON"
                        key="elide.notifications.group"/>

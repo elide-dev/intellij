@@ -31,6 +31,11 @@ Marketplace, so entries must be user-facing and free of internal jargon.
   manifest's artifacts, plus the tasks Elide derives for source sets, dependencies and entrypoints. Naming a task
   then offers the options that task declares (`--fresh` for dependency resolution, `--debugger` and `--args` for a
   JVM run, …). Both are read from the CLI (`elide build --inspect`) during project sync.
+- **Build tasks in the Elide tool window.** The tool window lists the project's build targets under **Tasks** — the
+  manifest's artifacts, plus the ones Elide derives for source sets, dependencies and entrypoints — with the
+  descriptions the CLI gives them. Double-clicking a task, or **Run** in its context menu, runs `elide build <task>`;
+  the same menu binds a task to a keyboard shortcut, or runs it before every sync or build. The list is read from the
+  CLI (`elide build --inspect`) during project sync.
 
 ### Changed
 
