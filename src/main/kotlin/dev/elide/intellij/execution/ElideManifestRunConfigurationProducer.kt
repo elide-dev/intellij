@@ -25,6 +25,7 @@ import com.intellij.psi.PsiElement
 import dev.elide.intellij.project.model.ElideEntrypointInfo
 import dev.elide.intellij.project.model.fullCommandLine
 import dev.elide.intellij.psi.manifestDeclaresEntrypoint
+import dev.elide.intellij.psi.moduleMappingKey
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
 import org.pkl.intellij.PklLanguage
 import org.pkl.intellij.psi.*
@@ -90,6 +91,7 @@ class ElideManifestRunConfigurationProducer :
       "jvm" -> ElideEntrypointInfo.Kind.JvmMainClass
       "entrypoint" -> ElideEntrypointInfo.Kind.Generic
       "scripts" -> ElideEntrypointInfo.Kind.Script
+      "artifacts" -> ElideEntrypointInfo.Kind.Artifact
       else -> return null
     }
 
@@ -105,6 +107,9 @@ class ElideManifestRunConfigurationProducer :
 
       ElideEntrypointInfo.Kind.Script -> element.getParentOfType<PklObjectEntry>(true)?.keyExpr?.resolvedText()
       ElideEntrypointInfo.Kind.Generic -> element.getParentOfType<PklObjectElement>(true)?.expr?.resolvedText()
+      // the artifact name is read off the mapping key alone: an artifact declaration carries mappings of its own
+      // (`resources`, `manifest`), and the nearest enclosing entry inside one of those names a file, not an artifact
+      ElideEntrypointInfo.Kind.Artifact -> element.moduleMappingKey("artifacts")?.keyExpr?.resolvedText()
       // manifests declare no per-test entrypoints; JvmTest configurations come from the JUnit gutter producer only
       ElideEntrypointInfo.Kind.JvmTest -> return null
     } ?: return null
@@ -113,6 +118,7 @@ class ElideManifestRunConfigurationProducer :
       ElideEntrypointInfo.Kind.Script -> ElideEntrypointInfo.script(value)
       ElideEntrypointInfo.Kind.JvmMainClass -> ElideEntrypointInfo.jvmMain(value)
       ElideEntrypointInfo.Kind.Generic -> ElideEntrypointInfo.generic(value)
+      ElideEntrypointInfo.Kind.Artifact -> ElideEntrypointInfo.artifact(value)
       ElideEntrypointInfo.Kind.JvmTest -> return null
     }
   }

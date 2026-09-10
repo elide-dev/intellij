@@ -15,6 +15,7 @@ package dev.elide.intellij.project.model
 import com.intellij.util.execution.ParametersListUtil
 import com.intellij.util.xmlb.annotations.Attribute
 import com.intellij.util.xmlb.annotations.XCollection
+import dev.elide.intellij.Constants
 import dev.elide.intellij.cli.ElideCli
 
 /** Serializable project data resolved from an Elide manifest during project sync. */
@@ -44,8 +45,9 @@ data class ElideProjectInfo(
 }
 
 /**
- * Describes a resolved entrypoint for an Elide project. Prefer using the static factory functions to construct new
- * instances, as they automatically set some of the fields to the proper values.
+ * Describes a target an Elide project offers the IDE: an entrypoint a `run` starts, or an artifact a `build`
+ * assembles. Prefer using the static factory functions to construct new instances, as they automatically set some of
+ * the fields to the proper values.
  */
 data class ElideEntrypointInfo(
   @Attribute val kind: Kind = Kind.Generic,
@@ -53,12 +55,13 @@ data class ElideEntrypointInfo(
   @Attribute val descriptiveName: String = "",
   @Attribute val value: String = "",
 ) {
-  /** Identifies the type of entry point, according to its source. */
+  /** Identifies the type of target, according to its source. */
   enum class Kind {
     Script,
     JvmMainClass,
     JvmTest,
     Generic,
+    Artifact,
   }
 
   companion object {
@@ -95,17 +98,34 @@ data class ElideEntrypointInfo(
         value = entrypoint,
       )
     }
+
+    /**
+     * Returns the build target for the artifact declared in the manifest under [name].
+     *
+     * The CLI names an artifact's build task after the artifact itself, so the name doubles as the `elide build`
+     * target. The display name says what running it does, which a bare artifact name in the run widget would not.
+     */
+    @JvmStatic fun artifact(name: String): ElideEntrypointInfo {
+      return ElideEntrypointInfo(
+        Kind.Artifact,
+        displayName = Constants.Strings["execution.configuration.artifact", name],
+        descriptiveName = name,
+        value = name,
+      )
+    }
   }
 }
 
 /**
- * Returns the raw base command line for the Elide CLI that can be used to invoke this entrypoint.
+ * Returns the raw base command line for the Elide CLI that can be used to invoke this target.
  *
  * The value is quoted the way [ElideRunConfiguration][dev.elide.intellij.execution.ElideRunConfiguration] parses it,
- * so entrypoint paths containing spaces survive the round trip into the configuration's argument vector.
+ * so entrypoint paths and artifact names containing spaces survive the round trip into the configuration's argument
+ * vector.
  */
 val ElideEntrypointInfo.fullCommandLine: String
   get() = when (kind) {
     ElideEntrypointInfo.Kind.JvmMainClass -> ElideCli.RUN.name
+    ElideEntrypointInfo.Kind.Artifact -> ParametersListUtil.join(ElideCli.BUILD.name, value)
     else -> ParametersListUtil.join(ElideCli.RUN.name, value)
   }

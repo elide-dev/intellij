@@ -187,6 +187,8 @@ class ElideRunConfiguration(
         // JVM tests are debuggable through the build system instead (`elide build jvm-test --debugger`), which needs
         // a JDWP address rather than the client-mode attach this configuration performs
         Kind.JvmTest -> false
+        // an artifact is assembled by `elide build`, which the command line check above has already rejected
+        Kind.Artifact -> false
         Kind.Generic -> value?.substringAfterLast('.')?.lowercase() in JVM_ENTRYPOINT_EXTENSIONS
         // hand-written command lines carry no entrypoint metadata, so the CLI's own resolution decides: `entrypoint`
         // from the manifest first, then `jvm.main`. A JVM project without an explicit entrypoint therefore lands on a

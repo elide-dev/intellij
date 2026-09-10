@@ -63,6 +63,10 @@ Run and debug icons appear in the gutter for:
 - Kotlin and Java `main` functions whose class is an entrypoint of a linked Elide project.
 - JUnit test classes and methods in a linked Elide project.
 
+A build icon appears next to each key of the manifest's `artifacts` mapping — JARs, native images, container images
+and static sites alike — and runs `elide build <artifact>` for it. It offers no debug or coverage action: assembling
+an artifact starts no debuggable process and writes no coverage report.
+
 ### Test results
 
 An `elide test` run configuration shows its results in the IDE's test runner instead of plain console output: a tree of

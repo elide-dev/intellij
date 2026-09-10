@@ -33,6 +33,27 @@ inline val PsiElement.parentPropertyReference: PsiElement?
     .takeIf { parent?.reference?.resolve() is PklProperty }
 
 /**
+ * Returns the mapping entry this element is the key of, when that mapping is the value of the module-level property
+ * named [property].
+ *
+ * Only the mapping's own entries qualify. A nested mapping is rejected even though it sits under the same
+ * module-level property: the `resources` of an artifact declaration are keyed by file path, not by artifact name, and
+ * a caret there names nothing the CLI can be asked to build.
+ */
+fun PsiElement.moduleMappingKey(property: String): PklObjectEntry? {
+  val anchor = parentStringLiteral ?: parentPropertyReference ?: return null
+
+  val entry = anchor.parent as? PklObjectEntry ?: return null
+  if (entry.keyExpr != anchor) return null
+
+  val owner = (entry.parent as? PklObjectBody)?.parent as? PklClassProperty ?: return null
+  if (!owner.propertyName.textMatches(property)) return null
+  if (owner.parent !is PklModuleMemberList) return null
+
+  return entry
+}
+
+/**
  * Returns whether the manifest containing this element declares at least one explicit `entrypoint`.
  *
  * The CLI resolves the manifest's `entrypoint` before falling back to `jvm.main`, so a JVM main class declared

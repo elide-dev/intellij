@@ -109,6 +109,9 @@ dependencies {
     bundledModule("intellij.platform.coverage")
     bundledModule("intellij.platform.coverage.agent")
     plugin(id = "org.pkl", version = libs.versions.pkl.plugin.get())
+    // the Pkl plugin depends on Markdown; without it the platform refuses to load Pkl in the test IDE, and with it
+    // every Pkl-language extension of this plugin (the manifest gutter icons, references and inspections)
+    bundledPlugin("org.intellij.plugins.markdown")
     testFramework(TestFrameworkType.Platform)
     testFramework(TestFrameworkType.JUnit5)
   }

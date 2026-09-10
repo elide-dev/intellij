@@ -23,6 +23,9 @@ Marketplace, so entries must be user-facing and free of internal jargon.
   the editor, the project view and the coverage tool window. Kotlin, Java, JavaScript and TypeScript coverage from a
   single run lands in one suite. Reports written by a run the IDE did not start — from a terminal, say — are attached
   as they appear.
+- **Build icons for manifest artifacts.** Every key of an `elide.pkl` `artifacts` mapping — JARs, native images,
+  container images, static sites — carries a gutter icon that runs `elide build <artifact>`, with a run configuration
+  named after the artifact (requires the Pkl plugin).
 
 ### Changed
 

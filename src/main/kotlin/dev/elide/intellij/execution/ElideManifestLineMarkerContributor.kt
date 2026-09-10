@@ -12,12 +12,16 @@
  */
 package dev.elide.intellij.execution
 
+import com.intellij.execution.executors.DefaultRunExecutor
+import com.intellij.execution.lineMarker.ExecutorAction
 import com.intellij.execution.lineMarker.RunLineMarkerContributor
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.util.firstLeaf
 import dev.elide.intellij.psi.manifestDeclaresEntrypoint
+import dev.elide.intellij.psi.moduleMappingKey
 import dev.elide.intellij.psi.parentPropertyReference
 import dev.elide.intellij.psi.parentStringLiteral
 import org.pkl.intellij.PklLanguage
@@ -30,6 +34,7 @@ class ElideManifestLineMarkerContributor : RunLineMarkerContributor() {
     return detectJvmEntrypoint(element)
       ?: detectGenericEntrypoint(element)
       ?: detectScript(element)
+      ?: detectArtifact(element)
   }
 
   @Suppress("ReturnCount")
@@ -74,28 +79,48 @@ class ElideManifestLineMarkerContributor : RunLineMarkerContributor() {
     return withExecutorActions(AllIcons.Actions.Execute)
   }
 
-  @Suppress("ReturnCount")
   private fun detectScript(element: PsiElement): Info? {
-    // only simple string elements or references are currently supported, e.g:
+    // only simple string keys or references are currently supported, e.g:
     // local bye = "bye"
     // scripts {
     //  ["hello"] = "./hello.js"
     //  [bye] = "./bye.js"
     // }
-    val anchor = element.parentStringLiteral
-      ?: element.parentPropertyReference
-      ?: return null
-
-    val mappingEntry = anchor.parent as? PklObjectEntry ?: return null
-    if (mappingEntry.parent !is PklObjectBody) return null
-
-    if (mappingEntry.keyExpr != element.parent.parent) return null
-    if (element.parent.firstLeaf() != element) return null
-
-    val listingElement = PsiTreeUtil.getParentOfType(element, PklClassProperty::class.java) ?: return null
-    if (listingElement.propertyName.text != "scripts") return null
-    if (listingElement.parent !is PklModuleMemberList) return null
+    if (!element.namesMappingKey("scripts")) return null
 
     return withExecutorActions(AllIcons.Actions.Execute)
   }
+
+  private fun detectArtifact(element: PsiElement): Info? {
+    // every artifact the manifest declares is a build target named after itself, e.g:
+    // artifacts {
+    //  ["app"] = new Jvm.Jar { main = "app.MainKt" }
+    //  ["image"] = new Container.ContainerImage { from { "app" } }
+    // }
+    if (!element.namesMappingKey("artifacts")) return null
+
+    return Info(AllIcons.Actions.Compile, buildActions())
+  }
+
+  /**
+   * Returns whether this element carries the icon for the key of an entry in the module-level mapping named
+   * [property].
+   */
+  private fun PsiElement.namesMappingKey(property: String): Boolean {
+    if (moduleMappingKey(property) == null) return false
+
+    // only the first leaf of the key gets the icon, to avoid stacked action tooltips
+    return parent.firstLeaf() == this
+  }
+
+  /**
+   * Actions offered by an artifact's gutter icon: every extra action, but only the run executor.
+   *
+   * `elide build <artifact>` assembles an artifact. It opens no JDWP server for the debugger to attach to, and the
+   * CLI writes the coverage reports the IDE displays for `elide test` alone, so either executor would promise an
+   * action this run cannot deliver.
+   */
+  private fun buildActions(): Array<AnAction> = ExecutorAction.getActionList(0)
+    .filterNot { it is ExecutorAction && it.executor.id != DefaultRunExecutor.EXECUTOR_ID }
+    .toTypedArray()
 }

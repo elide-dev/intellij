@@ -43,6 +43,15 @@ class ElideEntrypointInfoTest {
     assertEquals("run src/main/kotlin/Main.kt", generic.fullCommandLine)
   }
 
+  @Test fun `artifacts are built by name`() {
+    val artifact = ElideEntrypointInfo.artifact("app")
+
+    assertEquals(ElideEntrypointInfo.Kind.Artifact, artifact.kind)
+    assertEquals("Build app", artifact.displayName)
+    assertEquals("app", artifact.value)
+    assertEquals("build app", artifact.fullCommandLine)
+  }
+
   @Test fun `entrypoint paths with spaces stay one argument`() {
     val generic = ElideEntrypointInfo.generic("src/my scripts/main.kt")
 
