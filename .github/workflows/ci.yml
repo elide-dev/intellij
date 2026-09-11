@@ -30,7 +30,7 @@ jobs:
           java-version: 21
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Verify plugin project configuration
         run: ./gradlew verifyPluginProjectConfiguration
@@ -62,7 +62,7 @@ jobs:
           java-version: 21
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       # binary compatibility across the supported build range; the JetBrains Marketplace runs the same verifier on
       # every upload, so a failure here is a failure at publication time
