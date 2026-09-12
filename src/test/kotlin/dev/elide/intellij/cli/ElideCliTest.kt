@@ -79,12 +79,15 @@ class ElideCliTest {
     assertContains(variants, "--test-name-pattern")
     assertContains(variants, "--reporter=junit")
     assertContains(variants, "--project")
-    // `--debugger` and `--profiler` are declared by `run` and the root command only, and `--host` by the servers
-    assertFalse("--debugger" in variants)
-    assertFalse("--profiler" in variants)
+    // `--snippet` and `--language` are declared by `run` and the root command only, and `--host` by the servers
+    assertFalse("--snippet" in variants)
+    assertFalse("--language" in variants)
     assertFalse("--host" in variants)
     // `--coverage` is genuinely global, and applies to a test run like any other
     assertContains(variants, "--coverage")
+    // the diagnostics flags `test` declares alongside `run`
+    assertContains(variants, "--debugger")
+    assertContains(variants, "--profiler")
   }
 
   @Test fun `root flags configure the implicit run command`() {

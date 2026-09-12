@@ -22,10 +22,11 @@ import com.intellij.execution.ui.RunContentDescriptor
 /**
  * Program runner backing the IDE's "Debug" action for [ElideRunConfiguration].
  *
- * The CLI starts JVM entrypoints under a suspended JDWP server when it is passed `--debugger`
+ * The CLI starts JVM entrypoints and JVM test runs under a suspended JDWP server when it is passed `--debugger`
  * ([dev.elide.intellij.cli.ElideCli.DEBUGGER], added to the command line by
  * [ElideRunConfiguration.getState]), so all this runner does is point the IDE's Java debugger at that server;
- * [ElideDebugRunnableState] carries the connection.
+ * [ElideDebugRunnableState] carries the connection, and triggers the attach once the run's own agent announces the
+ * port it bound.
  *
  * The registration in `plugin.xml` is ordered first on purpose: the platform's own
  * `ExternalSystemTaskDebugRunner` accepts every external system run configuration, and expects the opposite
@@ -47,8 +48,8 @@ class ElideDebugRunner : GenericDebuggerRunner() {
     val connection = (state as? ElideDebugRunnableState)?.createRemoteConnection(environment)
       ?: return super.createContentDescriptor(state, environment)
 
-    // the CLI installs dependencies and compiles sources before the entrypoint opens its JDWP port, so the attach
-    // window has to outlast a cold build instead of the platform's 30 second default
+    // the connection is a delayed one: nothing is dialled until the run's JDWP agent announces its port, and by
+    // then the debuggee is listening, so the attach itself needs no poll window
     return attachVirtualMachine(state, environment, connection, ATTACH_TIMEOUT_MILLIS)
   }
 
@@ -56,7 +57,7 @@ class ElideDebugRunner : GenericDebuggerRunner() {
     /** Runner ID, used by [ElideRunConfiguration] to recognize a debug run of its own. */
     internal const val RUNNER_ID = "ElideDebugRunner"
 
-    /** Time the debugger keeps retrying the connection while the CLI builds the project. */
-    private const val ATTACH_TIMEOUT_MILLIS = 120_000L
+    /** Time the debugger keeps retrying the connection after the agent has announced its port. */
+    private const val ATTACH_TIMEOUT_MILLIS = 10_000L
   }
 }

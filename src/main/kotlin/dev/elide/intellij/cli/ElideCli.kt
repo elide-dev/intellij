@@ -232,10 +232,13 @@ object ElideCli {
   /**
    * Flag that turns on the CLI's debugging features.
    *
-   * For JVM entrypoints, `elide run --debugger` launches the guest JVM with
+   * For JVM entrypoints and JVM tests, `elide run --debugger` and `elide test --debugger` launch the guest JVM with
    * `-agentlib:jdwp=transport=dt_socket,server=y,suspend=y`: the CLI owns the socket and the program stays suspended
    * until a debugger dials in. For guest languages the same flag activates the Chrome DevTools or Debug Adapter
    * protocol instead.
+   *
+   * Declared by [RUN], [TEST] and the root command, and not global: `elide --debugger test` is parsed by the root
+   * command, which leaves the test run with no debugger at all.
    */
   val DEBUGGER: Flag = Flag(
     long = "debugger",
@@ -303,9 +306,10 @@ object ElideCli {
   )
 
   /**
-   * Flags accepted in root position, where they configure the implicit `run`, and repeated by [RUN] itself.
+   * Flags accepted in root position, where they configure the implicit `run`.
    *
-   * Unlike [GLOBAL_FLAGS] these are rejected after any other command.
+   * Unlike [GLOBAL_FLAGS] these are not taken by every command: a command that accepts one repeats it among its own
+   * [Command.flags].
    */
   val ROOT_ONLY_FLAGS: List<Flag> = listOf(DEBUGGER, PROFILER, SNIPPET, LANGUAGE)
 
@@ -400,6 +404,10 @@ object ElideCli {
       Flag("concurrency", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.concurrency"),
       REPORTER,
       Flag("reporter-outfile", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.reporter-outfile"),
+      // the diagnostics flags `test` shares with `run`; `--debugger` is accepted since Elide 1.5.3, and was
+      // rejected outright before it
+      DEBUGGER,
+      PROFILER,
     ),
     descriptionKey = "cli.command.test",
   )

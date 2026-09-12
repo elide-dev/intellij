@@ -33,13 +33,50 @@ class ElideRunConfigurationDebugTest {
     )
   }
 
+  @Test fun `debugger flag lands after the test command rather than before it`() {
+    // `test` declares the flag itself; in leading position the root command parses it, and the test run is left
+    // with no debugger at all while the IDE waits for a JDWP server that never opens
+    assertEquals(
+      listOf("test", "--debugger", "-t", "MyTest"),
+      ElideRunConfiguration.debuggerCommandLine(listOf("test", "-t", "MyTest")),
+    )
+    assertEquals(
+      listOf("-p", "./app", "test", "--debugger", "src/api"),
+      ElideRunConfiguration.debuggerCommandLine(listOf("-p", "./app", "test", "src/api")),
+    )
+  }
+
+  @Test fun `a command line naming no command is debugged in leading position`() {
+    // no command token means the implicit root `run`, which takes the flag before the entrypoint
+    assertEquals(
+      listOf("--debugger", "src/main/kotlin/Main.kt"),
+      ElideRunConfiguration.debuggerCommandLine(listOf("src/main/kotlin/Main.kt")),
+    )
+  }
+
   @Test fun `debugger flag is not repeated`() {
     val commandLine = listOf("run", "--debugger", "hello")
 
     assertEquals(commandLine, ElideRunConfiguration.debuggerCommandLine(commandLine))
   }
 
-  @Test fun `only run commands are debuggable`() {
+  @Test fun `a debugged test run is still rendered as a test tree`() {
+    val commandLine = ElideRunConfiguration.debugCommandLine(listOf("test", "-t", "MyTest"))
+
+    assertEquals(listOf("test", "--debugger", "--reporter=tap", "-t", "MyTest"), commandLine)
+    assertTrue(ElideRunConfiguration.emitsTap(commandLine))
+  }
+
+  @Test fun `a debugged run keeps the command line the user typed`() {
+    // only the debugger flag is added: coverage belongs to the coverage executor's own runner, and there is no
+    // reporter to select for a command that is not a test run
+    assertEquals(
+      listOf("run", "--debugger", "src/main/kotlin/Main.kt"),
+      ElideRunConfiguration.debugCommandLine(listOf("run", "src/main/kotlin/Main.kt")),
+    )
+  }
+
+  @Test fun `only run and test commands are debuggable`() {
     assertTrue(ElideRunConfiguration.supportsDebugger(listOf("--verbose", "run"), Kind.JvmMainClass, "app.MainKt"))
     // a global flag's value is not a command name
     assertTrue(ElideRunConfiguration.supportsDebugger(listOf("-p", "./app", "run"), Kind.JvmMainClass, "app.MainKt"))
@@ -58,8 +95,14 @@ class ElideRunConfigurationDebugTest {
 
     // hand-written command lines carry no entrypoint metadata: the CLI resolves the manifest entrypoint
     assertTrue(ElideRunConfiguration.supportsDebugger(listOf("run"), null, null))
+  }
 
-    // `elide test` does not yet support --debugger
-    assertFalse(ElideRunConfiguration.supportsDebugger(listOf("test", "-t", "x"), Kind.JvmTest, "a.B#c"))
+  @Test fun `jvm test runs are debuggable`() {
+    assertTrue(ElideRunConfiguration.supportsDebugger(listOf("test", "-t", "x"), Kind.JvmTest, "a.B#c"))
+    assertTrue(ElideRunConfiguration.supportsDebugger(listOf("test"), null, null))
+
+    // a test id carries no command of its own: `elide build test` runs the build group of the same name, which
+    // assembles test classes and opens no JDWP server
+    assertFalse(ElideRunConfiguration.supportsDebugger(listOf("build", "test"), Kind.JvmTest, "a.B#c"))
   }
 }

@@ -49,6 +49,7 @@ Marketplace, so entries must be user-facing and free of internal jargon.
 - **`elide build` reports to the Build window.** Build run configurations — including the ones started from an
   artifact's gutter icon or the tool window's task list — now report into the **Build** tool window instead of
   opening a Run window tab. Runs, tests and the other commands are unchanged.
+- **Debugging for `elide test`.** Test run configurations support the IDE's **Debug** action.
 
 ### Changed
 

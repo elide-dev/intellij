@@ -141,8 +141,12 @@ started elsewhere; the IDE is not asked whether to merge the two, since an Elide
 Run configurations offered by the plugin can be debugged using Elide's own JDWP support. The IDE will launch the Elide
 CLI with the `--debugger` option and connect to the agent automatically.
 
-> Currently only entrypoint configurations support the IDE's "Debug" action, debugging test configurations will be
-> available soon.
+Both entrypoint and test configurations support the IDE's **Debug** action, so breakpoints can be set in a JUnit test
+and hit through the gutter icon's **Debug** entry. A debugged test run still reports into the test tree. Debugging
+`elide test` requires Elide 1.5.3 or newer.
+
+> Only JVM code speaks JDWP. For guest languages the same CLI flag activates the Chrome DevTools or Debug Adapter
+> protocol instead, which the IDE's Java debugger cannot attach to, so those configurations offer no **Debug** action.
 
 ## Manifest editing
 
