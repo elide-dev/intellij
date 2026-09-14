@@ -11,7 +11,7 @@ intellij-untilBuild = "262.*"
 
 pkl-plugin = "0.37.0"
 
-kotlin = "2.3.21"
+kotlin = "2.4.20"
 kotlinx-coroutines = "1.11.0"
 
 serialization = "1.11.0"
