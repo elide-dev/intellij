@@ -15,6 +15,6 @@ For build or CI changes, name the tasks you ran.
 ## Checklist
 
 - [ ] Commits follow [Conventional Commits](https://www.conventionalcommits.org/)
-- [ ] User-facing changes are listed under `## [Unreleased]` in `CHANGELOG.md`
+- [ ] Commit subjects read as the changelog entries they become (`CHANGELOG.md` is generated on release)
 - [ ] New or removed experimental/internal platform APIs are reflected in `docs/PLATFORM_APIS.md`
 - [ ] Generated sources (`src/main/pkl`, `dev/elide/tooling/manifest`) were regenerated rather than hand-edited

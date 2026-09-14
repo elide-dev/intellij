@@ -2,19 +2,47 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
+  # two responsibilities, split by trigger: a manual run opens or refreshes the release pull request, while a push to
+  # `main` only tags and releases an already merged release pull request -- which is what gates the publish job below
+  release-please:
+    name: Release
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          # a PAT lets CI run on the release pull request; with the default token GitHub suppresses those events
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          skip-github-pull-request: ${{ github.event_name != 'workflow_dispatch' }}
+
   publish:
     name: Publish Plugin
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
 
       - name: Setup Java 21
         uses: actions/setup-java@v4
@@ -36,9 +64,6 @@ jobs:
 
       - name: Run IntelliJ Plugin Verifier
         run: ./gradlew verifyPlugin
-
-      - name: Extract release notes
-        run: tools/changelog-section.sh "${GITHUB_REF_NAME#v}" > release-notes.md
 
       - name: Detect publishing credentials
         id: credentials
@@ -68,8 +93,8 @@ jobs:
           ELIDE_PLUGINS_KEY: ${{ secrets.ELIDE_PLUGINS_KEY }}
           ELIDE_PLUGINS_URL: ${{ vars.ELIDE_PLUGINS_URL }}
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: build/distributions/*.zip
-          body_path: release-notes.md
+      - name: Attach distribution to the GitHub Release
+        run: gh release upload "$TAG" build/distributions/*.zip --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag }}
