@@ -188,12 +188,13 @@ Development setup, verification expectations, and the repository layout are docu
 ### Manifest schema codegen
 
 The Elide project manifest model in `src/main/kotlin/dev/elide/tooling/manifest` is **generated** from Elide's published
-Pkl schema at <https://pkl.elide.dev/v2/> by [`brine`](https://elide.dev), together with the bundled copy of that schema
-in `src/main/pkl`, packaged into the plugin jar under `/elide/pkl/`. Both are committed, and regeneration is a manual
-step, so CI never needs `brine`:
+Pkl schema at `https://pkl.elide.dev/<elide version>/` by [`brine`](https://elide.dev), together with the bundled copy
+of that schema in `src/main/pkl`, packaged into the plugin jar under `/elide/pkl/`. Both are committed, and
+regeneration is a manual step, so CI never needs `brine`:
 
 ```bash
-tools/codegen.sh          # or: make codegen
+tools/codegen.sh                 # or: make codegen -- refetches the version recorded in schema.json
+tools/codegen.sh --version 1.5.3 # move the model onto a newer Elide release
 ```
 
 ## Release workflow
