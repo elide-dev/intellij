@@ -26,30 +26,46 @@
 # JSON that command emits. That output is produced by this exact schema, so the two agree by
 # construction.
 #
-# Usage: tools/codegen.sh [--schema <base-url>]
+# Usage: tools/codegen.sh [--version <elide-version>] [--schema <base-url>]
 #
 
 set -euo pipefail
 
-SCHEMA_BASE="${ELIDE_PKL_SCHEMA:-https://pkl.elide.dev/v2/}"
+SCHEMA_HOST="${ELIDE_PKL_SCHEMA_HOST:-https://pkl.elide.dev}"
+SCHEMA_VERSION="${ELIDE_PKL_SCHEMA_VERSION:-}"
+SCHEMA_BASE="${ELIDE_PKL_SCHEMA:-}"
 PACKAGE_NAME="dev.elide.tooling.manifest"
 MODULE_PREFIX="elide"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --version) SCHEMA_VERSION="$2"; shift 2 ;;
+    --version=*) SCHEMA_VERSION="${1#*=}"; shift ;;
     --schema) SCHEMA_BASE="$2"; shift 2 ;;
     --schema=*) SCHEMA_BASE="${1#*=}"; shift ;;
-    -h|--help) sed -n '17,29p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '17,35p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "error: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
-
-SCHEMA_BASE="${SCHEMA_BASE%/}/"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PKL_DIR="$ROOT/src/main/pkl"
 KOTLIN_ROOT="$ROOT/src/main/kotlin"
 GENERATED_DIR="$KOTLIN_ROOT/${PACKAGE_NAME//.//}"
+
+if [[ -z "$SCHEMA_BASE" ]]; then
+  if [[ -z "$SCHEMA_VERSION" ]]; then
+    SCHEMA_VERSION="$(sed -n 's/^[[:space:]]*"elideVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+      "$GENERATED_DIR/schema.json")"
+  fi
+  if [[ -z "$SCHEMA_VERSION" ]]; then
+    echo "error: no schema version; pass --version <elide-version> or --schema <base-url>" >&2
+    exit 2
+  fi
+  SCHEMA_BASE="$SCHEMA_HOST/$SCHEMA_VERSION"
+fi
+
+SCHEMA_BASE="${SCHEMA_BASE%/}/"
 
 if ! command -v brine >/dev/null 2>&1; then
   echo "error: 'brine' was not found on PATH." >&2

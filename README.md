@@ -188,26 +188,29 @@ Development setup, verification expectations, and the repository layout are docu
 ### Manifest schema codegen
 
 The Elide project manifest model in `src/main/kotlin/dev/elide/tooling/manifest` is **generated** from Elide's published
-Pkl schema at <https://pkl.elide.dev/v2/> by [`brine`](https://elide.dev), together with the bundled copy of that schema
-in `src/main/pkl`, packaged into the plugin jar under `/elide/pkl/`. Both are committed, and regeneration is a manual
-step, so CI never needs `brine`:
+Pkl schema at `https://pkl.elide.dev/<elide version>/` by [`brine`](https://elide.dev), together with the bundled copy
+of that schema in `src/main/pkl`, packaged into the plugin jar under `/elide/pkl/`. Both are committed, and
+regeneration is a manual step, so CI never needs `brine`:
 
 ```bash
-tools/codegen.sh          # or: make codegen
+tools/codegen.sh                 # or: make codegen -- refetches the version recorded in schema.json
+tools/codegen.sh --version 1.5.3 # move the model onto a newer Elide release
 ```
 
 ## Release workflow
 
-Releases are triggered by pushing a version tag:
+Releases are driven by [release-please](https://github.com/googleapis/release-please), configured in
+`release-please-config.json`:
 
-1. `make bump [major|minor|patch]` — validates that `CHANGELOG.md` has an `Unreleased` section, dates it under the new
-   version, writes `.version`, commits, and tags locally.
-2. Push the commit and tag:
-   ```bash
-   git push origin HEAD v0.8.0
-   ```
-3. The `Release` workflow builds and verifies the plugin, publishes it to the JetBrains Marketplace and the Elide plugin
-   repository, and creates a GitHub Release whose notes are the changelog section for that version.
+1. Run the **Release** workflow from the Actions tab (`workflow_dispatch`). It opens (or, if one is already open,
+   refreshes) a release pull request that bumps `.version` and adds the `CHANGELOG.md` section for the next version.
+2. Edit that changelog section in the pull request if the generated entries need polish — it becomes the plugin's
+   change notes.
+3. Merging the release pull request tags `v<version>`, creates the GitHub Release, and publishes the plugin to the
+   JetBrains Marketplace and the Elide plugin repository, with the distribution ZIP attached to the release.
+
+The next version follows the merged commits: `fix:` bumps the patch, `feat:` the minor, and `feat!:` (or a
+`BREAKING CHANGE:` footer) the major.
 
 **Commit convention:** commits follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`,
 `chore:`, etc.). A commitlint check enforces this on every PR.

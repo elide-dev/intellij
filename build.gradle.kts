@@ -47,8 +47,7 @@ fun renderChangelogSection(changelog: String, version: String): String {
   val lines = changelog.lines()
   val headings = lines.withIndex().filter { it.value.startsWith("## ") }
   val start = headings.firstOrNull { it.value.startsWith("## [$version]") }
-    ?: headings.firstOrNull { it.value.startsWith("## [Unreleased]") }
-    ?: error("CHANGELOG.md has no section for $version, and no Unreleased section to fall back to")
+    ?: error("CHANGELOG.md has no section for $version")
   val end = headings.firstOrNull { it.index > start.index }?.index ?: lines.size
 
   // fold the section into blocks first: bullets wrap across lines, and only their joined text can be rendered
@@ -58,18 +57,31 @@ fun renderChangelogSection(changelog: String, version: String): String {
     when {
       line.isEmpty() -> Unit
       line.startsWith("### ") -> blocks += "h" to line.removePrefix("### ")
-      line.startsWith("- ") -> blocks += "li" to line.removePrefix("- ")
+      line.startsWith("- ") || line.startsWith("* ") -> blocks += "li" to line.drop(2)
       blocks.lastOrNull()?.first == "li" -> blocks += "li" to "${blocks.removeAt(blocks.lastIndex).second} $line"
       else -> blocks += "p" to line
     }
   }
 
-  fun inline(text: String) = text
-    .replace("&", "&amp;")
-    .replace("<", "&lt;")
-    .replace(">", "&gt;")
-    .replace(Regex("`([^`]+)`"), "<code>$1</code>")
-    .replace(Regex("""\[([^]]+)]\(([^)]+)\)"""), """<a href="$2">$1</a>""")
+  // the inline spans changelog entries use
+  val inlineSpans = Regex("""`([^`]+)`|\[([^]]+)]\(([^)]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*""")
+
+  fun spans(text: String): String = text.replace(inlineSpans) { match ->
+    val (code, linkText, href, bold, italic) = match.destructured
+    when {
+      code.isNotEmpty() -> "<code>$code</code>"
+      linkText.isNotEmpty() -> """<a href="$href">${spans(linkText)}</a>"""
+      bold.isNotEmpty() -> "<b>${spans(bold)}</b>"
+      else -> "<i>${spans(italic)}</i>"
+    }
+  }
+
+  fun inline(text: String) = spans(
+    text
+      .replace("&", "&amp;")
+      .replace("<", "&lt;")
+      .replace(">", "&gt;")
+  )
 
   return buildString {
     var inList = false

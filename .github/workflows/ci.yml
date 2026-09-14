@@ -7,6 +7,7 @@ on:
     tags-ignore:
       - '**'
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -80,6 +81,8 @@ jobs:
 
   schema:
     name: Manifest Schema Drift
+    # disabled until the first schema version is published
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

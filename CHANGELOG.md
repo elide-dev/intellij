@@ -5,7 +5,7 @@ All notable changes to the Elide plugin for JetBrains IDEs are documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.0] - 2026-09-11
 
 ### Added
 
@@ -19,7 +19,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   Anything**, the tasks of the linked project will be offered for completion.
 - **Build tasks in the Elide tool window.** The tool window lists the project's build targets under **Tasks**.
 - **Structured build progress.** Elide builds now report their steps as a tree instead in the **Build** tool window.
-- **Debugging for `elide test`.** Test run configurations now support the IDE's **Debug** action.
 
 ### Changed
 

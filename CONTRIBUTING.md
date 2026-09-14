@@ -40,7 +40,7 @@ Describe what you exercised in the pull request.
 | `src/main/kotlin/dev/elide/tooling/manifest` | **Generated** Kotlin model of the Elide project manifest |
 | `src/main/pkl` | Bundled mirror of Elide's published Pkl schema, packaged under `/elide/pkl/` |
 | `src/main/resources/META-INF` | Plugin descriptors and logo |
-| `tools` | Codegen, schema drift check, deployment, and release helpers |
+| `tools` | Codegen, schema drift check, and deployment helpers |
 
 `dev/elide/tooling/manifest` and `src/main/pkl` are generated from Elide's published Pkl schema and must not be edited
 by hand. Regenerate them with `tools/codegen.sh` (requires `brine`) and commit the result; CI verifies that the bundled
@@ -56,22 +56,25 @@ and re-check it with `./gradlew verifyPlugin` whenever the supported build range
 
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`,
   `chore:`, `ci:`, `test:`, …). A commitlint check enforces this on every pull request.
-- User-facing changes get an entry under `## [Unreleased]` in `CHANGELOG.md`; that section becomes the change notes
-  shown on the JetBrains Marketplace when the next version is released.
+- User-facing changes need no changelog edit: `CHANGELOG.md` is generated from commit subjects by release-please, so
+  write the subject as the changelog entry you want to read. Its section for a version becomes the change notes shown
+  on the JetBrains Marketplace.
 - Keep `./gradlew test` and `./gradlew verifyPluginProjectConfiguration` green; CI runs them along with the IntelliJ
   Plugin Verifier and the manifest schema drift check.
 - Code style follows the checked-in `.editorconfig` and the official Kotlin style.
 
 ## Releasing
 
-Releases are cut from `main` by maintainers:
+Releases are cut on demand by maintainers:
 
-1. `make bump [major|minor|patch]` — moves the `## [Unreleased]` changelog section under the new version, writes
-   `.version`, commits, and tags locally.
-2. Push the commit and tag; the `Release` workflow builds, signs, and publishes the plugin, and creates the GitHub
-   Release.
+1. Run the **Release** workflow from the Actions tab. It opens or refreshes a release pull request that bumps
+   `.version` and adds the `CHANGELOG.md` section for the next version, derived from the commits since the last tag.
+2. Amend that section in the pull request if the generated entries need polish; the merged text is what the
+   Marketplace shows. Run the workflow again to fold in commits that landed after the pull request was opened.
+3. Merging it tags `v<version>`, creates the GitHub Release, and triggers the publish job, which builds, signs and
+   publishes the plugin and attaches the distribution ZIP to the release.
 
-`make release` performs the same steps and pushes in one go.
+`release-please-config.json` and `.release-please-manifest.json` hold the configuration and the last released version.
 
 ## Licensing
 

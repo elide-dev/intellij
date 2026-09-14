@@ -19,30 +19,45 @@
 # `tools/codegen.sh` needs `brine` to regenerate the Kotlin model, which is not available in CI. Its *input* --
 # Elide's published Pkl schema -- can be checked without it: this script re-fetches the schema index and every module
 # it lists, and diffs them against `src/main/pkl` and the provenance copy of the index stored next to the generated
-# model. A difference means the published schema moved and `tools/codegen.sh` has to be re-run (and its output
-# committed), which is exactly the drift the model must not silently accumulate.
+# model. A difference means the mirror no longer matches the schema it claims to come from, and `tools/codegen.sh`
+# has to be re-run (and its output committed), which is exactly the drift the model must not silently accumulate.
 #
-# Usage: tools/verify-schema.sh [--schema <base-url>]
+# Usage: tools/verify-schema.sh [--version <elide-version>] [--schema <base-url>]
 #
 
 set -euo pipefail
 
-SCHEMA_BASE="${ELIDE_PKL_SCHEMA:-https://pkl.elide.dev/v2/}"
+SCHEMA_HOST="${ELIDE_PKL_SCHEMA_HOST:-https://pkl.elide.dev}"
+SCHEMA_VERSION="${ELIDE_PKL_SCHEMA_VERSION:-}"
+SCHEMA_BASE="${ELIDE_PKL_SCHEMA:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --version) SCHEMA_VERSION="$2"; shift 2 ;;
+    --version=*) SCHEMA_VERSION="${1#*=}"; shift ;;
     --schema) SCHEMA_BASE="$2"; shift 2 ;;
     --schema=*) SCHEMA_BASE="${1#*=}"; shift ;;
-    -h|--help) sed -n '17,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '17,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "error: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
 
-SCHEMA_BASE="${SCHEMA_BASE%/}/"
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PKL_DIR="$ROOT/src/main/pkl"
 SCHEMA_INDEX="$ROOT/src/main/kotlin/dev/elide/tooling/manifest/schema.json"
+
+if [[ -z "$SCHEMA_BASE" ]]; then
+  if [[ -z "$SCHEMA_VERSION" ]]; then
+    SCHEMA_VERSION="$(sed -n 's/^[[:space:]]*"elideVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$SCHEMA_INDEX")"
+  fi
+  if [[ -z "$SCHEMA_VERSION" ]]; then
+    echo "error: no schema version; pass --version <elide-version> or --schema <base-url>" >&2
+    exit 2
+  fi
+  SCHEMA_BASE="$SCHEMA_HOST/$SCHEMA_VERSION"
+fi
+
+SCHEMA_BASE="${SCHEMA_BASE%/}/"
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
