@@ -13,6 +13,7 @@
 package dev.elide.intellij.execution
 
 import com.intellij.execution.actions.ConfigurationContext
+import com.intellij.execution.configurations.RunConfiguration
 import com.intellij.execution.executors.DefaultDebugExecutor
 import com.intellij.execution.executors.DefaultRunExecutor
 import com.intellij.execution.lineMarker.ExecutorAction
@@ -23,6 +24,8 @@ import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.application.writeAction
 import com.intellij.openapi.application.writeIntentReadAction
+import com.intellij.openapi.externalSystem.service.execution.ExternalSystemBeforeRunTask
+import com.intellij.openapi.util.io.toCanonicalPath
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiElement
@@ -32,11 +35,13 @@ import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.testFramework.junit5.fixture.moduleFixture
 import com.intellij.testFramework.junit5.fixture.projectFixture
 import com.intellij.testFramework.junit5.fixture.sourceRootFixture
+import dev.elide.intellij.execution.nativeimage.ElideNativeImageRunConfiguration
 import dev.elide.intellij.project.model.ElideEntrypointInfo
 import java.nio.file.Files
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlinx.coroutines.Dispatchers
@@ -102,6 +107,60 @@ class ElideManifestGutterTest {
     assertNull(configurationAtCaret("resource.pkl", manifest(resourceKey = "r<caret>es")))
   }
 
+  @Test fun `a native image binary carries a run icon offering run and debug of the binary`() = runBlocking {
+    val info = assertNotNull(infoAtCaret("image.pkl", manifest(nativeImageKey = "b<caret>in")))
+
+    assertEquals(AllIcons.Actions.Execute, info.icon)
+
+    val executors = info.actions.filterIsInstance<ExecutorAction>()
+      .groupBy({ it.order }, { it.executor.id })
+      .mapValues { (_, ids) -> ids.distinct() }
+
+    // configuration 0 is the build of the artifact, which can only be run; configuration 1 is the binary it
+    // produces, which can also be debugged
+    assertEquals(
+      mapOf(
+        0 to listOf(DefaultRunExecutor.EXECUTOR_ID),
+        1 to listOf(DefaultRunExecutor.EXECUTOR_ID, DefaultDebugExecutor.EXECUTOR_ID),
+      ),
+      executors,
+    )
+  }
+
+  @Test fun `a native image library keeps the build icon`() = runBlocking {
+    // a library image is a shared object, so there is nothing to start
+    val info = assertNotNull(infoAtCaret("library.pkl", manifest(libraryKey = "sha<caret>red")))
+    val executors = info.actions.filterIsInstance<ExecutorAction>().map { it.executor.id }.distinct()
+
+    assertEquals(AllIcons.Actions.Compile, info.icon)
+    assertEquals(listOf(DefaultRunExecutor.EXECUTOR_ID), executors)
+  }
+
+  @Test fun `a native image key offers the build first and the binary run second`() = runBlocking {
+    val configurations = configurationsAtCaret("both.pkl", manifest(nativeImageKey = "b<caret>in"))
+
+    val build = assertIs<ElideRunConfiguration>(configurations.getOrNull(0))
+    assertEquals("build bin", build.rawCommandLine)
+
+    val run = assertIs<ElideNativeImageRunConfiguration>(configurations.getOrNull(1))
+    assertEquals("bin", run.artifact)
+    assertEquals(sourceRootFixture.get().virtualFile.toNioPath().toCanonicalPath(), run.externalProjectPath)
+  }
+
+  @Test fun `a native image run builds its artifact before it launches`() = runBlocking {
+    val configurations = configurationsAtCaret("beforeRun.pkl", manifest(nativeImageKey = "b<caret>in"))
+    val run = assertIs<ElideNativeImageRunConfiguration>(configurations.getOrNull(1))
+
+    val task = assertIs<ExternalSystemBeforeRunTask>(run.beforeRunTasks.singleOrNull())
+
+    assertEquals(true, task.isEnabled)
+    assertEquals(listOf("build", "bin"), task.taskExecutionSettings.taskNames)
+    assertEquals(
+      sourceRootFixture.get().virtualFile.toNioPath().toCanonicalPath(),
+      task.taskExecutionSettings.externalProjectPath,
+    )
+  }
+
   /** The gutter icon the contributor puts on the [CARET] marker in [text], if any. */
   private suspend fun infoAtCaret(name: String, text: String): RunLineMarkerContributor.Info? {
     val (file, offset) = addManifest(name, text)
@@ -112,14 +171,18 @@ class ElideManifestGutterTest {
 
   /** The configuration the gutter action at the [CARET] marker in [text] would run. */
   private suspend fun configurationAtCaret(name: String, text: String): ElideRunConfiguration? {
+    return configurationsAtCaret(name, text).firstOrNull() as? ElideRunConfiguration
+  }
+
+  /** Every configuration the context at the [CARET] marker in [text] yields, in producer preference order. */
+  private suspend fun configurationsAtCaret(name: String, text: String): List<RunConfiguration> {
     val (file, offset) = addManifest(name, text)
 
     // configurations from context are ordered by producer preference, so the first entry is what the gutter runs, and
     // the platform resolves them on the EDT, as it does during action updates
     return withContext(Dispatchers.EDT) {
       writeIntentReadAction {
-        val fromContext = ConfigurationContext(elementAt(file, offset)).configurationsFromContext.orEmpty()
-        fromContext.firstOrNull()?.configuration as? ElideRunConfiguration
+        ConfigurationContext(elementAt(file, offset)).configurationsFromContext.orEmpty().map { it.configuration }
       }
     }
   }
@@ -148,15 +211,21 @@ class ElideManifestGutterTest {
   private companion object {
     private const val CARET = "<caret>"
 
-    /** A manifest declaring one script and one artifact, with the [CARET] marker placed in one of their keys. */
+    /**
+     * A manifest declaring one script and three artifacts — a jar, a Native Image binary and a Native Image library
+     * — with the [CARET] marker placed in one of their keys.
+     */
     private fun manifest(
       artifactKey: String = "app",
       scriptKey: String = "hello",
       resourceKey: String = "res",
+      nativeImageKey: String = "bin",
+      libraryKey: String = "shared",
     ): String = """
       amends "elide:project.pkl"
 
       import "elide:Jvm.pkl" as Jvm
+      import "elide:NativeImage.pkl" as NativeImage
 
       name = "gutter"
 
@@ -170,6 +239,14 @@ class ElideManifestGutterTest {
           resources {
             ["$resourceKey"] = "src/main/resources/**"
           }
+        }
+        ["$nativeImageKey"] = new NativeImage.NativeImage {
+          name = "gutter-bin"
+          entrypoint = "gutter.MainKt"
+        }
+        ["$libraryKey"] = new NativeImage.NativeImage {
+          type = "library"
+          name = "libgutter"
         }
       }
     """.trimIndent()

@@ -55,6 +55,10 @@
 
   <depends optional="true" config-file="plugin-pkl.xml">org.pkl</depends>
 
+  <!-- the GDB/LLDB backends a Native Image debug session runs on; a marketplace plugin for IntelliJ IDEA Ultimate,
+       so the Debug action falls back to offering its installation when it is absent -->
+  <depends optional="true" config-file="plugin-nativeDebug.xml">com.intellij.nativeDebug</depends>
+
   <!-- the coverage engine, runner and LCOV reader behind "Run with Coverage"; a platform module, not a plugin -->
   <dependencies>
     <module name="intellij.platform.coverage"/>
@@ -84,6 +88,13 @@
     <!-- `order="first"`: the platform's ExternalSystemTaskDebugRunner claims every ExternalSystemRunConfiguration for
          the Debug executor, and ProgramRunner.getRunner takes the first match in extension order -->
     <programRunner implementation="dev.elide.intellij.execution.ElideDebugRunner" order="first"/>
+
+    <!-- runs the binary a Native Image artifact produces, building the artifact first -->
+    <configurationType implementation="dev.elide.intellij.execution.nativeimage.ElideNativeImageConfigurationType"/>
+    <stepsBeforeRunProvider implementation="dev.elide.intellij.execution.ElideBeforeRunTaskProvider"/>
+    <!-- claims the Debug executor for a Native Image run while the debugger backend is missing, so the action stays
+         visible and offers to install it; the real runner of plugin-nativeDebug.xml is registered ahead of it -->
+    <programRunner implementation="dev.elide.intellij.execution.nativeimage.ElideNativeImageDebugAdvertiser"/>
 
     <!-- renders `elide test` runs as a test tree, decoding the CLI's TAP 13 stream -->
     <externalSystemExecutionConsoleManager
@@ -129,5 +140,18 @@
 
   <actions>
     <action id="Elide.Run" class="dev.elide.intellij.action.ElideRunAction" icon="AllIcons.Actions.RunAnything"/>
+
+    <!-- non-popup: the entries inline into the task node's context menu and into the tool window's toolbar -->
+    <group id="Elide.NativeImage">
+      <action id="Elide.NativeImage.Run"
+              class="dev.elide.intellij.action.ElideNativeImageRunAction"
+              icon="AllIcons.Actions.Execute"/>
+      <action id="Elide.NativeImage.Debug"
+              class="dev.elide.intellij.action.ElideNativeImageDebugAction"
+              icon="AllIcons.Actions.StartDebugger"/>
+      <separator/>
+      <add-to-group group-id="ExternalSystemView.TaskMenu" anchor="first"/>
+      <add-to-group group-id="ExternalSystemView.ActionsToolbar.RunPanel"/>
+    </group>
   </actions>
 </idea-plugin>

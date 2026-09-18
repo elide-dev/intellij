@@ -40,6 +40,9 @@ object Constants {
   /** Name of the directory under [OUTPUT_DIR] where installed dependencies are placed. */
   const val DEPENDENCIES_DIR = "dependencies"
 
+  /** Name of the directory under [OUTPUT_DIR] where build artifacts are placed. */
+  const val ARTIFACTS_DIR = "artifacts"
+
   /** Prefix shared by every Elide lockfile name. */
   const val LOCKFILE_PREFIX = "elide.lock"
 
@@ -94,6 +97,18 @@ object Constants {
     return FileChooserDescriptor(
       /* chooseFiles = */ false,
       /* chooseFolders = */ true,
+      /* chooseJars = */ false,
+      /* chooseJarsAsFiles = */ false,
+      /* chooseJarContents = */ false,
+      /* chooseMultiple = */ false,
+    )
+  }
+
+  /** Descriptor for a file chooser to be used when selecting an executable, such as a debugger backend. */
+  @JvmStatic fun executableFileChooser(): FileChooserDescriptor {
+    return FileChooserDescriptor(
+      /* chooseFiles = */ true,
+      /* chooseFolders = */ false,
       /* chooseJars = */ false,
       /* chooseJarsAsFiles = */ false,
       /* chooseJarContents = */ false,

@@ -16,6 +16,8 @@ import com.intellij.openapi.externalSystem.model.Key
 import dev.elide.project.manifest.argValue
 import dev.elide.project.manifest.collect
 import dev.elide.project.manifest.explicitOrNull
+import dev.elide.tooling.manifest.nativeimage.ImageType
+import dev.elide.tooling.manifest.nativeimage.NativeImage
 import dev.elide.tooling.manifest.project.ProjectModule
 import java.io.Serializable
 
@@ -28,12 +30,16 @@ import java.io.Serializable
  * out-of-process resolution and the import cache), and the generated model classes are not serializable.
  */
 data class ElideProjectData(
+  /** Name the manifest declares for the project; part of how build outputs are named. */
+  val name: String? = null,
   val kotlin: KotlinFacetData? = null,
   val entrypoints: List<String> = emptyList(),
   val jvmMainClass: String? = null,
   val scripts: List<String> = emptyList(),
   /** Tasks the CLI lists for the project's build graph; see [ElideBuildTaskInfo]. */
   val buildTasks: List<ElideBuildTaskInfo> = emptyList(),
+  /** Artifacts producing a runnable Native Image binary; see [ElideNativeImageInfo]. */
+  val nativeImages: List<ElideNativeImageInfo> = emptyList(),
 ) : Serializable {
   /** Kotlin facet configuration derived from the manifest's `kotlin` block. */
   data class KotlinFacetData(
@@ -58,6 +64,7 @@ data class ElideProjectData(
       manifest: ProjectModule,
       buildTasks: List<ElideBuildTaskInfo> = emptyList(),
     ): ElideProjectData = ElideProjectData(
+      name = manifest.name,
       kotlin = manifest.kotlin?.let { kotlin ->
         KotlinFacetData(
           apiLevel = kotlin.apiLevel.explicitOrNull()?.argValue,
@@ -69,6 +76,11 @@ data class ElideProjectData(
       jvmMainClass = manifest.jvm?.main,
       scripts = manifest.scripts.keys.toList(),
       buildTasks = buildTasks,
+      nativeImages = manifest.artifacts.mapNotNull { (key, artifact) ->
+        (artifact as? NativeImage)?.takeIf { it.type == ImageType.Binary }?.let { image ->
+          ElideNativeImageInfo(artifact = key, outputName = image.name)
+        }
+      },
     )
   }
 }

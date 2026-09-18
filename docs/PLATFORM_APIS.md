@@ -41,11 +41,14 @@ Every usage is reported by `./gradlew verifyPlugin` under
 | `ExternalSystemAutoImportAware.getAffectedExternalProjectFiles` | `ElideAutoImportAware`, `ElideManager` | Listing the manifest and lockfile the IDE watches for auto-import. Scheduled for removal on 262, which replaces it with `getAffectedExternalProjectFilePaths`; both classes declare the replacement as well, without `override`, because the 261 compile target does not declare it yet. The JVM dispatches to the replacement on 262, so the deprecated method is only reached on 253 to 261 |
 | `ExternalSystemUnlinkedProjectAware.linkAndLoadProject` | `ElideUnlinkedProjectAware` | Not called by the plugin. The interface declares the method as a Kotlin default with `DeprecationLevel.ERROR`, and Kotlin emits the bridge for it in every implementing class |
 | `FilePosition(File, int, int)` | `ElideBuildEventPublisher.filePosition` | Pointing a compiler diagnostic at the file, line and column it names. Scheduled for removal on 262, which replaces it with a `Path` constructor; that constructor is not declared on 253 to 261, so the file form is the only one available across the range |
+| `XDebuggerManager.startSession`, `XDebugSession.getRunContentDescriptor` | `ElideNativeImageDebugRunner.execute` | Starting the GDB/LLDB session of a Native Image run and handing its content back to the platform. Deprecated on 261 in favour of `XDebuggerManager.newSessionBuilder`, which is not declared on 253 |
+| `CommonProgramParametersPanel()` | `ElideNativeImageSettingsEditor` | The program arguments, working directory and environment fields of a Native Image run. Deprecated on 261 in favour of the constructors taking a `Project`, which widen the macros the fields complete and are not declared on 253 |
 
 ## Signatures missing on part of the range
 
 | Signature | Available | Handling in code |
 |---|---|---|
+| `CommonProgramParametersPanel(Project)` | from 261 | `ElideNativeImageSettingsEditor` uses the no-arg constructor, which is declared on the whole range |
 | `ExternalSystemAutoImportAware.getAffectedExternalProjectFilePaths` | from 262 | `ElideAutoImportAware` and `ElideManager` declare a matching method without `override` |
 | `AbstractOpenProjectProvider.getProjectDirectory` | internal on the whole range | `ElideOpenProjectProvider.linkProject` derives the project directory from the `VirtualFile` |
 

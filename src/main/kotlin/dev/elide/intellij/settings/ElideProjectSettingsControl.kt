@@ -15,6 +15,7 @@ package dev.elide.intellij.settings
 import com.intellij.openapi.externalSystem.service.settings.AbstractExternalProjectSettingsControl
 import com.intellij.openapi.externalSystem.util.ExternalSystemUiUtil
 import com.intellij.openapi.externalSystem.util.PaintAwarePanel
+import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.openapi.ui.TextComponentAccessor
 import com.intellij.openapi.ui.TextFieldWithBrowseButton
@@ -23,6 +24,7 @@ import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.layout.selectedValueIs
+import com.intellij.ui.layout.selectedValueMatches
 import dev.elide.intellij.Constants
 import java.awt.Component
 import javax.swing.JLabel
@@ -41,6 +43,8 @@ class ElideProjectSettingsControl(
 
   private var distributionType: ElideDistributionSetting = initialSettings.elideDistributionType
   private var distributionPath: String = initialSettings.elideDistributionPath
+  private var nativeDebugger: ElideNativeDebuggerSetting = initialSettings.nativeDebugger
+  private var gdbPath: String = initialSettings.gdbPath
 
   private fun controlsPanel(): DialogPanel = panel {
     group(Constants.Strings["settings.project.execution.title"]) {
@@ -71,6 +75,36 @@ class ElideProjectSettingsControl(
         rowComment(Constants.Strings["settings.project.distribution.comment"])
       }
     }
+
+    group(Constants.Strings["settings.project.nativeDebug.title"]) {
+      lateinit var debuggerBox: ComboBox<ElideNativeDebuggerSetting>
+
+      row(Constants.Strings["settings.project.nativeDebug.debugger.label"]) {
+        debuggerBox = comboBox(ElideNativeDebuggerSetting.entries, NativeDebuggerRenderer)
+          .bindItem(::nativeDebugger) { nativeDebugger = it ?: ElideNativeDebuggerSetting.Auto }
+          .component
+      }
+
+      row(Constants.Strings["settings.project.nativeDebug.gdbPath.label"]) {
+        val gdbPathField = TextFieldWithBrowseButton().apply {
+          isOpaque = false
+          textField.isOpaque = false
+
+          installFileCompletionAndBrowseDialog(
+            /* project = */ null,
+            /* component = */ this,
+            /* textField = */ textField,
+            /* fileChooserDescriptor = */ Constants.executableFileChooser(),
+            /* textComponentAccessor = */ TextComponentAccessor.TEXT_FIELD_WHOLE_TEXT,
+            /* fileChosen = */ { it.path },
+          )
+        }
+
+        cell(gdbPathField).bindText(getter = { gdbPath }, setter = { gdbPath = it })
+        rowComment(Constants.Strings["settings.project.nativeDebug.gdbPath.comment"])
+        // an LLDB session takes the IDE's LLDB, or the system one when it ships none, so there is nothing to point at
+      }.visibleIf(debuggerBox.selectedValueMatches { it != ElideNativeDebuggerSetting.Lldb })
+    }
   }
 
   override fun fillExtraControls(canvas: PaintAwarePanel, indent: Int) {
@@ -88,6 +122,8 @@ class ElideProjectSettingsControl(
 
     if (distributionPath != initialSettings.elideDistributionPath) return true
     if (distributionType != initialSettings.elideDistributionType) return true
+    if (nativeDebugger != initialSettings.nativeDebugger) return true
+    if (gdbPath != initialSettings.gdbPath) return true
 
     return false
   }
@@ -95,6 +131,8 @@ class ElideProjectSettingsControl(
   override fun resetExtraSettings(isDefaultModuleCreation: Boolean) {
     distributionPath = initialSettings.elideDistributionPath
     distributionType = initialSettings.elideDistributionType
+    nativeDebugger = initialSettings.nativeDebugger
+    gdbPath = initialSettings.gdbPath
 
     projectControls.reset()
   }
@@ -104,6 +142,8 @@ class ElideProjectSettingsControl(
 
     initialSettings.elideDistributionPath = distributionPath
     initialSettings.elideDistributionType = distributionType
+    initialSettings.nativeDebugger = nativeDebugger
+    initialSettings.gdbPath = gdbPath
   }
 
   override fun applyExtraSettings(settings: ElideProjectSettings) {
@@ -111,6 +151,8 @@ class ElideProjectSettingsControl(
 
     settings.elideDistributionPath = distributionPath
     settings.elideDistributionType = distributionType
+    settings.nativeDebugger = nativeDebugger
+    settings.gdbPath = gdbPath
   }
 
   override fun validate(settings: ElideProjectSettings): Boolean {
@@ -129,6 +171,24 @@ class ElideProjectSettingsControl(
       val text = when (value) {
         ElideDistributionSetting.Custom -> Constants.Strings["settings.project.distribution.type.custom"]
         else -> Constants.Strings["settings.project.distribution.type.auto"]
+      }
+
+      return JLabel(text)
+    }
+  }
+
+  private data object NativeDebuggerRenderer : ListCellRenderer<ElideNativeDebuggerSetting?> {
+    override fun getListCellRendererComponent(
+      list: JList<out ElideNativeDebuggerSetting>,
+      value: ElideNativeDebuggerSetting?,
+      index: Int,
+      isSelected: Boolean,
+      cellHasFocus: Boolean
+    ): Component {
+      val text = when (value) {
+        ElideNativeDebuggerSetting.Gdb -> Constants.Strings["settings.project.nativeDebug.debugger.gdb"]
+        ElideNativeDebuggerSetting.Lldb -> Constants.Strings["settings.project.nativeDebug.debugger.lldb"]
+        else -> Constants.Strings["settings.project.nativeDebug.debugger.auto"]
       }
 
       return JLabel(text)
