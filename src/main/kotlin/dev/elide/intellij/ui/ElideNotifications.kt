@@ -18,10 +18,16 @@ import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.updateSettings.impl.pluginsAdvertisement.installAndEnable
+import com.intellij.openapi.vfs.VfsUtil
 import dev.elide.intellij.Constants
+import dev.elide.intellij.execution.nativeimage.ElideNativeDebugger
+import dev.elide.intellij.execution.nativeimage.ElideNativeImageLaunch
 import dev.elide.intellij.settings.ElideConfigurable
+import java.nio.file.Files
 
 object ElideNotifications {
   fun notifyInvalidElideHome(project: Project? = null) {
@@ -67,6 +73,60 @@ object ElideNotifications {
         NotificationType.INFORMATION,
       )
       .setTitle(Constants.Strings["elide.notifications.coverageAttached.title"])
+      .notify(project)
+  }
+
+  /**
+   * Report that a Native Image debug session cannot start because Native Debugging Support is not installed, and
+   * offer to install it.
+   *
+   * The install action is the platform's own advertiser, which resolves the plugin from the marketplace and handles
+   * an IDE that cannot run it — the backend is licensed for IntelliJ IDEA Ultimate — with a dialog of its own.
+   */
+  fun notifyNativeDebuggerMissing(project: Project) {
+    NotificationGroupManager.getInstance()
+      .getNotificationGroup("Elide Notifications")
+      .createNotification(
+        Constants.Strings["elide.notifications.nativeDebuggerMissing.content"],
+        NotificationType.WARNING,
+      )
+      .setTitle(Constants.Strings["elide.notifications.nativeDebuggerMissing.title"])
+      .addAction(
+        object : NotificationAction(Constants.Strings["elide.notifications.nativeDebuggerMissing.install"]) {
+          override fun actionPerformed(e: AnActionEvent, n: Notification) {
+            installAndEnable(e.project, setOf(ElideNativeDebugger.PLUGIN_ID)) { n.expire() }
+          }
+        },
+      )
+      .notify(project)
+  }
+
+  /**
+   * Report that the image of [artifact] carries no debug info, so a session that just started will not reach source
+   * level, and point at the manifest where the flags producing it are declared.
+   *
+   * Two different things cause it and the wording says which: a build that never asked for debug info, and a build
+   * that did on a platform where GraalVM emits none — it only does so on Linux, and the pretty-printer script it
+   * writes alongside a `-g` build is what tells the two apart.
+   */
+  fun notifyNativeImageWithoutDebugInfo(project: Project, artifact: String, launch: ElideNativeImageLaunch) {
+    val content = when {
+      Files.isRegularFile(launch.gdbHelpers) -> "elide.notifications.nativeImageNoDebugInfo.platform"
+      else -> "elide.notifications.nativeImageNoDebugInfo.flag"
+    }
+
+    NotificationGroupManager.getInstance()
+      .getNotificationGroup("Elide Notifications")
+      .createNotification(Constants.Strings[content, artifact], NotificationType.WARNING)
+      .setTitle(Constants.Strings["elide.notifications.nativeImageNoDebugInfo.title"])
+      .addAction(
+        object : NotificationAction(Constants.Strings["elide.notifications.nativeImageNoDebugInfo.open"]) {
+          override fun actionPerformed(e: AnActionEvent, n: Notification) {
+            val manifest = VfsUtil.findFile(launch.root.resolve(Constants.MANIFEST_NAME), true) ?: return
+            OpenFileDescriptor(project, manifest).navigate(true)
+          }
+        },
+      )
       .notify(project)
   }
 }

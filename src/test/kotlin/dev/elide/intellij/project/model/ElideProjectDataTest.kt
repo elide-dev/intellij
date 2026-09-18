@@ -47,6 +47,13 @@ class ElideProjectDataTest {
     assertEquals("fixture.MainKt", data.jvmMainClass)
   }
 
+  @Test fun `collects the project name and the artifacts producing a runnable binary`() {
+    assertEquals("fixture", data.name)
+
+    // the jar is nothing to launch, and a library image is a shared object; only the binary image is listed
+    assertEquals(listOf(ElideNativeImageInfo("bin", "fixture-bin")), data.nativeImages)
+  }
+
   @Test fun `collects kotlin facet settings`() {
     val kotlin = assertNotNull(data.kotlin)
 

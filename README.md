@@ -37,7 +37,8 @@ arguments, build tasks and flags. Ad-hoc commands can also be run through **Run 
 
 **Gutter actions.** Run and Debug icons on Kotlin/Java `main` functions and JUnit tests. When the Pkl plugin is also
 installed, build icons also appear on `artifacts` entries in the project manifest, and declared entrypoints and scripts
-will also gain Run and Debug actions.
+will also gain Run and Debug actions. An `artifacts` entry declaring a binary Native Image offers Run and Debug of the
+image itself alongside its build.
 
 **Build output.** Runs report as a step tree with timings, skip reasons, and compiler diagnostics rendered with source
 excerpts and navigable file locations. `elide build` reports to the **Build** tool window, other commands to the **Run**
@@ -51,7 +52,8 @@ coverage view, including runs started outside the IDE.
 
 **Debugging.** Entrypoint and test configurations support **Debug** via Elide's JDWP support; the IDE attaches
 automatically. Debugging `elide test` requires Elide 1.5.3 or newer and is available for JVM code only, for guest
-languages use DevTools or DAP instead.
+languages use DevTools or DAP instead. Native Image binaries are also supported via GDB/LLDB through the JetBrains
+[Native Debugging Support](https://plugins.jetbrains.com/plugin/12775) plugin (IntelliJ IDEA Ultimate)
 
 **Manifest editing** (requires the Pkl plugin). Completion and navigation for `jvm.main` and `entrypoint` paths, plus
 inspections for unresolved or invalid JVM entrypoints.

@@ -50,7 +50,10 @@ class JvmMainFunctionsTest {
 
   @Test fun `java main class takes the location from the platform producer`() = runBlocking {
     val project = projectFixture.get()
-    project.elideProjectIndex.update(PROJECT_PATH, ElideProjectInfo(listOf(ElideEntrypointInfo.jvmMain("probe.App"))))
+    project.elideProjectIndex.update(
+      PROJECT_PATH,
+      ElideProjectInfo(entrypoints = listOf(ElideEntrypointInfo.jvmMain("probe.App"))),
+    )
 
     val configuration = elideConfigurationAtCaret(
       "App.java",
@@ -71,7 +74,7 @@ class JvmMainFunctionsTest {
 
   @Test fun `main class outside the manifest is left to the platform`() = runBlocking {
     val project = projectFixture.get()
-    project.elideProjectIndex.update(PROJECT_PATH, ElideProjectInfo(emptyList()))
+    project.elideProjectIndex.update(PROJECT_PATH, ElideProjectInfo(entrypoints = emptyList()))
 
     val configuration = elideConfigurationAtCaret(
       "Unlisted.java",

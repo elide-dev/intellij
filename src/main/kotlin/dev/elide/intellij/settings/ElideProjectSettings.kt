@@ -26,6 +26,10 @@ import com.intellij.openapi.externalSystem.settings.ExternalProjectSettings
 data class ElideProjectSettings(
   var elideDistributionType: ElideDistributionSetting = ElideDistributionSetting.AutoDetect,
   var elideDistributionPath: String = "",
+  /** Backend a debug session of a Native Image binary of this project runs on. */
+  var nativeDebugger: ElideNativeDebuggerSetting = ElideNativeDebuggerSetting.Auto,
+  /** GDB executable to debug Native Image binaries with; empty resolves the first one on `PATH`. */
+  var gdbPath: String = "",
 ) : ExternalProjectSettings() {
   override fun clone(): ExternalProjectSettings = copy()
 }

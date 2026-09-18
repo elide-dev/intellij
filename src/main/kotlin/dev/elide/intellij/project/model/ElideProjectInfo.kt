@@ -20,10 +20,14 @@ import dev.elide.intellij.cli.ElideCli
 
 /** Serializable project data resolved from an Elide manifest during project sync. */
 data class ElideProjectInfo(
+  /** Name the manifest declares for the project, or `null` when it declares none. */
+  @Attribute val name: String? = null,
   /** Resolved entrypoints from the project's manifest. */
   @XCollection val entrypoints: List<ElideEntrypointInfo> = emptyList(),
   /** Tasks `elide build` accepts as targets in this project, as the CLI listed them during sync. */
   @XCollection val buildTasks: List<ElideBuildTaskInfo> = emptyList(),
+  /** Artifacts of this project producing a runnable Native Image binary. */
+  @XCollection val nativeImages: List<ElideNativeImageInfo> = emptyList(),
 ) {
   companion object {
     /**
@@ -31,6 +35,7 @@ data class ElideProjectInfo(
      * and the build tasks the CLI listed for the project.
      */
     @JvmStatic fun from(data: ElideProjectData): ElideProjectInfo = ElideProjectInfo(
+      name = data.name,
       entrypoints = buildList {
         // scripts can be used as tasks
         data.scripts.forEach { name -> add(ElideEntrypointInfo.script(name)) }
@@ -46,8 +51,14 @@ data class ElideProjectInfo(
         }
       },
       buildTasks = data.buildTasks,
+      nativeImages = data.nativeImages,
     )
   }
+}
+
+/** Returns the runnable Native Image the project's [artifact] produces, or `null` when it produces none. */
+fun ElideProjectInfo.nativeImage(artifact: String): ElideNativeImageInfo? {
+  return nativeImages.find { it.artifact == artifact }
 }
 
 /**

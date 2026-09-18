@@ -12,6 +12,7 @@
  */
 package dev.elide.intellij.execution
 
+import com.intellij.execution.executors.DefaultDebugExecutor
 import com.intellij.execution.executors.DefaultRunExecutor
 import com.intellij.execution.lineMarker.ExecutorAction
 import com.intellij.execution.lineMarker.RunLineMarkerContributor
@@ -22,6 +23,7 @@ import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.util.firstLeaf
 import dev.elide.intellij.psi.manifestDeclaresEntrypoint
 import dev.elide.intellij.psi.moduleMappingKey
+import dev.elide.intellij.psi.nativeImage
 import dev.elide.intellij.psi.parentPropertyReference
 import dev.elide.intellij.psi.parentStringLiteral
 import org.pkl.intellij.PklLanguage
@@ -99,6 +101,12 @@ class ElideManifestLineMarkerContributor : RunLineMarkerContributor() {
     // }
     if (!element.namesMappingKey("artifacts")) return null
 
+    // a Native Image binary is the one artifact the IDE can also start, so its key gets the run icon and the
+    // executors of the configuration running it on top of the build's own actions
+    if (element.moduleMappingKey("artifacts")?.nativeImage() != null) {
+      return Info(AllIcons.Actions.Execute, buildActions() + nativeImageActions())
+    }
+
     return Info(AllIcons.Actions.Compile, buildActions())
   }
 
@@ -123,4 +131,31 @@ class ElideManifestLineMarkerContributor : RunLineMarkerContributor() {
   private fun buildActions(): Array<AnAction> = ExecutorAction.getActionList(0)
     .filterNot { it is ExecutorAction && it.executor.id != DefaultRunExecutor.EXECUTOR_ID }
     .toTypedArray()
+
+  /**
+   * Actions offered by the binary a Native Image artifact produces: the run and debug executors of the second
+   * configuration the context yields, which is the one starting that binary.
+   *
+   * Only the executors are taken. The extra actions — editing the configuration, saving it — are contributed by the
+   * artifact's build configuration already, and would be duplicated by a second set pointing at the same menu.
+   */
+  private fun nativeImageActions(): Array<AnAction> = ExecutorAction.getActionList(NATIVE_IMAGE_CONFIGURATION_ORDER)
+    .filter { it is ExecutorAction && it.executor.id in NATIVE_IMAGE_EXECUTORS }
+    .toTypedArray()
+
+  private companion object {
+    /**
+     * Position of the Native Image run in the configurations a Native Image key yields.
+     *
+     * The build of the artifact comes first: `ElideManifestRunConfigurationProducer` is preferred over the Native
+     * Image producer, which in turn is preferred over everything foreign.
+     */
+    private const val NATIVE_IMAGE_CONFIGURATION_ORDER = 1
+
+    /** Executors a Native Image binary is offered under; it collects no coverage. */
+    private val NATIVE_IMAGE_EXECUTORS = setOf(
+      DefaultRunExecutor.EXECUTOR_ID,
+      DefaultDebugExecutor.EXECUTOR_ID,
+    )
+  }
 }

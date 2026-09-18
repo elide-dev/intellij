@@ -11,6 +11,10 @@ intellij-untilBuild = "262.*"
 
 pkl-plugin = "0.37.0"
 
+# the GDB/LLDB backends behind Native Image debugging; a marketplace plugin licensed for IntelliJ IDEA Ultimate,
+# depended on optionally and never bundled with the IDE distribution
+native-debug-plugin = "261.25134.147"
+
 kotlin = "2.4.20"
 kotlinx-coroutines = "1.11.0"
 

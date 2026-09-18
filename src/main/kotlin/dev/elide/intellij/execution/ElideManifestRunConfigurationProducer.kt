@@ -22,10 +22,12 @@ import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.util.Ref
 import com.intellij.openapi.util.io.toCanonicalPath
 import com.intellij.psi.PsiElement
+import dev.elide.intellij.execution.nativeimage.ElideNativeImageRunConfiguration
 import dev.elide.intellij.project.model.ElideEntrypointInfo
 import dev.elide.intellij.project.model.fullCommandLine
 import dev.elide.intellij.psi.manifestDeclaresEntrypoint
 import dev.elide.intellij.psi.moduleMappingKey
+import dev.elide.intellij.psi.resolvedText
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
 import org.pkl.intellij.PklLanguage
 import org.pkl.intellij.psi.*
@@ -35,12 +37,24 @@ class ElideManifestRunConfigurationProducer :
   LazyRunConfigurationProducer<ElideRunConfiguration>() {
   override fun isDumbAware(): Boolean = true
 
+  /**
+   * Preferred over foreign configurations, and deliberately *not* over the Native Image run of the same artifact.
+   *
+   * `PreferredProducerFind` keeps only the configurations that are as preferred as the best one, so claiming
+   * preference over the native run would drop it from the context and the gutter would lose its Run and Debug
+   * entries. The two therefore compare equal, and the order they appear in is the order the producers are
+   * registered in `plugin-pkl.xml` — this one first, so the "Build" of the artifact stays at index 0.
+   */
   override fun isPreferredConfiguration(self: ConfigurationFromContext?, other: ConfigurationFromContext?): Boolean {
-    return self?.configuration is ElideRunConfiguration && other?.configuration !is ElideRunConfiguration
+    return self?.configuration is ElideRunConfiguration && other.isForeign()
   }
 
   override fun shouldReplace(self: ConfigurationFromContext, other: ConfigurationFromContext): Boolean {
-    return self.configuration is ElideRunConfiguration && other.configuration !is ElideRunConfiguration
+    return self.configuration is ElideRunConfiguration && other.isForeign()
+  }
+
+  private fun ConfigurationFromContext?.isForeign(): Boolean {
+    return this?.configuration !is ElideRunConfiguration && this?.configuration !is ElideNativeImageRunConfiguration
   }
 
   override fun getConfigurationFactory(): ConfigurationFactory = ElideExternalTaskConfigurationType.configurationFactory
@@ -121,12 +135,5 @@ class ElideManifestRunConfigurationProducer :
       ElideEntrypointInfo.Kind.Artifact -> ElideEntrypointInfo.artifact(value)
       ElideEntrypointInfo.Kind.JvmTest -> return null
     }
-  }
-
-  private fun PklExpr.resolvedText(): String {
-    return ((this as? PklUnqualifiedAccessExpr)?.memberName
-      ?.reference?.resolve()
-      ?.let { (it as? PklProperty)?.expr?.resolvedText() } ?: text)
-      .trim('"')
   }
 }

@@ -113,6 +113,16 @@
             ],
             "name": "fixture.jar",
             "main": "fixture.MainKt"
+        },
+        "bin": {
+            "@type": "elide.nativeImage.NativeImage",
+            "name": "fixture-bin",
+            "entrypoint": "fixture.MainKt"
+        },
+        "shared": {
+            "@type": "elide.nativeImage.NativeImage",
+            "name": "libfixture",
+            "type": "library"
         }
     }
 }
