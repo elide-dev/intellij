@@ -32,6 +32,13 @@ then install **Elide** from the marketplace tab. Plugin ZIPs are also attached t
 prompt a reload. The **Elide** tool window shows linked projects, their modules, and the build targets reported by the
 CLI, runnable from the tree view.
 
+**Multi-project workspaces.** A manifest declaring `workspace.members` is imported as one project: every member gets
+its own modules, source roots, classpath and JDK, and a member consuming a sibling's artifact with `project("name")`
+gets a module dependency on it — along with the siblings that artifact brings with it, the way Elide resolves the
+classpath — so the IDE compiles and navigates across the workspace. The tool window nests every project's build
+targets and source-set modules under that project, and only the root is linked — editing a member's manifest reloads
+the workspace.
+
 **Run configurations.** Add **Elide** run configurations with command-line completion for entrypoints, CLI commands,
 arguments, build tasks and flags. Ad-hoc commands can also be run through **Run Anything**.
 
