@@ -11,5 +11,23 @@ abstract class Artifact {
   dependsOn: Listing<ArtifactName> = new {}
 }
 
+/// Name of a project within a workspace.
+typealias ProjectName = String(matches(Regex(#"^[^\s:]+$"#)))
+
+/// An artifact built by another project of the same workspace, consumed by this one.
+///
+/// The reference names no artifact kind: whether the artifact a given dependency block resolves to
+/// is one that block can consume is checked when the build is configured.
+class ProjectArtifact {
+  /// Workspace member name, or the root project's name, declaring the artifact.
+  project: ProjectName
+
+  /// Artifact declared by that project; omit when it declares exactly one usable artifact.
+  artifact: ArtifactName?
+
+  /// This reference, narrowed to the artifact [name] of the same project.
+  function artifact(name: ArtifactName): ProjectArtifact = (this) { artifact = name }
+}
+
 /// Holds artifact configurations for a given project.
 typealias Artifacts = Mapping<ArtifactName, Artifact>

@@ -197,8 +197,10 @@ class MavenRepositorySpec {
   url: common.RepositoryUrl
 }
 
-/// Maven packages can be specified structurally, or as coordinate strings, Gradle-style coordinate strings, or purls.
-typealias MavenPackageDependency = MavenPackageSpec | MavenCoordinate | common.FilePath
+/// Maven packages can be specified structurally, as coordinate strings, as local JAR paths, or as
+/// artifacts of another project of the same workspace.
+typealias MavenPackageDependency =
+    MavenPackageSpec | MavenCoordinate | common.FilePath | artifacts.ProjectArtifact
 
 /// Specifies a simple Maven repository endpoint or structural definition.
 typealias MavenRepository = MavenRepositorySpec | common.RepositoryUrl

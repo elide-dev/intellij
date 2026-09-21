@@ -101,6 +101,10 @@ public data class ProjectModule(
    * Settings for testing features
    */
   public val testing: Testing = Testing(),
+  /**
+   * Workspace settings for this project, when it is the root of a multi-project workspace.
+   */
+  public val workspace: WorkspaceSettings = WorkspaceSettings(),
 )
 
 /**
@@ -157,6 +161,18 @@ public data class Dependencies(
    * Configure Spring Boot starters; expands into `maven` at manifest parse time.
    */
   public val spring: SpringDependencies? = null,
+)
+
+/**
+ * Workspace settings: the member projects this project is the root of.
+ */
+@Serializable
+@SerialName("elide.project.WorkspaceSettings")
+public data class WorkspaceSettings(
+  /**
+   * Directories of member projects, relative to this manifest's directory; each holds its own `elide.pkl`.
+   */
+  public val members: List<String> = emptyList(),
 )
 
 /**
