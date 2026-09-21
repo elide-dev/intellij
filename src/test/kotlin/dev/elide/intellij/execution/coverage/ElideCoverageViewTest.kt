@@ -21,6 +21,8 @@ import com.intellij.testFramework.PsiTestUtil
 import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.testFramework.junit5.fixture.moduleFixture
 import com.intellij.testFramework.junit5.fixture.projectFixture
+import dev.elide.intellij.project.model.ElideProjectInfo
+import dev.elide.intellij.service.elideProjectIndex
 import dev.elide.intellij.settings.ElideProjectSettings
 import dev.elide.intellij.settings.ElideSettings
 import kotlinx.coroutines.delay
@@ -53,6 +55,9 @@ class ElideCoverageViewTest {
     val module = moduleFixture.get()
     val projectPath = assertNotNull(project.basePath)
     ElideSettings.getSettings(project).linkProject(ElideProjectSettings().apply { externalProjectPath = projectPath })
+
+    // coverage is reported under the Elide project the sync resolved, which is what the index names
+    project.elideProjectIndex.update(projectPath, ElideProjectInfo())
 
     val sourceRoot = Path(projectPath).resolve("src/main").createDirectories()
     val source = sourceRoot.resolve("app.ts").apply { writeText("export const answer = 42\n") }

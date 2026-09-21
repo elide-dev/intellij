@@ -40,8 +40,10 @@ class ElideProjectTasksTest {
     ElideBuildTaskInfo("write-classpath-files"),
   )
 
+  private val workspace = ElideResolvedWorkspace.of(projectPath, manifest)
+
   @Test fun `build tasks hang off the project's task list`() {
-    val projectNode = ElideProjectModel.buildModel(projectPath, emptyMap(), manifest, buildTasks)
+    val projectNode = ElideProjectModel.buildModel(workspace, buildTasks)
     val tasksNode = ExternalSystemApiUtil.getChildren(projectNode, ElideBuildTasksData.KEY).single()
     val tasks = ExternalSystemApiUtil.getChildren(tasksNode, ProjectKeys.TASK).map { it.data }
 
@@ -60,7 +62,7 @@ class ElideProjectTasksTest {
 
   @Test fun `a project without a task listing carries no task list`() {
     // an Elide distribution whose `build --inspect` fails, or has no `--inspect` at all, still imports
-    val projectNode = ElideProjectModel.buildModel(projectPath, emptyMap(), manifest)
+    val projectNode = ElideProjectModel.buildModel(workspace)
 
     assertEquals(emptyList(), ExternalSystemApiUtil.getChildren(projectNode, ElideBuildTasksData.KEY))
     assertEquals(emptyList(), ExternalSystemApiUtil.findAllRecursively(projectNode, ProjectKeys.TASK))

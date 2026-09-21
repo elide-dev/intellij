@@ -26,6 +26,13 @@ class ElideBuildTasksTest {
     }.use { it.reader().readText() }
   }
 
+  /** Verbatim output of `elide build --inspect` at the root of a workspace with two members. */
+  private val workspaceListing: String by lazy {
+    checkNotNull(javaClass.getResourceAsStream("/cli/build-inspect-workspace.txt")) {
+      "missing workspace build task listing fixture"
+    }.use { it.reader().readText() }
+  }
+
   @Test fun `every task of the listing is read, and nothing else`() {
     val tasks = ElideBuildTasks.parse(listing)
 
@@ -81,6 +88,42 @@ class ElideBuildTasksTest {
     assertTrue(ElideBuildTasks.parse("Error: No Elide project found\n").isEmpty())
     assertTrue(
       ElideBuildTasks.parse("Global options:\n  --no-cache   Disable the build cache for this run\n").isEmpty(),
+    )
+  }
+
+  @Test fun `every task of every project in a workspace listing is read, and nothing else`() {
+    val tasks = ElideBuildTasks.parse(workspaceListing)
+
+    // the group header of each project is not a task, and neither is the trailing `Global options:` section; a
+    // member's task keeps the qualifier it is printed with, since that is what `elide build` accepts as a target
+    assertEquals(
+      listOf(
+        "maven-dependencies",
+        "core:compile-kotlin-main",
+        "core:jar",
+        "app:compile-kotlin-main",
+        "app:jar",
+        "app:run",
+      ),
+      tasks.map { it.name },
+    )
+  }
+
+  @Test fun `options attach to their task across a workspace group boundary`() {
+    val tasks = ElideBuildTasks.parse(workspaceListing).associateBy { it.name }
+
+    // the last task of a group must not collect the options of the first task of the next one
+    assertEquals(
+      listOf("--fresh", "--direct"),
+      tasks.getValue("maven-dependencies").options.map { it.option },
+    )
+    assertEquals(emptyList(), tasks.getValue("core:jar").options)
+    assertEquals(
+      listOf(
+        ElideBuildTaskInfo.Option("--debugger", "Attach JDWP debugger, optionally specify host:port"),
+        ElideBuildTaskInfo.Option("--args", "Space-separated program arguments"),
+      ),
+      tasks.getValue("app:run").options,
     )
   }
 }

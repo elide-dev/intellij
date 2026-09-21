@@ -23,14 +23,16 @@ import com.intellij.util.containers.MultiMap
 import dev.elide.intellij.Constants
 import dev.elide.intellij.project.model.ElideBuildTasksData
 import dev.elide.intellij.project.model.buildTargetName
+import dev.elide.intellij.project.model.unqualifiedTaskName
 
 /**
  * Contributes the task list of the Elide tool window's tree, and names the nodes below it.
  *
  * A task carries the build target prefix in its name so that every path the platform runs it through — "Run" in the
- * tool window, task activation, a keymap shortcut — reaches it as an `elide build` target. In a tree that lists
- * nothing but build targets the prefix is noise, so the label drops it while the node keeps the full name; Gradle's
- * view contributor shortens `:module:task` to `task` the same way.
+ * tool window, task activation, a keymap shortcut — reaches it as an `elide build` target, and inside a workspace it
+ * carries the project declaring it as well. In a tree that lists nothing but build targets, each under the project
+ * owning it, both are noise, so the label drops them while the node keeps the full name; Gradle's view contributor
+ * shortens `:module:task` to `task` the same way.
  */
 class ElideViewContributor : ExternalSystemViewContributor() {
   override fun getSystemId(): ProjectSystemId = Constants.SYSTEM_ID
@@ -50,6 +52,6 @@ class ElideViewContributor : ExternalSystemViewContributor() {
   override fun getDisplayName(node: DataNode<*>): String? {
     val task = node.data as? TaskData ?: return null
 
-    return buildTargetName(task.name)
+    return buildTargetName(task.name)?.let(::unqualifiedTaskName)
   }
 }

@@ -1,0 +1,29 @@
+6 tasks across 3 projects:
+
+workspace-sample
+  maven-dependencies   Resolve and download Maven dependencies
+    --fresh   Re-download dependencies even if present in the local cache
+    --direct   Copy artifacts to the project repository instead of symlinking
+
+core
+  core:compile-kotlin-main   Compile main Kotlin source files to bytecode
+    no options declared
+
+  core:jar   Package compiled classes into a JAR archive
+    no options declared
+
+app
+  app:compile-kotlin-main   Compile main Kotlin source files to bytecode
+    no options declared
+
+  app:jar   Package compiled classes into a JAR archive
+    no options declared
+
+  app:run   Run the main JVM application
+    --debugger   Attach JDWP debugger, optionally specify host:port
+    --args   Space-separated program arguments
+
+Global options:
+  --no-cache   Disable the build cache for this run
+  --offline   Disable all network access during the build
+  --insights   Inject Insights API scripts or a class

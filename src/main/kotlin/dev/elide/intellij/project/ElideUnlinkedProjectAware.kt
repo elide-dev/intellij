@@ -38,9 +38,14 @@ import dev.elide.intellij.settings.ElideSettings
     return buildFile.name == Constants.MANIFEST_NAME
   }
 
+  /**
+   * Whether the IDE already tracks the Elide project at [externalProjectPath].
+   *
+   * A workspace member answers `true` through the root that owns it: it is synced and built as part of that root, so
+   * offering to link it as a project of its own would import the same sources twice.
+   */
   override fun isLinkedProject(project: Project, externalProjectPath: String): Boolean {
-    val settings = ElideSettings.getSettings(project)
-    return settings.getLinkedProjectSettings(externalProjectPath) != null
+    return ElideWorkspaces.linkedRoot(project, externalProjectPath) != null
   }
 
   /**
@@ -73,10 +78,13 @@ import dev.elide.intellij.settings.ElideSettings
   }
 
   override suspend fun unlinkProject(project: Project, externalProjectPath: String) {
+    val members = ElideWorkspaces.members(project, externalProjectPath)
     ElideSettings.getSettings(project).unlinkExternalProject(externalProjectPath)
 
-    // drop the entrypoints resolved for this project: leaving them behind would keep feeding stale completions and
-    // gutter actions for a project the IDE no longer tracks
-    project.elideProjectIndex.remove(externalProjectPath)
+    // drop the entrypoints resolved for this project and for every member of its workspace: leaving them behind
+    // would keep feeding stale completions and gutter actions for projects the IDE no longer tracks
+    val index = project.elideProjectIndex
+    index.remove(externalProjectPath)
+    members.forEach(index::remove)
   }
 }

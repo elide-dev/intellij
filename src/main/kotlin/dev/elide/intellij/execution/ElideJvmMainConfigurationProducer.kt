@@ -22,6 +22,7 @@ import com.intellij.execution.configurations.ConfigurationFactory
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.util.Ref
 import com.intellij.psi.PsiElement
+import dev.elide.intellij.project.ElideWorkspaces
 import dev.elide.intellij.project.model.ElideEntrypointInfo
 import dev.elide.intellij.project.model.ElideEntrypointInfo.Kind
 import dev.elide.intellij.project.model.fullCommandLine
@@ -88,11 +89,27 @@ class ElideJvmMainConfigurationProducer : LazyRunConfigurationProducer<ElideRunC
     return findJvmMainClassName(element)
   }
 
+  /**
+   * Returns the Elide project whose manifest declares [qualifiedName] as its JVM main class, and that entrypoint.
+   *
+   * The project holding the class is tried first: every project of a workspace declares a main class of its own, and
+   * the one to run for a `main` under the caret is the project that compiles it, not whichever of them the index
+   * happens to list first.
+   */
   private fun findJvmEntrypoint(
     context: ConfigurationContext,
     qualifiedName: String
   ): Pair<String, ElideEntrypointInfo>? {
-    for ((path, project) in context.project.elideProjectIndex.entries) {
+    val index = context.project.elideProjectIndex
+    val owner = context.location?.psiElement?.containingFile?.virtualFile?.toNioPath()
+      ?.let { ElideWorkspaces.owningProject(context.project, it) }
+
+    val candidates = when (owner) {
+      null -> index.entries.asSequence()
+      else -> index.entries.asSequence().sortedByDescending { (path, _) -> path == owner }
+    }
+
+    for ((path, project) in candidates) {
       val jvmMain = project.entrypoints.find {
         it.kind == Kind.JvmMainClass && it.value == qualifiedName
       } ?: continue

@@ -12,7 +12,6 @@
  */
 package dev.elide.intellij.project
 
-import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.externalSystem.model.DataNode
 import com.intellij.openapi.externalSystem.model.Key
 import com.intellij.openapi.externalSystem.model.project.ProjectData
@@ -49,29 +48,41 @@ class ElideProjectDataService : AbstractProjectDataService<ElideProjectData, Pro
     modelsProvider: IdeModifiableModelsProvider
   ) {
     if (projectData == null) return
-    if (toImport.size > 1) LOG.warn("More than one node to import (${toImport.size}), only the first one will be used")
 
-    val data = toImport.firstOrNull()?.data ?: return
+    // one node per project the sync resolved: the linked project, plus every member of the workspace it is the root
+    // of, each of which is indexed under its own directory so the path-keyed features reach it
+    val resolved = toImport.mapNotNull { it?.data }
+    if (resolved.isEmpty()) return
 
-    configureKotlinFacets(data, modelsProvider)
+    for (data in resolved) configureKotlinFacets(data, modelsProvider)
 
     // the index is rewritten on every sync: manifest edits (new scripts, a renamed main class, removed entrypoints)
     // must reach the gutter producers and completion without deleting the persisted index by hand
-    project.elideProjectIndex.update(projectData.linkedExternalProjectPath, ElideProjectInfo.from(data))
+    val index = project.elideProjectIndex
+    for (data in resolved) index.update(data.projectPath, ElideProjectInfo.from(data))
+
+    // a member dropped from the workspace manifest is no longer part of this project: its entry would otherwise
+    // outlive the sync that removed it and keep offering runs for a project the IDE no longer resolves
+    val owned = resolved.mapTo(mutableSetOf()) { it.projectPath }
+    index.entries
+      .filter { (path, info) -> info.workspaceRoot == projectData.linkedExternalProjectPath && path !in owned }
+      .forEach { (path, _) -> index.remove(path) }
   }
 
   /**
-   * Configure a Kotlin facet for the modules being imported.
+   * Configure a Kotlin facet for the modules of the project [data] describes.
    *
-   * Only modules owned by this external system are touched, and only when the manifest declares Kotlin settings:
-   * creating a facet unconditionally would attach Kotlin configuration to plain Java modules and to modules owned by
-   * other build systems in the same project.
+   * Only modules owned by this external system are touched, and only the ones of this project: every project of a
+   * workspace declares its own Kotlin settings, and a facet built from the wrong manifest would pin the wrong
+   * language level. Nothing is created when the manifest declares no Kotlin settings, since a facet attached
+   * unconditionally would add Kotlin configuration to plain Java modules.
    */
   private fun configureKotlinFacets(data: ElideProjectData, modelsProvider: IdeModifiableModelsProvider) {
     val kotlinSettings = data.kotlin ?: return
 
     for (module in modelsProvider.modules) {
       if (!isElideModule(module)) continue
+      if (ExternalSystemApiUtil.getExternalProjectPath(module) != data.projectPath) continue
 
       val facets = modelsProvider.getModifiableFacetModel(module)
       val kotlin = facets.getFacetByType(KotlinFacetType.TYPE_ID)
@@ -104,9 +115,5 @@ class ElideProjectDataService : AbstractProjectDataService<ElideProjectData, Pro
     "latest" -> LanguageVersion.entries.last()
     "stable" -> LanguageVersion.LATEST_STABLE
     else -> LanguageVersion.fromVersionString(level)
-  }
-
-  private companion object {
-    private val LOG = Logger.getInstance(ElideProjectDataService::class.java)
   }
 }

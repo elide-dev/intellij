@@ -38,6 +38,21 @@ class MissingManifestException(projectPath: String) : ElidePluginException(
   Constants.Strings["errors.missingManifest", Constants.MANIFEST_NAME, projectPath],
 )
 
+/** Raised when a workspace manifest lists its own directory as one of its members. */
+class WorkspaceMemberIsRootException(member: String) : ElidePluginException(
+  Constants.Strings["errors.workspaceMemberIsRoot", member],
+)
+
+/**
+ * Raised when two projects of one workspace declare the same name.
+ *
+ * The name is how a sibling's `project(…)` reference and the CLI's build targets address a project, so a workspace
+ * that holds it twice describes no single project for either of them.
+ */
+class DuplicateProjectNameException(name: String, first: Path, second: Path) : ElidePluginException(
+  Constants.Strings["errors.duplicateProjectName", name, first.toCanonicalPath(), second.toCanonicalPath()],
+)
+
 /**
  * Raised when the Elide CLI exits with a non-zero status. The captured [stderr] output is part of the message so the
  * sync log shows the actual failure reported by the CLI rather than only an exit code.
