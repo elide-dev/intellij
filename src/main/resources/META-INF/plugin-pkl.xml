@@ -7,6 +7,17 @@
     <psi.referenceContributor language="Pkl"
                               implementation="dev.elide.intellij.psi.ElideManifestReferencesContributor"/>
 
+    <!-- lets references into string contents follow a rename or move of their target, which the Pkl plugin does not
+         support on its own; a `workspace.members` entry is rewritten when its directory moves -->
+    <lang.elementManipulator forClass="org.pkl.intellij.psi.PklStringContentBase"
+                             implementationClass="dev.elide.intellij.psi.ElideStringContentManipulator"/>
+
+    <!-- `first`: the platform suppresses the popup in every string literal, and workspace strings are the exception -->
+    <completion.confidence language="Pkl"
+                           order="first"
+                           implementationClass="dev.elide.intellij.psi.ElideManifestCompletionConfidence"/>
+    <typedHandler implementation="dev.elide.intellij.psi.ElideManifestTypedHandler"/>
+
     <!-- this producer resolves entrypoints from Pkl PSI, so it can only load when the Pkl plugin is present.
          Order matters: it and the Native Image producer compare equal in preference, so `configurationsFromContext`
          keeps them in registration order, and the gutter reads the native run at index 1 -->
@@ -28,5 +39,12 @@
                      groupKey="elide.inspection.manifest.group"
                      enabledByDefault="true"
                      implementationClass="dev.elide.intellij.psi.ElideManifestJvmMainMethodInspection"/>
+
+    <localInspection language="Pkl"
+                     key="elide.inspection.manifest.workspace.name"
+                     groupKey="elide.inspection.manifest.group"
+                     enabledByDefault="true"
+                     level="ERROR"
+                     implementationClass="dev.elide.intellij.psi.ElideManifestWorkspaceReferenceInspection"/>
   </extensions>
 </idea-plugin>

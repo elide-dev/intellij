@@ -27,6 +27,17 @@ class ElideManifestReferencesContributor : PsiReferenceContributor() {
   override fun registerReferenceProviders(registrar: PsiReferenceRegistrar) {
     registrar.registerReferenceProvider(JvmMainClassProvider.Pattern, JvmMainClassProvider)
     registrar.registerReferenceProvider(ScriptSourceProvider.Pattern, ScriptSourceProvider)
+    registrar.registerReferenceProvider(WorkspaceProvider.Pattern, WorkspaceProvider)
+  }
+
+  /** Workspace member paths, project names and artifact names; see [ManifestWorkspaceString]. */
+  private data object WorkspaceProvider : PsiReferenceProvider() {
+    @JvmStatic val Pattern = PlatformPatterns.psiElement(PklStringContent::class.java)
+      .withParent(PklStringLiteral::class.java)!!
+
+    override fun getReferencesByElement(element: PsiElement, context: ProcessingContext): Array<out PsiReference> {
+      return workspaceReferences(element as? PklStringContent ?: return PsiReference.EMPTY_ARRAY)
+    }
   }
 
   private data object JvmMainClassProvider : PsiReferenceProvider() {
