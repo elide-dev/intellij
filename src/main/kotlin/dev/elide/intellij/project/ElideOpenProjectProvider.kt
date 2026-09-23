@@ -12,6 +12,7 @@
  */
 package dev.elide.intellij.project
 
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.externalSystem.importing.AbstractOpenProjectProvider
 import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
 import com.intellij.openapi.externalSystem.model.ProjectSystemId
@@ -22,7 +23,15 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.io.toCanonicalPath
 import com.intellij.openapi.vfs.VirtualFile
 import dev.elide.intellij.Constants
+import dev.elide.intellij.cli.ElideCommandLine
+import dev.elide.intellij.cli.manifest
+import dev.elide.intellij.service.ElideDistributionResolver
 import dev.elide.intellij.settings.ElideProjectSettings
+import dev.elide.intellij.ui.ElideNotifications
+import dev.elide.project.manifest.workspaceMembers
+import java.nio.file.Path
+import kotlinx.coroutines.CancellationException
+import kotlin.io.path.isRegularFile
 
 /**
  * Service used to link an Elide project with the IDE, enabling auto-import, sync, and other features.
@@ -56,5 +65,56 @@ import dev.elide.intellij.settings.ElideProjectSettings
       /* importSpec = */ ImportSpecBuilder(project, Constants.SYSTEM_ID)
         .use(ProgressExecutionMode.IN_BACKGROUND_ASYNC),
     )
+
+    // linking a member on its own imports a project Elide would never build on its own; the sync is still started,
+    // since it produces something usable, but the workspace above it is worth pointing at
+    val elideHome = ElideDistributionResolver.getElideHome(project, projectPath.toCanonicalPath())
+
+    enclosingWorkspaceRoot(elideHome, projectPath)?.let { workspaceRoot ->
+      ElideNotifications.notifyWorkspaceMember(project, projectPath, workspaceRoot)
+    }
   }
+}
+
+private val LOG = Logger.getInstance(ElideOpenProjectProvider::class.java)
+
+/**
+ * Returns the root of the Elide workspace claiming [projectPath] as one of its members, or `null` when no directory
+ * above it does.
+ *
+ * The manifests are read through the CLI at [elideHome] rather than parsed here: a `workspace.members` entry is the
+ * result of evaluating Pkl, which can compute the list, and the CLI is the same evaluator the build uses. Only an
+ * ancestor that actually holds a manifest is inspected, so the walk costs a handful of file lookups for the usual
+ * project that has no workspace above it.
+ *
+ * Both spellings of the member's path are compared, because a manifest resolves its members against the root's own
+ * directory while the IDE hands over the path the user opened, and the two differ whenever a symlink is on the way
+ * (`/tmp` is `/private/tmp` on macOS).
+ */
+internal suspend fun enclosingWorkspaceRoot(elideHome: Path, projectPath: Path): Path? {
+  val member = projectPath.toAbsolutePath().normalize()
+  val spellings = setOf(member, runCatching { member.toRealPath() }.getOrDefault(member))
+
+  var candidate = member.parent
+  while (candidate != null) {
+    val ancestor = candidate
+    candidate = ancestor.parent
+
+    if (!ancestor.resolve(Constants.MANIFEST_NAME).isRegularFile()) continue
+
+    val manifest = try {
+      ElideCommandLine.at(elideHome, ancestor).manifest()
+    } catch (cause: CancellationException) {
+      throw cause
+    } catch (cause: Exception) {
+      // a manifest the CLI cannot read describes no workspace this project is part of, as far as anything here can
+      // tell; the sync of the project actually being linked reports its own failures
+      LOG.debug("Failed to read the manifest of '$ancestor' while looking for a workspace", cause)
+      continue
+    }
+
+    if (manifest.workspaceMembers.any { ancestor.resolve(it).normalize() in spellings }) return ancestor
+  }
+
+  return null
 }

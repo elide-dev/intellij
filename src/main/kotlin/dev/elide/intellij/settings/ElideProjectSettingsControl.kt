@@ -20,13 +20,16 @@ import com.intellij.openapi.ui.DialogPanel
 import com.intellij.openapi.ui.TextComponentAccessor
 import com.intellij.openapi.ui.TextFieldWithBrowseButton
 import com.intellij.ui.components.installFileCompletionAndBrowseDialog
+import com.intellij.ui.dsl.builder.Cell
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.layout.selectedValueIs
 import com.intellij.ui.layout.selectedValueMatches
 import dev.elide.intellij.Constants
+import dev.elide.intellij.project.ElideWorkspaces
 import java.awt.Component
+import javax.swing.JEditorPane
 import javax.swing.JLabel
 import javax.swing.JList
 import javax.swing.ListCellRenderer
@@ -40,6 +43,7 @@ class ElideProjectSettingsControl(
   initialSettings: ElideProjectSettings
 ) : AbstractExternalProjectSettingsControl<ElideProjectSettings>(initialSettings) {
   private lateinit var projectControls: DialogPanel
+  private lateinit var workspaceScope: Cell<JEditorPane>
 
   private var distributionType: ElideDistributionSetting = initialSettings.elideDistributionType
   private var distributionPath: String = initialSettings.elideDistributionPath
@@ -48,6 +52,11 @@ class ElideProjectSettingsControl(
 
   private fun controlsPanel(): DialogPanel = panel {
     group(Constants.Strings["settings.project.execution.title"]) {
+      // the panel configures one linked project, but a workspace root's distribution and debugger are what every
+      // member is synced and built with, and nothing else here admits that. The platform only hands the control its
+      // project once the panel exists, so how many projects there are arrives with the reset that follows.
+      row { workspaceScope = comment("").visible(false) }
+
       row(Constants.Strings["settings.project.distribution.label"]) {
         val distributionTypeBox = comboBox(ElideDistributionSetting.entries, DistributionTypeRenderer)
           .bindItem(::distributionType) { distributionType = it ?: ElideDistributionSetting.AutoDetect }
@@ -134,7 +143,37 @@ class ElideProjectSettingsControl(
     nativeDebugger = initialSettings.nativeDebugger
     gdbPath = initialSettings.gdbPath
 
+    updateWorkspaceScope()
     projectControls.reset()
+  }
+
+  /**
+   * Discloses how far these settings reach when the project being configured owns a workspace: one distribution and
+   * one debugger serve every member, because a member is never linked on its own and is only ever synced, built and
+   * run through the root that declares it. A standalone project has nothing to disclose and keeps the row hidden.
+   */
+  private fun updateWorkspaceScope() {
+    // the row is created with the panel, which a control asked to reset before it is filled does not have yet
+    if (!::workspaceScope.isInitialized) return
+
+    val ideProject = project
+    val externalProjectPath = initialSettings.externalProjectPath
+
+    // a control filling a wizard's panel has no project yet, and so no index to ask about membership
+    val members = when {
+      ideProject == null || externalProjectPath == null -> emptyList()
+      else -> ElideWorkspaces.members(ideProject, externalProjectPath)
+    }
+
+    if (members.isEmpty()) {
+      workspaceScope.visible(false)
+      return
+    }
+
+    // the count covers the root itself, which Elide resolves and builds alongside the members it declares
+    val comment = Constants.Strings["settings.project.execution.workspace.comment", members.size + 1]
+    workspaceScope.component.text = comment
+    workspaceScope.visible(true)
   }
 
   override fun updateInitialExtraSettings() {

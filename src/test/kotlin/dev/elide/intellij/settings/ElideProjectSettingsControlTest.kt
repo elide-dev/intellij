@@ -13,9 +13,16 @@
 package dev.elide.intellij.settings
 
 import com.intellij.openapi.externalSystem.util.PaintAwarePanel
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.TextFieldWithBrowseButton
+import com.intellij.testFramework.junit5.TestApplication
+import com.intellij.testFramework.junit5.fixture.projectFixture
+import dev.elide.intellij.Constants
+import dev.elide.intellij.project.model.ElideProjectInfo
+import dev.elide.intellij.service.elideProjectIndex
 import java.awt.Container
 import javax.swing.JComboBox
+import javax.swing.JEditorPane
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -65,5 +72,64 @@ class ElideProjectSettingsControlTest {
 
     assertEquals("/usr/local/elide", applied.elideDistributionPath)
     assertEquals(ElideDistributionSetting.Custom, applied.elideDistributionType)
+  }
+}
+
+/**
+ * Covers what the panel says about how far the settings it edits reach.
+ *
+ * A workspace member is never a linked project, so the root's panel is the only place its distribution and debugger
+ * can be chosen; a user given no hint of that is left looking for a panel of the member's own. Unlike
+ * [ElideProjectSettingsControlTest] this needs an application: the workspace structure lives in a project service,
+ * and the panel only learns which project it configures when the dialog resets it.
+ */
+@TestApplication
+class ElideProjectSettingsWorkspaceScopeTest {
+  private val projectFixture = projectFixture()
+
+  /** Fills a panel for the linked project at [path], in the order the settings dialog fills it. */
+  private fun panelFor(project: Project, path: String): PaintAwarePanel {
+    val control = ElideProjectSettingsControl(ElideProjectSettings().apply { externalProjectPath = path })
+    val canvas = PaintAwarePanel()
+
+    control.fillUi(canvas, 0)
+    control.reset(project)
+
+    return canvas
+  }
+
+  /** The comments the panel actually shows, as the user reads them; a hidden row discloses nothing. */
+  private fun visibleComments(root: Container): List<String> = buildList {
+    for (component in root.components) {
+      if (!component.isVisible) continue
+      if (component is JEditorPane) {
+        add(component.document.getText(0, component.document.length).replace(WHITESPACE, " ").trim())
+      }
+      if (component is Container) addAll(visibleComments(component))
+    }
+  }
+
+  @Test fun `only a workspace root says that its settings govern every project of the workspace`() {
+    val project = projectFixture.get()
+    project.elideProjectIndex.update(ROOT, ElideProjectInfo(members = listOf(MEMBER, OTHER_MEMBER)))
+    project.elideProjectIndex.update(STANDALONE, ElideProjectInfo())
+
+    val workspace = visibleComments(panelFor(project, ROOT))
+    val standalone = visibleComments(panelFor(project, STANDALONE))
+
+    // three projects: the root builds alongside the two members it declares, and is configured here with them
+    val disclosure = Constants.Strings["settings.project.execution.workspace.comment", 3]
+
+    assertTrue(disclosure in workspace, "the workspace root discloses nothing: $workspace")
+    assertEquals(workspace - disclosure, standalone, "a standalone project has no workspace to disclose")
+  }
+
+  private companion object {
+    private val WHITESPACE = Regex("\\s+")
+
+    private const val ROOT = "/projects/demo"
+    private const val MEMBER = "/projects/demo/app"
+    private const val OTHER_MEMBER = "/projects/shared"
+    private const val STANDALONE = "/projects/solo"
   }
 }
