@@ -14,6 +14,7 @@ package dev.elide.intellij.project
 
 import com.intellij.openapi.externalSystem.model.DataNode
 import com.intellij.openapi.externalSystem.model.Key
+import com.intellij.openapi.externalSystem.model.project.ExternalProjectPojo
 import com.intellij.openapi.externalSystem.model.project.ProjectData
 import com.intellij.openapi.externalSystem.service.project.IdeModifiableModelsProvider
 import com.intellij.openapi.externalSystem.service.project.manage.AbstractProjectDataService
@@ -26,6 +27,8 @@ import dev.elide.intellij.Constants
 import dev.elide.intellij.project.model.ElideProjectData
 import dev.elide.intellij.project.model.ElideProjectInfo
 import dev.elide.intellij.service.elideProjectIndex
+import dev.elide.intellij.settings.ElideLocalSettings
+import java.nio.file.Path
 import org.jetbrains.kotlin.config.CompilerSettings
 import org.jetbrains.kotlin.config.LanguageVersion
 import org.jetbrains.kotlin.idea.facet.KotlinFacet
@@ -67,6 +70,39 @@ class ElideProjectDataService : AbstractProjectDataService<ElideProjectData, Pro
     index.entries
       .filter { (path, info) -> info.workspaceRoot == projectData.linkedExternalProjectPath && path !in owned }
       .forEach { (path, _) -> index.remove(path) }
+
+    publishAvailableProjects(project, projectData, resolved)
+  }
+
+  /**
+   * Record the projects of the workspace as the ones this external system offers, keyed by the linked project they
+   * were synced with.
+   *
+   * The platform's own project choosers read this rather than the plugin's index — the working directory of an Elide
+   * run configuration first among them — and a workspace member is never linked, so without it a user creating a
+   * configuration by hand is offered nothing to point it at but a file chooser.
+   *
+   * Only the entry of the linked project being imported is rewritten: another Elide project linked into the same
+   * IDE project keeps the projects its own sync recorded.
+   */
+  private fun publishAvailableProjects(
+    project: Project,
+    projectData: ProjectData,
+    resolved: List<ElideProjectData>,
+  ) {
+    val root = resolved.find { it.projectPath == projectData.linkedExternalProjectPath } ?: return
+    val members = resolved.filter { it !== root }.map(::projectPojo)
+
+    val settings = ExternalSystemApiUtil.getLocalSettings<ElideLocalSettings>(project, Constants.SYSTEM_ID)
+    val others = settings.availableProjects.filterKeys { it.path != projectData.linkedExternalProjectPath }
+
+    settings.availableProjects = others + (projectPojo(root) to members)
+  }
+
+  /** The project [data] describes, named the way Elide names it: by its manifest, else by its directory. */
+  private fun projectPojo(data: ElideProjectData): ExternalProjectPojo {
+    val path = Path.of(data.projectPath)
+    return ExternalProjectPojo(data.name ?: path.fileName?.toString() ?: data.projectPath, data.projectPath)
   }
 
   /**
