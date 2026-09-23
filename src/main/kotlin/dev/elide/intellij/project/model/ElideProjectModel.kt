@@ -168,10 +168,11 @@ object ElideProjectModel {
   /**
    * Hang the build tasks of [workspace] off [tasksNode], grouped by the project declaring them.
    *
-   * Inside a workspace the CLI qualifies a member's task with that member's name (`core:jar`) and leaves the root's
-   * bare, so the listing of one build graph covers several projects; the tree shows each project's own tasks under a
-   * node of its own rather than as one flat list of qualified names. A scope naming no project of the workspace is
-   * left with the root, which is the project a build launched from the linked directory resolves it against.
+   * Inside a workspace the CLI qualifies every task with the name of the project declaring it (`core:jar`), so the
+   * listing of one build graph covers several projects; the tree shows each project's own tasks under a node of its
+   * own rather than as one flat list of qualified names. A task carrying no scope, or one naming no project of the
+   * workspace, is left with the root, which is the project a build launched from the linked directory resolves it
+   * against.
    *
    * The task names themselves keep their scope: they are what `elide build` is handed, from the workspace root, by
    * every path the platform runs a task through.

@@ -74,7 +74,10 @@ class ElideWorkspaceModelTest {
   private val projectNode = ElideProjectModel.buildModel(
     workspace,
     listOf(
-      ElideBuildTaskInfo("maven-dependencies", "Resolve and download Maven dependencies"),
+      // the CLI qualifies every task of a workspace with the project declaring it, the root's own included; an
+      // unqualified one is what a distribution predating that prints for the root, and still belongs to it
+      ElideBuildTaskInfo("logstat:maven-dependencies", "Resolve and download Maven dependencies"),
+      ElideBuildTaskInfo("clean", "Run the special clean target"),
       ElideBuildTaskInfo("model:jar", "Package compiled classes into a JAR archive"),
       ElideBuildTaskInfo("parser:test", "Run the project's tests"),
     ),
@@ -128,9 +131,8 @@ class ElideWorkspaceModelTest {
       .getChildren(groups.single { it.data.project == project }, ProjectKeys.TASK)
       .map { it.data }
 
-    // the root's tasks are the ones the CLI left unqualified; a member's keep the scope, which is the name a build
-    // launched from the workspace root resolves them by
-    assertEquals(listOf(":maven-dependencies"), tasksOf("logstat").map { it.name })
+    // a task the CLI qualified with the root's own name belongs to the root, and so does one it left bare
+    assertEquals(listOf(":logstat:maven-dependencies", ":clean"), tasksOf("logstat").map { it.name })
     assertEquals(listOf(":model:jar"), tasksOf("model").map { it.name })
     assertEquals(root.pathString, tasksOf("parser").single().linkedExternalProjectPath)
   }
@@ -286,7 +288,7 @@ class ElideWorkspaceModelTest {
 
     // a build started at the root reaches every project, so it keeps the listing as the CLI printed it
     assertEquals(
-      listOf("maven-dependencies", "model:jar", "parser:test"),
+      listOf("logstat:maven-dependencies", "clean", "model:jar", "parser:test"),
       rootData.buildTasks.map { it.name },
     )
 

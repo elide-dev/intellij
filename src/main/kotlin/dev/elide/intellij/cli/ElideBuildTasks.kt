@@ -29,7 +29,7 @@ import dev.elide.intellij.project.model.ElideBuildTaskInfo
  * alone would not do, as those sections print option rows in the very shape a task row has.
  *
  * Task names are read exactly as printed, qualifier included (`core:jar`), because that is the target `elide build`
- * accepts for a member's task.
+ * accepts for a task of a workspace — the root's own tasks are qualified as well.
  */
 object ElideBuildTasks {
   /** Header opening the task table, either for a standalone project or for a workspace; without it, no tasks. */

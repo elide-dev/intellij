@@ -1,7 +1,7 @@
 6 tasks across 3 projects:
 
 workspace-sample
-  maven-dependencies   Resolve and download Maven dependencies
+  workspace-sample:maven-dependencies   Resolve and download Maven dependencies
     --fresh   Re-download dependencies even if present in the local cache
     --direct   Copy artifacts to the project repository instead of symlinking
 

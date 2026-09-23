@@ -76,15 +76,15 @@ fun buildTargetName(taskName: String): String? {
 /**
  * Separator between the project a build task belongs to and the task's own name.
  *
- * Inside a workspace the CLI qualifies every member's task with the name of the project declaring it — `core:jar` —
- * and leaves the root's bare. A member accepts its own tasks unqualified when it is the project in focus, which is
- * what a run rooted at that member is.
+ * Inside a workspace the CLI qualifies every task with the name of the project declaring it — `core:jar` — the
+ * root's own tasks included; a distribution predating that leaves the root's bare, and both are read. A project
+ * accepts its own tasks unqualified when it is the project in focus, which is what a run rooted at that project is.
  */
 const val BUILD_TASK_SCOPE_SEPARATOR: Char = ':'
 
 /**
  * The project this task's name qualifies it with, or `null` when it carries no scope and the task therefore belongs
- * to the workspace root (or to a project that stands alone).
+ * to the project the listing was read for.
  */
 val ElideBuildTaskInfo.taskScope: String? get() = name.substringBefore(BUILD_TASK_SCOPE_SEPARATOR, "").ifEmpty { null }
 
@@ -95,7 +95,7 @@ fun unqualifiedTaskName(name: String): String = name.substringAfterLast(BUILD_TA
  * Returns the tasks of [project] among [tasks], named the way that project accepts them.
  *
  * The scope is dropped, so `core:jar` becomes `jar`: the name a build rooted at the member resolves. Tasks of other
- * projects, and the unqualified tasks of the workspace root, are left out.
+ * projects, and any the CLI left unqualified, are left out.
  */
 fun buildTasksOf(project: String, tasks: List<ElideBuildTaskInfo>): List<ElideBuildTaskInfo> {
   val scope = "$project$BUILD_TASK_SCOPE_SEPARATOR"

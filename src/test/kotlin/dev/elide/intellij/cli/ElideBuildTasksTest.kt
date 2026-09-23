@@ -94,11 +94,11 @@ class ElideBuildTasksTest {
   @Test fun `every task of every project in a workspace listing is read, and nothing else`() {
     val tasks = ElideBuildTasks.parse(workspaceListing)
 
-    // the group header of each project is not a task, and neither is the trailing `Global options:` section; a
-    // member's task keeps the qualifier it is printed with, since that is what `elide build` accepts as a target
+    // the group header of each project is not a task, and neither is the trailing `Global options:` section; every
+    // task keeps the qualifier it is printed with, the root's own included, since that is what `elide build` takes
     assertEquals(
       listOf(
-        "maven-dependencies",
+        "workspace-sample:maven-dependencies",
         "core:compile-kotlin-main",
         "core:jar",
         "app:compile-kotlin-main",
@@ -115,7 +115,7 @@ class ElideBuildTasksTest {
     // the last task of a group must not collect the options of the first task of the next one
     assertEquals(
       listOf("--fresh", "--direct"),
-      tasks.getValue("maven-dependencies").options.map { it.option },
+      tasks.getValue("workspace-sample:maven-dependencies").options.map { it.option },
     )
     assertEquals(emptyList(), tasks.getValue("core:jar").options)
     assertEquals(
