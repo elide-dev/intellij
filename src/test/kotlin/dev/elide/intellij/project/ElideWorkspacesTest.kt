@@ -39,8 +39,8 @@ class ElideWorkspacesTest {
     val project = projectFixture.get()
     ElideSettings.getSettings(project).linkProject(ElideProjectSettings().apply { externalProjectPath = ROOT })
 
-    project.elideProjectIndex.update(ROOT, ElideProjectInfo(members = listOf(MEMBER)))
-    project.elideProjectIndex.update(MEMBER, ElideProjectInfo(workspaceRoot = ROOT))
+    project.elideProjectIndex.update(ROOT, ElideProjectInfo(name = "demo", members = listOf(MEMBER)))
+    project.elideProjectIndex.update(MEMBER, ElideProjectInfo(name = "app", workspaceRoot = ROOT))
   }
 
   @Test fun `a file of a member belongs to the member, not to the workspace root above it`() {
@@ -67,6 +67,22 @@ class ElideWorkspacesTest {
     val project = projectFixture.get()
     assertNull(ElideWorkspaces.owningProject(project, Path.of("/projects/other/src/main/App.kt")))
     assertNull(ElideWorkspaces.linkedRoot(project, "/projects/other"))
+  }
+
+  @Test fun `a build target names the project of the workspace that declares it`() {
+    workspace()
+
+    val project = projectFixture.get()
+    assertEquals(MEMBER to "jar", ElideWorkspaces.targetOwner(project, ROOT, "app:jar"))
+    assertEquals(ROOT to "jar", ElideWorkspaces.targetOwner(project, ROOT, "demo:jar"))
+  }
+
+  @Test fun `a build target naming no project of the workspace is left with the root`() {
+    workspace()
+
+    val project = projectFixture.get()
+    assertEquals(ROOT to "jar", ElideWorkspaces.targetOwner(project, ROOT, "jar"))
+    assertEquals(ROOT to "other:jar", ElideWorkspaces.targetOwner(project, ROOT, "other:jar"))
   }
 
   private companion object {

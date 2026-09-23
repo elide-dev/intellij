@@ -14,6 +14,7 @@ package dev.elide.intellij.project
 
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.io.toCanonicalPath
+import dev.elide.intellij.project.model.BUILD_TASK_SCOPE_SEPARATOR
 import dev.elide.intellij.service.elideProjectIndex
 import dev.elide.intellij.settings.ElideSettings
 import java.nio.file.InvalidPathException
@@ -93,5 +94,47 @@ internal object ElideWorkspaces {
    */
   fun members(project: Project, externalProjectPath: String): List<String> {
     return project.elideProjectIndex[externalProjectPath]?.members ?: emptyList()
+  }
+
+  /**
+   * Returns the project of the workspace linked at [externalProjectPath] that declares the build target [target],
+   * paired with the name that project itself accepts the target under.
+   *
+   * Inside a workspace the CLI qualifies every target with the name of the project declaring it — `cli:jar` — root
+   * included, and the whole listing hangs off the linked root, so a target alone says nothing about where its output
+   * lands. Everything keyed by a project — the artifacts the sync indexed for it, the directory its build writes
+   * into — has to be reached through the project the qualifier names.
+   *
+   * A target carrying no qualifier, or one naming no project of this workspace, belongs to [externalProjectPath]
+   * and is returned unchanged: a standalone project qualifies nothing, and a name the workspace does not explain is
+   * the CLI's to reject.
+   */
+  fun targetOwner(project: Project, externalProjectPath: String, target: String): Pair<String, String> {
+    val scope = target.substringBefore(BUILD_TASK_SCOPE_SEPARATOR, "").ifEmpty { null }
+      ?: return externalProjectPath to target
+
+    val owner = projectPaths(project, externalProjectPath).firstOrNull { path ->
+      projectName(project, path) == scope
+    } ?: return externalProjectPath to target
+
+    return owner to target.substringAfter(BUILD_TASK_SCOPE_SEPARATOR)
+  }
+
+  /**
+   * Returns the canonical paths of every project the workspace linked at [externalProjectPath] holds: the root
+   * itself, and the members the sync indexed for it.
+   */
+  fun projectPaths(project: Project, externalProjectPath: String): List<String> {
+    return listOf(externalProjectPath) + members(project, externalProjectPath)
+  }
+
+  /**
+   * Returns the name Elide knows the project at [externalProjectPath] by: the one its manifest declares, falling
+   * back to the directory's own name, which is the same fallback the CLI applies.
+   */
+  fun projectName(project: Project, externalProjectPath: String): String? {
+    project.elideProjectIndex[externalProjectPath]?.name?.let { return it }
+
+    return runCatching { Path.of(externalProjectPath).fileName?.toString() }.getOrNull()
   }
 }
