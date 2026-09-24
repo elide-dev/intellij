@@ -5,6 +5,14 @@ All notable changes to the Elide plugin for JetBrains IDEs are documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1](https://github.com/elide-dev/intellij/compare/v0.9.0...v0.9.1) (2026-09-24)
+
+
+### Fixed
+
+* **ci:** refresh the apt index before installing xmllint ([acc920a](https://github.com/elide-dev/intellij/commit/acc920a23818cf28a6d49c0626072bcb9d1b5ead))
+* **release:** read published metadata from the packaged descriptor ([97aca5e](https://github.com/elide-dev/intellij/commit/97aca5e7085a0a68b968ca0e078043b1ac323889))
+
 ## [0.9.0](https://github.com/elide-dev/intellij/compare/v0.8.0...v0.9.0) (2026-09-24)
 
 
