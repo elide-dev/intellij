@@ -5,6 +5,20 @@ All notable changes to the Elide plugin for JetBrains IDEs are documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0](https://github.com/elide-dev/intellij/compare/v0.8.0...v0.9.0) (2026-09-24)
+
+
+### Added
+
+* debugger support for test configurations ([cfda057](https://github.com/elide-dev/intellij/commit/cfda0573eccd41bbd65f228a0415904bf118aa6a))
+* multi project workspaces ([#18](https://github.com/elide-dev/intellij/issues/18)) ([f526415](https://github.com/elide-dev/intellij/commit/f526415c204f6d753d7371711c41dea593a65abc))
+* running and debugging native image binaries ([#17](https://github.com/elide-dev/intellij/issues/17)) ([1e76874](https://github.com/elide-dev/intellij/commit/1e768742ce916312d24e1876c893faf491c58d3a))
+
+
+### Fixed
+
+* disable schema drift checks and automate releases ([#12](https://github.com/elide-dev/intellij/issues/12)) ([fd43ace](https://github.com/elide-dev/intellij/commit/fd43ace105341fd34b0be07df082e5ea3b662803))
+
 ## [0.8.0] - 2026-09-11
 
 ### Added
