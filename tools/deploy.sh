@@ -1,21 +1,32 @@
 #!/bin/bash
 set -euo pipefail
 
-# check if xmllint is available
-if ! command -v xmllint &> /dev/null; then
-    echo "Error: xmllint is required but not installed"
-    exit 1
-fi
+# check that the tools used to read the packaged descriptor are available
+for tool in xmllint unzip jq; do
+    if ! command -v "$tool" &> /dev/null; then
+        echo "Error: $tool is required but not installed"
+        exit 1
+    fi
+done
 
 PLUGINS_URL="${ELIDE_PLUGINS_URL:-${PLUGINS_URL}}"
 PLUGIN_VERSION="$(cat .version)"
-XML_FILE="src/main/resources/META-INF/plugin.xml"
 PLUGIN_FILE="build/distributions/elide-intellij-${PLUGIN_VERSION}.zip"
 
 if [[ ! -f "$PLUGIN_FILE" ]]; then
     echo "Error: plugin archive not found: $PLUGIN_FILE"
     exit 1
 fi
+
+# the descriptor under `src` is a template: the build range is patched in by the Gradle plugin at build time, so only
+# the copy packaged inside the plugin jar describes the archive actually being uploaded
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf "$WORK_DIR"' EXIT
+
+PLUGIN_JAR="elide-intellij/lib/elide-intellij-${PLUGIN_VERSION}.jar"
+unzip -q -o "$PLUGIN_FILE" "$PLUGIN_JAR" -d "$WORK_DIR"
+unzip -q -o "$WORK_DIR/$PLUGIN_JAR" "META-INF/plugin.xml" -d "$WORK_DIR"
+XML_FILE="$WORK_DIR/META-INF/plugin.xml"
 
 # prepare metadata
 PLUGIN_ID=$(xmllint --xpath "string(//idea-plugin/id)" "$XML_FILE" 2>/dev/null)
@@ -25,6 +36,13 @@ PLUGIN_VENDOR=$(xmllint --xpath "string(//idea-plugin/vendor)" "$XML_FILE" 2>/de
 PLUGIN_VENDOR_URL=$(xmllint --xpath "string(//idea-plugin/vendor/@url)" "$XML_FILE" 2>/dev/null)
 SINCE_BUILD=$(xmllint --xpath "string(//idea-plugin/idea-version/@since-build)" "$XML_FILE" 2>/dev/null)
 UNTIL_BUILD=$(xmllint --xpath "string(//idea-plugin/idea-version/@until-build)" "$XML_FILE" 2>/dev/null)
+
+# an empty build range silently drops compatibility gating from the published metadata, which is the failure this
+# script is meant to avoid; treat it as fatal rather than uploading a plugin the repository cannot constrain
+if [[ -z "$SINCE_BUILD" ]]; then
+    echo "Error: no since-build found in the packaged descriptor: $XML_FILE"
+    exit 1
+fi
 
 # Print the extracted values
 echo "Uploading plugin:"
