@@ -26,7 +26,12 @@
 # JSON that command emits. That output is produced by this exact schema, so the two agree by
 # construction.
 #
-# Usage: tools/codegen.sh [--version <elide-version>] [--schema <base-url>]
+# `--from <dir>` generates from a schema checkout (Elide's own `protocol/manifest`) instead of the
+# published host, for a manifest feature that has not been released yet. There is no index to verify
+# the bytes against in that mode, so the provenance index is computed from the files themselves and
+# `--version` names the Elide version they came from.
+#
+# Usage: tools/codegen.sh [--version <elide-version>] [--schema <base-url>] [--from <dir>]
 #
 
 set -euo pipefail
@@ -34,6 +39,7 @@ set -euo pipefail
 SCHEMA_HOST="${ELIDE_PKL_SCHEMA_HOST:-https://pkl.elide.dev}"
 SCHEMA_VERSION="${ELIDE_PKL_SCHEMA_VERSION:-}"
 SCHEMA_BASE="${ELIDE_PKL_SCHEMA:-}"
+SCHEMA_DIR="${ELIDE_PKL_SCHEMA_DIR:-}"
 PACKAGE_NAME="dev.elide.tooling.manifest"
 MODULE_PREFIX="elide"
 
@@ -43,7 +49,9 @@ while [[ $# -gt 0 ]]; do
     --version=*) SCHEMA_VERSION="${1#*=}"; shift ;;
     --schema) SCHEMA_BASE="$2"; shift 2 ;;
     --schema=*) SCHEMA_BASE="${1#*=}"; shift ;;
-    -h|--help) sed -n '17,35p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --from) SCHEMA_DIR="$2"; shift 2 ;;
+    --from=*) SCHEMA_DIR="${1#*=}"; shift ;;
+    -h|--help) sed -n '17,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "error: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
@@ -53,7 +61,16 @@ PKL_DIR="$ROOT/src/main/pkl"
 KOTLIN_ROOT="$ROOT/src/main/kotlin"
 GENERATED_DIR="$KOTLIN_ROOT/${PACKAGE_NAME//.//}"
 
-if [[ -z "$SCHEMA_BASE" ]]; then
+if [[ -n "$SCHEMA_DIR" ]]; then
+  if [[ ! -d "$SCHEMA_DIR" ]]; then
+    echo "error: '$SCHEMA_DIR' is not a directory" >&2
+    exit 2
+  fi
+  if [[ -z "$SCHEMA_VERSION" ]]; then
+    echo "error: --from also needs --version <elide-version>, for the provenance index" >&2
+    exit 2
+  fi
+elif [[ -z "$SCHEMA_BASE" ]]; then
   if [[ -z "$SCHEMA_VERSION" ]]; then
     SCHEMA_VERSION="$(sed -n 's/^[[:space:]]*"elideVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
       "$GENERATED_DIR/schema.json")"
@@ -65,7 +82,7 @@ if [[ -z "$SCHEMA_BASE" ]]; then
   SCHEMA_BASE="$SCHEMA_HOST/$SCHEMA_VERSION"
 fi
 
-SCHEMA_BASE="${SCHEMA_BASE%/}/"
+SCHEMA_BASE="${SCHEMA_BASE:+${SCHEMA_BASE%/}/}"
 
 if ! command -v brine >/dev/null 2>&1; then
   echo "error: 'brine' was not found on PATH." >&2
@@ -85,32 +102,78 @@ fi
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
-echo "Fetching manifest schema index from $SCHEMA_BASE..."
-curl -fsSL "$SCHEMA_BASE" -o "$STAGE/schema.json"
-
-# The index lists every module of the schema, including the ones no other module imports, so it --
-# not the import graph -- decides what is generated. Module names are the only bare `*.pkl` keys in
-# it; `entrypoint` is path-prefixed and therefore excluded.
-MODULES="$(grep -o '"[A-Za-z][A-Za-z0-9_]*\.pkl"' "$STAGE/schema.json" | tr -d '"' | sort -u)"
-if [[ -z "$MODULES" ]]; then
-  echo "error: no modules listed in the schema index at $SCHEMA_BASE" >&2
-  exit 1
-fi
-
 mkdir -p "$STAGE/pkl"
-for module in $MODULES; do
-  curl -fsSL "$SCHEMA_BASE$module" -o "$STAGE/pkl/$module"
 
-  # Each module is pinned by the index's digest: a truncated or substituted download must not reach
-  # the generator, since the model's compatibility with `elide manifest` rests on this exact schema.
-  digest="$(sha256 "$STAGE/pkl/$module")"
-  if ! grep -q "\"$digest\"" "$STAGE/schema.json"; then
-    echo "error: $module does not match its digest in the schema index ($digest)" >&2
+if [[ -n "$SCHEMA_DIR" ]]; then
+  echo "Staging manifest schema from $SCHEMA_DIR..."
+  cp "$SCHEMA_DIR"/*.pkl "$STAGE/pkl/"
+
+  # The published index this mode stands in for carries the series and the entrypoint of the schema,
+  # neither of which is derivable from the module sources; they are properties of the publication,
+  # so they are carried over from the provenance of the sources being replaced.
+  previous() { sed -n "s/^[[:space:]]*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+    "$GENERATED_DIR/schema.json"; }
+
+  manifest_version="$(sed -n 's/^[[:space:]]*"manifestVersion"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' \
+    "$GENERATED_DIR/schema.json")"
+  entrypoint="$(previous entrypoint)"
+  min_pkl_version="$(sed -n 's/.*minPklVersion[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' \
+    "$STAGE/pkl/project.pkl")"
+
+  if [[ -z "$manifest_version" || -z "$entrypoint" ]]; then
+    echo "error: $GENERATED_DIR/schema.json carries no series to generate a local index from" >&2
     exit 1
   fi
 
-  echo "  verified $module"
-done
+  {
+    echo "{"
+    echo "  \"manifestVersion\": $manifest_version,"
+    echo "  \"elideVersion\": \"$SCHEMA_VERSION\","
+    echo "  \"minPklVersion\": \"$min_pkl_version\","
+    echo "  \"entrypoint\": \"$entrypoint\","
+    echo "  \"source\": \"checkout\","
+    echo "  \"modules\": {"
+
+    separator=""
+    for module in "$STAGE/pkl/"*.pkl; do
+      name="$(basename "$module")"
+      printf '%s    "%s": {\n      "bytes": %s,\n      "sha256": "%s"\n    }' \
+        "$separator" "$name" "$(wc -c < "$module" | tr -d ' ')" "$(sha256 "$module")"
+      separator=",
+"
+    done
+
+    echo ""
+    echo "  }"
+    echo "}"
+  } > "$STAGE/schema.json"
+else
+  echo "Fetching manifest schema index from $SCHEMA_BASE..."
+  curl -fsSL "$SCHEMA_BASE" -o "$STAGE/schema.json"
+
+  # The index lists every module of the schema, including the ones no other module imports, so it --
+  # not the import graph -- decides what is generated. Module names are the only bare `*.pkl` keys in
+  # it; `entrypoint` is path-prefixed and therefore excluded.
+  MODULES="$(grep -o '"[A-Za-z][A-Za-z0-9_]*\.pkl"' "$STAGE/schema.json" | tr -d '"' | sort -u)"
+  if [[ -z "$MODULES" ]]; then
+    echo "error: no modules listed in the schema index at $SCHEMA_BASE" >&2
+    exit 1
+  fi
+
+  for module in $MODULES; do
+    curl -fsSL "$SCHEMA_BASE$module" -o "$STAGE/pkl/$module"
+
+    # Each module is pinned by the index's digest: a truncated or substituted download must not reach
+    # the generator, since the model's compatibility with `elide manifest` rests on this exact schema.
+    digest="$(sha256 "$STAGE/pkl/$module")"
+    if ! grep -q "\"$digest\"" "$STAGE/schema.json"; then
+      echo "error: $module does not match its digest in the schema index ($digest)" >&2
+      exit 1
+    fi
+
+    echo "  verified $module"
+  done
+fi
 
 echo "Refreshing bundled Pkl schema in src/main/pkl..."
 rm -rf "$PKL_DIR"

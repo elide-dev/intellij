@@ -15,6 +15,7 @@ package dev.elide.intellij.execution.coverage
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import dev.elide.intellij.project.ElideWorkspaces
 import dev.elide.intellij.settings.ElideSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -35,12 +36,16 @@ import java.util.concurrent.atomic.AtomicBoolean
  * virtual file system never learns of them and raises no events when they change. What a check costs is a directory
  * listing of the two report directories, which hold a handful of files between them; only a report that actually
  * changed is merged and attached, which [ElideCoverageService] decides.
+ *
+ * Every project of a workspace is looked at, not only the linked root: a member writes its reports into its own
+ * `.dev` directory, and `elide test --coverage` run from inside a member — which the CLI accepts, resolving the
+ * whole workspace from there — leaves them nowhere the root would ever be checked for.
  */
 @Service(Service.Level.PROJECT)
 class ElideCoverageWatcher(private val project: Project, private val scope: CoroutineScope) {
   private val started = AtomicBoolean(false)
 
-  /** Starts checking the linked projects for new coverage; subsequent calls do nothing. */
+  /** Starts checking every project of the linked workspaces for new coverage; subsequent calls do nothing. */
   fun start() {
     if (!started.compareAndSet(false, true)) return
 
@@ -50,7 +55,8 @@ class ElideCoverageWatcher(private val project: Project, private val scope: Coro
 
         val service = ElideCoverageService.getInstance(project)
         for (linkedProject in ElideSettings.getSettings(project).linkedProjectsSettings) {
-          service.scheduleAttach(linkedProject.externalProjectPath ?: continue)
+          val linkedPath = linkedProject.externalProjectPath ?: continue
+          for (projectPath in ElideWorkspaces.projectPaths(project, linkedPath)) service.scheduleAttach(projectPath)
         }
       }
     }

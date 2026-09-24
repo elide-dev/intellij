@@ -1,0 +1,39 @@
+{
+    "name": "report",
+    "description": "Aggregates parsed records into report rows",
+    "dependencies": {
+        "maven": {
+            "packages": [
+                {
+                    "@type": "elide.jvm.MavenPackageDependency.OfProjectArtifact",
+                    "value": {
+                        "project": "model"
+                    }
+                }
+            ]
+        }
+    },
+    "sources": {
+        "main": {
+            "@type": "elide.sources.SourceSetSpec",
+            "paths": [
+                "src/main/kotlin/**/*.kt"
+            ]
+        },
+        "test": {
+            "@type": "elide.sources.SourceSetSpec",
+            "paths": [
+                "src/test/kotlin/**/*.kt"
+            ]
+        }
+    },
+    "artifacts": {
+        "report": {
+            "@type": "elide.jvm.Jar",
+            "name": "report-fat",
+            "sources": [
+                "main"
+            ]
+        }
+    }
+}

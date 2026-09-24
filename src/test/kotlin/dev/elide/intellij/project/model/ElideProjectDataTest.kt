@@ -17,6 +17,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
+import kotlin.io.path.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -39,7 +40,9 @@ class ElideProjectDataTest {
     ElideBuildTaskInfo("write-classpath-files"),
   )
 
-  private val data = ElideProjectData.from(manifest, buildTasks)
+  private val workspace = ElideResolvedWorkspace.of(Path("/projects/demo"), manifest)
+
+  private val data = ElideProjectData.from(workspace.root, workspace, buildTasks)
 
   @Test fun `collects entrypoints scripts and jvm main from the manifest`() {
     assertEquals(listOf("src/main/kotlin/Main.kt"), data.entrypoints)

@@ -65,6 +65,14 @@ internal object ElideSourceRoots {
     }
   }
 
+  /**
+   * The path of [projectRoot] as a content root, normalized the way [collect] keys the roots it returns.
+   *
+   * Deriving it here is what lets a caller tell whether a source set already claims the project directory itself,
+   * which happens when its patterns carry no static prefix under it.
+   */
+  fun contentRoot(projectRoot: Path): String = normalize(projectRoot.absolutePathString())
+
   /** Returns the longest directory prefix of [pattern] that contains no glob wildcards. */
   fun staticPrefix(pattern: String): String {
     val normalized = normalize(pattern)

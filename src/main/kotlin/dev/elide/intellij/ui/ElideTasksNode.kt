@@ -25,11 +25,15 @@ import dev.elide.intellij.Constants
 import dev.elide.intellij.project.model.ElideBuildTasksData
 
 /**
- * The "Tasks" node of the Elide tool window: the build targets the CLI reported for the project, as a flat list.
+ * The "Tasks" node of the Elide tool window, and the per-project nodes below it.
  *
  * The task nodes below it are the platform's own [TaskNode]s, so everything the platform offers for a task — "Run",
  * task activation, a keymap shortcut — works on them; only the list around them is ours, because the platform's
  * equivalent node buckets tasks by task group, which an Elide build graph does not have.
+ *
+ * A workspace builds one graph out of several projects, so the list holds a node per project — the same class,
+ * carrying that project's name — and the tasks hang off those instead. A standalone project has one project's worth
+ * of tasks and lists them directly.
  */
 // same position the platform's own tasks node takes, ahead of dependencies and modules
 @Order(10)
@@ -37,16 +41,24 @@ class ElideTasksNode(
   externalProjectsView: ExternalProjectsView,
   private val tasksNode: DataNode<ElideBuildTasksData>,
 ) : ExternalSystemNode<ElideBuildTasksData>(externalProjectsView, null, tasksNode) {
-  override fun getName(): String = Constants.Strings["toolwindow.tasks"]
+  /** Project whose tasks this node holds, or `null` when it is the list itself. */
+  private val project: String? get() = tasksNode.data.project
+
+  override fun getName(): String = project ?: Constants.Strings["toolwindow.tasks"]
 
   override fun update(presentation: PresentationData) {
     super.update(presentation)
-    presentation.setIcon(AllIcons.Nodes.ConfigFolder)
+    // a project's tasks are shown under the icon the tree gives that project's module, the list under a folder
+    presentation.setIcon(if (project != null) uiAware.projectIcon else AllIcons.Nodes.ConfigFolder)
   }
 
   override fun isVisible(): Boolean = super.isVisible() && hasChildren()
 
   override fun doBuildChildren(): List<ExternalSystemNode<*>> {
-    return ExternalSystemApiUtil.getChildren(tasksNode, ProjectKeys.TASK).map { TaskNode(externalProjectsView, it) }
+    val projects = ExternalSystemApiUtil.getChildren(tasksNode, ElideBuildTasksData.KEY)
+      .map { ElideTasksNode(externalProjectsView, it) }
+
+    return projects + ExternalSystemApiUtil.getChildren(tasksNode, ProjectKeys.TASK)
+      .map { TaskNode(externalProjectsView, it) }
   }
 }

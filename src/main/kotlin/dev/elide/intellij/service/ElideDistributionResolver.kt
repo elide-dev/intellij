@@ -15,6 +15,7 @@ package dev.elide.intellij.service
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import dev.elide.intellij.Constants
+import dev.elide.intellij.project.ElideWorkspaces
 import dev.elide.intellij.service.ElideDistributionResolver.Companion.defaultDistributionPath
 import dev.elide.intellij.service.ElideDistributionResolver.Companion.getElideHome
 import dev.elide.intellij.service.ElideDistributionResolver.Companion.resourcesPath
@@ -36,15 +37,17 @@ import kotlin.io.path.isRegularFile
 @Service(Service.Level.PROJECT)
 class ElideDistributionResolver(private val project: Project) {
   /**
-   * Resolve the path to the preferred Elide distribution for the linked project at [externalProjectPath]. If no linked
-   * settings are found, [defaultDistributionPath] is returned instead.
+   * Resolve the path to the preferred Elide distribution for the project at [externalProjectPath]. A workspace member
+   * inherits the distribution its workspace root configures, since only the root carries linked settings; if no
+   * linked project owns the path, [defaultDistributionPath] is returned instead.
    *
    * The returned path is *not* validated by [validateDistributionPath] or in any other way; it is the responsibility
    * of the caller to properly check that the path correspond to a valid Elide distribution before using it as such.
    */
   fun resolveDistributionPath(externalProjectPath: String): Path {
+    val linkedRoot = ElideWorkspaces.linkedRoot(project, externalProjectPath) ?: return defaultDistributionPath()
     val settings = ElideSettings.getSettings(project)
-      .getLinkedProjectSettings(externalProjectPath)
+      .getLinkedProjectSettings(linkedRoot)
       ?: return defaultDistributionPath()
 
     return when (settings.elideDistributionType) {

@@ -35,9 +35,11 @@ import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.testFramework.junit5.fixture.moduleFixture
 import com.intellij.testFramework.junit5.fixture.projectFixture
 import com.intellij.testFramework.junit5.fixture.sourceRootFixture
+import dev.elide.intellij.cancelPklPackageRefresh
 import dev.elide.intellij.execution.nativeimage.ElideNativeImageRunConfiguration
 import dev.elide.intellij.project.model.ElideEntrypointInfo
 import java.nio.file.Files
+import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -63,6 +65,11 @@ class ElideManifestGutterTest {
     // reading Pkl PSI starts the Pkl plugin's package service, which polls for declared packages on a
     // `java.util.Timer` of its own; the platform's leak tracker fails the test for it otherwise
     ThreadLeakTracker.longRunningThreadCreated(ApplicationManager.getApplication(), "Timer-")
+  }
+
+  @AfterTest fun stopPklPackageServiceTimer() {
+    // a package refresh queued by the manifests this test writes outlives the project it reads unless cancelled
+    cancelPklPackageRefresh(projectFixture.get())
   }
 
   @Test fun `artifacts carry a build icon`() = runBlocking {

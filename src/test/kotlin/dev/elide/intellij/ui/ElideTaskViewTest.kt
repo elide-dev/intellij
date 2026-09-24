@@ -19,6 +19,7 @@ import com.intellij.openapi.externalSystem.view.ExternalProjectsStructure
 import com.intellij.openapi.externalSystem.view.ExternalProjectsView
 import com.intellij.openapi.externalSystem.view.ExternalProjectsViewAdapter
 import com.intellij.openapi.externalSystem.view.ExternalProjectsViewImpl
+import com.intellij.openapi.externalSystem.view.ModuleNode
 import com.intellij.openapi.externalSystem.view.TaskNode
 import com.intellij.openapi.externalSystem.view.TasksNode
 import com.intellij.openapi.util.Disposer
@@ -31,6 +32,8 @@ import com.intellij.ui.treeStructure.Tree
 import dev.elide.intellij.Constants
 import dev.elide.intellij.project.model.ElideBuildTaskInfo
 import dev.elide.intellij.project.model.ElideProjectModel
+import dev.elide.intellij.project.model.ElideResolvedProject
+import dev.elide.intellij.project.model.ElideResolvedWorkspace
 import dev.elide.project.manifest.ElideManifests
 import kotlin.io.path.Path
 import kotlin.test.Test
@@ -39,7 +42,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
-/** Covers the task list of the Elide tool window: the nodes it builds, their labels and their icon. */
+/**
+ * Covers the Elide tool window's tree: the task nodes it builds, their labels and their icon, and how a workspace's
+ * projects nest below it.
+ */
 @TestApplication
 class ElideTaskViewTest {
   private val projectFixture = projectFixture()
@@ -54,8 +60,14 @@ class ElideTaskViewTest {
     ElideBuildTaskInfo("compile-kotlin-main", "Compile main Kotlin source files to bytecode"),
   )
 
+  private fun workspaceManifest(name: String) = ElideManifests.parse(
+    requireNotNull(ElideTaskViewTest::class.java.getResourceAsStream("/manifest/workspace/$name.json"))
+      .use { it.reader().readText() },
+  )
+
   @Test fun `the tree lists the build tasks flat under one tasks node`() = runBlocking {
-    val projectNode = ElideProjectModel.buildModel(Path("/projects/demo"), emptyMap(), manifest, buildTasks)
+    val workspace = ElideResolvedWorkspace.of(Path("/projects/demo"), manifest)
+    val projectNode = ElideProjectModel.buildModel(workspace, buildTasks)
 
     withContext(Dispatchers.EDT) {
       val disposable = Disposer.newDisposable()
@@ -75,6 +87,48 @@ class ElideTaskViewTest {
         val tasks = tasksNode.children.toList()
         assertEquals(2, tasks.filterIsInstance<TaskNode>().size)
         assertEquals(listOf("app", "compile-kotlin-main"), tasks.map { it.name })
+      } finally {
+        Disposer.dispose(disposable)
+      }
+    }
+  }
+
+  @Test fun `a workspace nests tasks under their project and source sets under their module`() = runBlocking {
+    val root = Path("/projects/logstat")
+    val workspace = ElideResolvedWorkspace(
+      root = ElideResolvedProject.of(root, workspaceManifest("root")),
+      members = listOf("model", "parser").map { ElideResolvedProject.of(root.resolve(it), workspaceManifest(it)) },
+    )
+
+    val projectNode = ElideProjectModel.buildModel(
+      workspace,
+      listOf(
+        ElideBuildTaskInfo("maven-dependencies", "Resolve and download Maven dependencies"),
+        ElideBuildTaskInfo("model:jar", "Package compiled classes into a JAR archive"),
+      ),
+    )
+
+    withContext(Dispatchers.EDT) {
+      val disposable = Disposer.newDisposable()
+
+      try {
+        val view = elideView(disposable)
+        val nodes = view.createNodes(view, null, projectNode)
+
+        // one node per project holding that project's tasks, instead of one list of qualified names
+        val groups = nodes.filterIsInstance<ElideTasksNode>().single().children.filterIsInstance<ElideTasksNode>()
+        assertEquals(listOf("logstat", "model"), groups.map { it.name })
+
+        // the scope is the node above the task now, so the label drops it and keeps the task's own name
+        assertEquals(listOf("jar"), groups.single { it.name == "model" }.children.map { it.name })
+        assertEquals(listOf("maven-dependencies"), groups.single { it.name == "logstat" }.children.map { it.name })
+
+        // a project's source-set modules hang off the module standing for that project rather than beside it
+        val model = nodes.filterIsInstance<ModuleNode>().single { it.name == "model" }
+        assertEquals(
+          listOf("model.main", "model.test"),
+          model.children.filterIsInstance<ModuleNode>().map { it.name },
+        )
       } finally {
         Disposer.dispose(disposable)
       }

@@ -32,6 +32,13 @@ then install **Elide** from the marketplace tab. Plugin ZIPs are also attached t
 prompt a reload. The **Elide** tool window shows linked projects, their modules, and the build targets reported by the
 CLI, runnable from the tree view.
 
+**Multi-project workspaces.** A manifest declaring `workspace.members` is imported as one project: every member gets
+its own modules, source roots, classpath and JDK, and a member consuming a sibling's artifact with `project("name")`
+gets a module dependency on it — along with the siblings that artifact brings with it, the way Elide resolves the
+classpath — so the IDE compiles and navigates across the workspace. The tool window nests every project's build
+targets and source-set modules under that project, and only the root is linked — editing a member's manifest reloads
+the workspace. Opening a member directory on its own still works, and points at the workspace above it.
+
 **Run configurations.** Add **Elide** run configurations with command-line completion for entrypoints, CLI commands,
 arguments, build tasks and flags. Ad-hoc commands can also be run through **Run Anything**.
 
@@ -55,8 +62,11 @@ automatically. Debugging `elide test` requires Elide 1.5.3 or newer and is avail
 languages use DevTools or DAP instead. Native Image binaries are also supported via GDB/LLDB through the JetBrains
 [Native Debugging Support](https://plugins.jetbrains.com/plugin/12775) plugin (IntelliJ IDEA Ultimate)
 
-**Manifest editing** (requires the Pkl plugin). Completion and navigation for `jvm.main` and `entrypoint` paths, plus
-inspections for unresolved or invalid JVM entrypoints.
+**Manifest editing** (requires the Pkl plugin). Completion and navigation for `jvm.main` and `entrypoint` paths, for
+`workspace.members` directories, and for the project and artifact names a `project("name").artifact("name")` reference
+or an artifact's `dependsOn`/`from` list carries. Renaming or moving a member directory rewrites the entry that names
+it. Inspections report unresolved or invalid JVM entrypoints, members without a manifest, and references to projects
+and artifacts the workspace does not declare.
 
 ## Settings
 

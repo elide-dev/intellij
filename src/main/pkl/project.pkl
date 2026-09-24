@@ -60,17 +60,157 @@ class ElideInfo {
   version: _semver.Version
 }
 
+/// Build flags passed on the command line as `--flag=NAME[=VALUE]` or `-fNAME[=VALUE]`.
+///
+/// Flags are free-form: nothing needs to be declared ahead of time, and an unrecognized name is
+/// simply absent rather than an error. Read them through the typed accessors, which validate the
+/// raw value, or from [raw] when the raw string is what you want.
+///
+/// ```
+/// local isRelease = build.flags.bool("RELEASE")
+/// local stampedVersion = build.flags.string("VERSION")
+/// ```
+///
+/// A flag passed more than once keeps every value: the scalar accessors read the last one, and the
+/// list accessors ([strings], [ints], [bools]) read all of them, in command-line order.
+///
+/// ```
+/// local extraArgs = build.flags.strings("ARG")  // -fARG=one -fARG=two -> List("one", "two")
+/// ```
+///
+/// At module level, read flags as `build.flags`. Inside a nested block an unqualified `build` does
+/// not resolve, so either bind a module-level `local` (as above) and use it, or qualify the access
+/// with `module`:
+///
+/// ```
+/// dependencies {
+///   maven {
+///     packages {
+///       when (module.build.flags.bool("EXTRA")) {
+///         "com.example:extra:1.0.0"
+///       }
+///     }
+///   }
+/// }
+/// ```
+/// @schema ignore
+class BuildFlags {
+  /// Every value passed for each flag name, in command-line order; a flag passed with no value
+  /// contributes the empty string. Each name maps to at least one value.
+  all: Mapping<String, List<String>>
+
+  /// Raw flag values keyed by flag name; a flag passed with no value maps to the empty string, and
+  /// a flag passed more than once maps to its last value.
+  raw: Mapping<String, String> = new {
+    for (name, values in all) {
+      [name] = values.last
+    }
+  }
+
+  /// Whether the named flag was passed at all, with or without a value.
+  function has(name: String): Boolean = raw.containsKey(name)
+
+  /// Number of times the named flag was passed; `0` when it was not passed.
+  function count(name: String): Int = all.getOrNull(name)?.length ?? 0
+
+  /// Value of the named flag; `null` when it was not passed. Throws when it was passed bare.
+  function string(name: String): String? =
+    let (value = raw.getOrNull(name))
+      if (value == null) null else _asString(name, value)
+
+  /// Value of the named flag, falling back to [orElse] when it was not passed.
+  function stringOr(name: String, orElse: String): String = string(name) ?? orElse
+
+  /// Value of the named flag as a boolean: absent is `false`, passed bare is `true`. Accepts
+  /// `true`/`false`, `yes`/`no`, `on`/`off`, and `1`/`0`, case-insensitively; throws otherwise.
+  function bool(name: String): Boolean =
+    let (value = raw.getOrNull(name))
+      if (value == null) false else _asBool(name, value)
+
+  /// Value of the named flag as an integer; `null` when it was not passed, throws when it is not
+  /// a valid integer.
+  function int(name: String): Int? =
+    let (value = string(name))
+      if (value == null) null else _asInt(name, value)
+
+  /// Every value passed for the named flag, in command-line order; empty when it was not passed.
+  /// Throws when any occurrence was passed bare.
+  function strings(name: String): List<String> =
+    _values(name).map((value) -> _asString(name, value))
+
+  /// [strings], falling back to [orElse] when the flag was not passed.
+  function stringsOr(name: String, orElse: List<String>): List<String> =
+    if (has(name)) strings(name) else orElse
+
+  /// Every value passed for the named flag as integers, in command-line order; empty when it was
+  /// not passed. Throws when any value is not a valid integer.
+  function ints(name: String): List<Int> = strings(name).map((value) -> _asInt(name, value))
+
+  /// Every value passed for the named flag as booleans, in command-line order; empty when it was
+  /// not passed, with a bare occurrence reading as `true`. Throws on a non-boolean value.
+  function bools(name: String): List<Boolean> =
+    _values(name).map((value) -> _asBool(name, value))
+
+  local function _values(name: String): List<String> = all.getOrNull(name) ?? List()
+
+  local function _asString(name: String, value: String): String =
+    if (value == "")
+      throw("build flag `\(name)` was passed without a value; expected `-f\(name)=<value>`")
+    else value
+
+  local function _asBool(name: String, value: String): Boolean =
+    if (value == "") true
+    else if (_trueValues.contains(value.toLowerCase())) true
+    else if (_falseValues.contains(value.toLowerCase())) false
+    else throw("build flag `\(name)` is not a boolean: `\(value)`")
+
+  local function _asInt(name: String, value: String): Int =
+    if (value.matches(_integer)) value.toInt()
+    else throw("build flag `\(name)` is not an integer: `\(value)`")
+
+  local _trueValues: List<String> = List("true", "yes", "on", "1")
+  local _falseValues: List<String> = List("false", "no", "off", "0")
+  local _integer: Regex = Regex(#"[+-]?\d+"#)
+}
+
 /// State captured from the Elide build system at evaluation time.
 /// @schema ignore
 class BuildInfo {
   /// Major version of the project manifest format; incremented on breaking schema changes.
   manifestVersion: ManifestVersion
+
+  /// Build flags passed for this invocation.
+  flags: BuildFlags
 }
+
+/// Names of the build flags passed for this invocation. Each occurrence's value is carried in its
+/// own external property, so a value may contain any character (including a comma).
+local flagNames: List<String> =
+  let (joined = read?("prop:elide.build.flags"))
+    if (joined == null || joined.isEmpty) List() else joined.split(",")
+
+/// Every value passed for the flag named [name], in command-line order. The number of occurrences
+/// arrives in its own property; a name present with no count was passed exactly once.
+local function flagValues(name: String): List<String> =
+  let (count = read?("prop:elide.build.flagcount.\(name)")?.toInt() ?? 1)
+    new Listing<String> {
+      for (index in IntSeq(0, count - 1)) {
+        read?("prop:elide.build.flagvalue.\(index).\(name)") ?? ""
+      }
+    }.toList()
 
 /// Information about the current build.
 /// @schema ignore
 fixed build: BuildInfo = new {
   manifestVersion = read?("prop:elide.build.state.manifestVersion")?.toInt() ?? 1
+
+  flags = new {
+    all {
+      for (name in flagNames) {
+        [name] = flagValues(name)
+      }
+    }
+  }
 }
 
 /// Information about the Elide runtime currently executing the build.
@@ -128,6 +268,33 @@ class Dependencies {
 /// Dependency resolution configuration.
 dependencies: Dependencies = new {}
 
+/// Reference to what another project of the same workspace builds: `project("core")` is the
+/// artifact project `core` declares, and `project("core").artifact("fat")` picks one of several.
+///
+/// The reference names no artifact kind; whether the block it is declared in can consume the
+/// artifact it resolves to is checked when the build is configured.
+///
+/// Bind it to a `local` at module level and use that name in the dependency block — a module-level
+/// `local` resolves inside a nested block, an unqualified call does not:
+///
+/// ```
+/// local core = project("core")
+///
+/// dependencies {
+///   maven {
+///     packages {
+///       core
+///     }
+///   }
+/// }
+/// ```
+///
+/// Declaring the reference in place takes the qualified call, `module.project("core")`, and the
+/// underlying `Artifacts.ProjectArtifact` can always be constructed by hand instead.
+const function project(name: _artifacts.ProjectName): _artifacts.ProjectArtifact = new {
+  project = name
+}
+
 //
 // ------ Configuration ---------------------------------------------------------------------------------------------
 //
@@ -175,3 +342,12 @@ web: _web.WebSettings? = new {}
 
 /// Settings for testing features
 testing: _testing.Testing = new {}
+
+/// Workspace settings: the member projects this project is the root of.
+class WorkspaceSettings {
+  /// Directories of member projects, relative to this manifest's directory; each holds its own `elide.pkl`.
+  members: Listing<String>(isDistinct) = new {}
+}
+
+/// Workspace settings for this project, when it is the root of a multi-project workspace.
+workspace: WorkspaceSettings = new {}

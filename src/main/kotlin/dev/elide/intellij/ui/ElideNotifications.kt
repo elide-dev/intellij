@@ -13,6 +13,7 @@
 package dev.elide.intellij.ui
 
 import com.intellij.ide.BrowserUtil
+import com.intellij.ide.impl.ProjectUtil
 import com.intellij.notification.Notification
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
@@ -22,12 +23,14 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.updateSettings.impl.pluginsAdvertisement.installAndEnable
+import com.intellij.openapi.util.io.toCanonicalPath
 import com.intellij.openapi.vfs.VfsUtil
 import dev.elide.intellij.Constants
 import dev.elide.intellij.execution.nativeimage.ElideNativeDebugger
 import dev.elide.intellij.execution.nativeimage.ElideNativeImageLaunch
 import dev.elide.intellij.settings.ElideConfigurable
 import java.nio.file.Files
+import java.nio.file.Path
 
 object ElideNotifications {
   fun notifyInvalidElideHome(project: Project? = null) {
@@ -124,6 +127,41 @@ object ElideNotifications {
           override fun actionPerformed(e: AnActionEvent, n: Notification) {
             val manifest = VfsUtil.findFile(launch.root.resolve(Constants.MANIFEST_NAME), true) ?: return
             OpenFileDescriptor(project, manifest).navigate(true)
+          }
+        },
+      )
+      .notify(project)
+  }
+
+  /**
+   * Report that the project just linked at [member] is a member of the workspace rooted at [workspaceRoot], and
+   * offer to open the workspace instead.
+   *
+   * A member imported on its own is a working project, but a diminished one: the siblings it depends on are JARs of
+   * an output directory rather than sources, so nothing navigates into them and nothing rebuilds them. Elide itself
+   * makes no such distinction — a command run inside a member resolves the whole workspace — which is why this is
+   * worth saying rather than leaving the user to notice.
+   *
+   * Opening the root is the offer, rather than linking it into this project: the two describe the same sources, and
+   * importing both would claim every member directory for two modules at once.
+   */
+  fun notifyWorkspaceMember(project: Project, member: Path, workspaceRoot: Path) {
+    NotificationGroupManager.getInstance()
+      .getNotificationGroup("Elide Notifications")
+      .createNotification(
+        Constants.Strings[
+          "elide.notifications.workspaceMember.content",
+          member.fileName?.toString() ?: member.toString(),
+          workspaceRoot.toCanonicalPath(),
+        ],
+        NotificationType.INFORMATION,
+      )
+      .setTitle(Constants.Strings["elide.notifications.workspaceMember.title"])
+      .addAction(
+        object : NotificationAction(Constants.Strings["elide.notifications.workspaceMember.open"]) {
+          override fun actionPerformed(e: AnActionEvent, n: Notification) {
+            n.expire()
+            ProjectUtil.openOrImport(workspaceRoot, project, false)
           }
         },
       )

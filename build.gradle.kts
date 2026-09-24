@@ -11,6 +11,7 @@
  * License for the specific language governing permissions and limitations under the License.
  */
 
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.jetbrains.intellij.platform.gradle.CustomPluginRepositoryType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
@@ -98,6 +99,15 @@ fun renderChangelogSection(changelog: String, version: String): String {
   }
 }
 
+// The Pkl plugin ships its standard library as a ZIP next to its JARs, and the test class path only takes the JARs of a
+// plugin's `lib/` (a ZIP declared as a test dependency is dropped the same way). Without `base.pkl` every Pkl type
+// resolution fails the test that triggers it -- string injection, reference searches -- so it is appended to the test
+// task's class path directly, in the version the plugin bundles.
+val pklStdlib: Configuration by configurations.creating {
+  isCanBeConsumed = false
+  isTransitive = false
+}
+
 dependencies {
   implementation(libs.kotlinx.serialization.json)
   // the JVM half of an `elide test --coverage` run is a JaCoCo execution file, which only class analysis turns into
@@ -111,6 +121,7 @@ dependencies {
   // tests are written in JUnit 5; JUnit 4 is only on the runtime classpath because the platform test framework's
   // `JUnit5TestSessionListener` and its rules load `org.junit.runners` classes
   testRuntimeOnly(libs.junit4)
+  pklStdlib(libs.pkl.stdlib)
 
   intellijPlatform {
     intellijIdea(libs.versions.intellij.target.ide.get())
@@ -142,6 +153,10 @@ configurations.runtimeClasspath {
 // to the plain Jupiter tests over the generated model.
 tasks.test {
   useJUnitPlatform()
+  classpath += pklStdlib
+  // a failing test's exception is all CI gets to go on: the platform's uncaught-exception check reports work a
+  // background thread left behind, which is unreadable without the stack trace
+  testLogging { exceptionFormat = TestExceptionFormat.FULL }
 }
 
 intellijPlatform {

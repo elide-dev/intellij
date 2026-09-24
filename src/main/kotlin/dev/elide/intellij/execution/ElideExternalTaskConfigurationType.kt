@@ -17,8 +17,11 @@ import com.intellij.openapi.externalSystem.model.ProjectSystemId
 import com.intellij.openapi.externalSystem.service.execution.AbstractExternalSystemTaskConfigurationType
 import com.intellij.openapi.externalSystem.service.execution.ExternalSystemRunConfiguration
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.VirtualFile
 import dev.elide.intellij.Constants
+import dev.elide.intellij.project.ElideWorkspaces
 import dev.elide.intellij.settings.ElideSettings
 import javax.swing.Icon
 
@@ -38,9 +41,10 @@ class ElideExternalTaskConfigurationType : AbstractExternalSystemTaskConfigurati
     factory: ConfigurationFactory,
     name: String
   ): ExternalSystemRunConfiguration {
-    val defaultPath = ElideSettings.getSettings(project).linkedProjectsSettings.firstOrNull()?.externalProjectPath
+    val selected = FileEditorManager.getInstance(project).selectedFiles.firstOrNull()
+
     return ElideRunConfiguration(project, factory, name).apply {
-      settings.externalProjectPath = defaultPath ?: project.basePath
+      settings.externalProjectPath = defaultProjectPath(project, selected) ?: project.basePath
     }
   }
 
@@ -56,5 +60,22 @@ class ElideExternalTaskConfigurationType : AbstractExternalSystemTaskConfigurati
 
     /** Returns the factory used to create [ElideRunConfiguration] instances. */
     @JvmStatic val configurationFactory: ConfigurationFactory get() = instance.factory
+
+    /**
+     * Returns the directory a configuration created by hand starts pointed at: the Elide project owning [selected],
+     * falling back to the first linked project.
+     *
+     * A workspace links its root alone, so the linked project is the whole workspace, and a configuration defaulted
+     * to it builds and tests every member from wherever the user happens to be working. The file the editor has open
+     * says which member that is, and the CLI resolves the same workspace from the member's directory while keeping
+     * the run to that member.
+     */
+    internal fun defaultProjectPath(project: Project, selected: VirtualFile?): String? {
+      val owner = selected
+        ?.let { runCatching { it.toNioPath() }.getOrNull() }
+        ?.let { ElideWorkspaces.owningProject(project, it) }
+
+      return owner ?: ElideSettings.getSettings(project).linkedProjectsSettings.firstOrNull()?.externalProjectPath
+    }
   }
 }

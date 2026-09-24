@@ -18,7 +18,12 @@ import com.intellij.util.xmlb.annotations.XCollection
 import dev.elide.intellij.Constants
 import dev.elide.intellij.cli.ElideCli
 
-/** Serializable project data resolved from an Elide manifest during project sync. */
+/**
+ * Serializable project data resolved from an Elide manifest during project sync.
+ *
+ * One entry is indexed per project the sync resolved, so a workspace contributes one for its root and one for every
+ * member; [workspaceRoot] and [members] are what relate them, since only the root is a linked external project.
+ */
 data class ElideProjectInfo(
   /** Name the manifest declares for the project, or `null` when it declares none. */
   @Attribute val name: String? = null,
@@ -28,6 +33,15 @@ data class ElideProjectInfo(
   @XCollection val buildTasks: List<ElideBuildTaskInfo> = emptyList(),
   /** Artifacts of this project producing a runnable Native Image binary. */
   @XCollection val nativeImages: List<ElideNativeImageInfo> = emptyList(),
+  /**
+   * Path of the workspace root this project is a member of, or `null` when it is not a member of one.
+   *
+   * The root is the linked external project: a member is synced, indexed and built as part of it, and carries no
+   * linked settings of its own.
+   */
+  @Attribute val workspaceRoot: String? = null,
+  /** Paths of the member projects this project is the workspace root of, empty when it is the root of none. */
+  @XCollection val members: List<String> = emptyList(),
 ) {
   companion object {
     /**
@@ -52,6 +66,8 @@ data class ElideProjectInfo(
       },
       buildTasks = data.buildTasks,
       nativeImages = data.nativeImages,
+      workspaceRoot = data.workspaceRoot,
+      members = data.members,
     )
   }
 }

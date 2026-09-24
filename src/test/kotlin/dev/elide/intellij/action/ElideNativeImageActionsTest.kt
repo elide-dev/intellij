@@ -39,12 +39,36 @@ class ElideNativeImageActionsTest {
 
   private val projectPath = "/projects/demo"
 
+  private val memberPath = "$projectPath/cli"
+
   private fun task(name: String): TaskData {
     return TaskData(Constants.SYSTEM_ID, ElideBuildTaskInfo(name).taskName, projectPath, null)
   }
 
   private fun index(vararg images: ElideNativeImageInfo) {
     projectFixture.get().elideProjectIndex.update(projectPath, ElideProjectInfo(nativeImages = images.toList()))
+  }
+
+  /** Indexes a workspace the way a sync leaves it: one entry per project, each with the artifacts it declares. */
+  private fun workspace() {
+    val index = projectFixture.get().elideProjectIndex
+
+    index.update(
+      projectPath,
+      ElideProjectInfo(
+        name = "demo",
+        nativeImages = listOf(ElideNativeImageInfo("tool", "demo-tool")),
+        members = listOf(memberPath),
+      ),
+    )
+    index.update(
+      memberPath,
+      ElideProjectInfo(
+        name = "cli",
+        nativeImages = listOf(ElideNativeImageInfo("myapp", "cli-app")),
+        workspaceRoot = projectPath,
+      ),
+    )
   }
 
   @Test fun `the actions are offered by the task node menu and the tool window toolbar`() {
@@ -81,7 +105,7 @@ class ElideNativeImageActionsTest {
 
     val project = projectFixture.get()
 
-    assertEquals(ElideNativeImageInfo("bin", "demo-bin"), nativeImageOf(project, task("bin")))
+    assertEquals(ElideNativeImageTarget(projectPath, "bin"), nativeImageOf(project, task("bin")))
     // a jar target assembles something the IDE cannot start, and neither can a task of the build graph's own
     assertNull(nativeImageOf(project, task("app")))
     assertNull(nativeImageOf(project, task("compile-kotlin-main")))
@@ -90,6 +114,24 @@ class ElideNativeImageActionsTest {
   @Test fun `a task of an unsynced project is offered nothing`() {
     // the output name comes from the synced model, so without it there is no image to name
     assertNull(nativeImageOf(projectFixture.get(), task("bin")))
+  }
+
+  @Test fun `a task qualified with a member is run against that member`() {
+    workspace()
+
+    val project = projectFixture.get()
+    // the tree hangs every task off the linked root, but the member is where its build writes the binary
+    assertEquals(ElideNativeImageTarget(memberPath, "myapp"), nativeImageOf(project, task("cli:myapp")))
+    assertNull(nativeImageOf(project, task("cli:tool")))
+  }
+
+  @Test fun `a task qualified with the workspace root's own name is run against the root`() {
+    workspace()
+
+    val project = projectFixture.get()
+    // the CLI qualifies the root's targets too, so the qualifier is all that tells its images from a member's
+    assertEquals(ElideNativeImageTarget(projectPath, "tool"), nativeImageOf(project, task("demo:tool")))
+    assertNull(nativeImageOf(project, task("demo:myapp")))
   }
 
   private companion object {

@@ -1,12 +1,13 @@
 {
   "manifestVersion": 2,
-  "elideVersion": "1.5.1",
+  "elideVersion": "1.5.4",
   "minPklVersion": "0.28.1",
   "entrypoint": "/v2/project.pkl",
+  "source": "checkout",
   "modules": {
     "Artifacts.pkl": {
-      "bytes": 443,
-      "sha256": "5115a0648625cc20ed4d3d9ed3e2e1d5d895b0bfe38739e8d8f1a82e17a67560"
+      "bytes": 1225,
+      "sha256": "b3d282bfb9a80388be03bfba9822ee1f05c513047549f11c97dadca3f676f048"
     },
     "Base.pkl": {
       "bytes": 1829,
@@ -33,8 +34,8 @@
       "sha256": "fd663436b3b606f973288591cc34a26edb95ae483b3ee9a32ca5022d6e6adf03"
     },
     "Jvm.pkl": {
-      "bytes": 13006,
-      "sha256": "05487f3d8c6b7118cf7d5ab7b4626b43c4b42b9a960e48d2f028539bbb3b437b"
+      "bytes": 13074,
+      "sha256": "36f62e4204ca3e6bc6d93418a5ea8030094f6324b5f589ffb1f43ca260758ed7"
     },
     "Kotlin.pkl": {
       "bytes": 5428,
@@ -43,6 +44,10 @@
     "NativeImage.pkl": {
       "bytes": 4706,
       "sha256": "3c9d963a0421a013581d5e0f9d802c4bf3c727ce6b50518fcb383cf6bf2c792c"
+    },
+    "project.pkl": {
+      "bytes": 12893,
+      "sha256": "0c02f299af4e2a8e0f6caa47f08ff85ae8ea3bc5797be1d6f460d10de70dac86"
     },
     "Sources.pkl": {
       "bytes": 1005,
@@ -59,10 +64,6 @@
     "Web.pkl": {
       "bytes": 2303,
       "sha256": "06fe6b4f42af39b216970827e59da43b9ed21e8247622fa6968adee66019ea36"
-    },
-    "project.pkl": {
-      "bytes": 5625,
-      "sha256": "9382e59dd79b1c56ce9e47aa2ed6f7a9f8386f77e7ceac3dcf181cd41fd73fe6"
     }
   }
 }

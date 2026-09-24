@@ -24,6 +24,7 @@ import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.io.toCanonicalPath
 import dev.elide.intellij.Constants
 import dev.elide.intellij.execution.coverage.ElideCoverageWatcher
+import dev.elide.intellij.project.ElideWorkspaces
 import dev.elide.intellij.settings.ElideProjectSettings
 import dev.elide.intellij.settings.ElideSettings
 import dev.elide.intellij.settings.ElideSettingsListener
@@ -49,6 +50,10 @@ class ElideStartupActivity : ProjectActivity {
       baseDir.findChild(Constants.MANIFEST_NAME) ?: continue
 
       val externalProjectPath = baseDir.toNioPath().toCanonicalPath()
+      if (!isLinkable(project, externalProjectPath)) {
+        LOG.debug("Skipping $externalProjectPath, already part of a linked workspace")
+        continue
+      }
 
       // have the IDE track changes to the project config files, then trigger a sync
       LOG.debug("Found manifest, linking project at $externalProjectPath")
@@ -96,7 +101,22 @@ class ElideStartupActivity : ProjectActivity {
     override fun dispose() = Unit
   }
 
-  private companion object {
+  internal companion object {
     @JvmStatic private val LOG = Logger.getInstance(ElideStartupActivity::class.java)
+
+    /**
+     * Whether the Elide project at [externalProjectPath] is one the IDE should link, or one a linked workspace
+     * already covers.
+     *
+     * A workspace member is never a linked project of its own: it is synced, built and configured through the root
+     * that declares it. `workspace.members` entries resolve against the root directory but may point outside it, so
+     * a member can sit among the project's base directories beside the root, where linking it would import the same
+     * sources a second time on every IDE start. The linked project itself always stays linkable, which is how a
+     * reopened project gets re-synced.
+     */
+    internal fun isLinkable(project: Project, externalProjectPath: String): Boolean {
+      val owner = ElideWorkspaces.linkedRoot(project, externalProjectPath)
+      return owner == null || owner == externalProjectPath
+    }
   }
 }

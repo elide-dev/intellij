@@ -17,13 +17,18 @@ import com.intellij.ide.actions.runAnything.RunAnythingContext
 import com.intellij.ide.actions.runAnything.RunAnythingUtil
 import com.intellij.ide.actions.runAnything.activity.RunAnythingCommandLineProvider
 import com.intellij.ide.actions.runAnything.getPath
+import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.project.Project
 import dev.elide.intellij.Constants
 import dev.elide.intellij.cli.ElideCliCompletion
+import dev.elide.intellij.project.ElideWorkspaces
 import dev.elide.intellij.service.ElideExecutionService
 import dev.elide.intellij.service.elideProjectIndex
 import dev.elide.intellij.settings.ElideSettings
+import java.nio.file.Path
 import javax.swing.Icon
 
 /**
@@ -43,7 +48,7 @@ class ElideRunAnythingProvider : RunAnythingCommandLineProvider() {
   override fun suggestCompletionVariants(dataContext: DataContext, commandLine: CommandLine): Sequence<String> {
     val project = RunAnythingUtil.fetchProject(dataContext)
     val projectPath = (dataContext.getData(EXECUTING_CONTEXT) ?: RunAnythingContext.ProjectContext(project))
-      .workingDirectory()
+      .workingDirectory(dataContext)
 
     val info = projectPath?.let { project.elideProjectIndex[it] }
 
@@ -61,7 +66,7 @@ class ElideRunAnythingProvider : RunAnythingCommandLineProvider() {
   ): Boolean {
     val project = RunAnythingUtil.fetchProject(dataContext)
     val context = dataContext.getData(EXECUTING_CONTEXT) ?: RunAnythingContext.ProjectContext(project)
-    val workDirectory = context.workingDirectory() ?: return false
+    val workDirectory = context.workingDirectory(dataContext) ?: return false
 
     project.getService(ElideExecutionService::class.java).execute(
       fullCommandLine = commandLine.command,
@@ -72,21 +77,46 @@ class ElideRunAnythingProvider : RunAnythingCommandLineProvider() {
     return true
   }
 
-  private fun RunAnythingContext.workingDirectory(): String? {
+  private fun RunAnythingContext.workingDirectory(dataContext: DataContext): String? {
     return when (this) {
-      is RunAnythingContext.ProjectContext -> getLinkedProjectPath() ?: getPath()
+      is RunAnythingContext.ProjectContext -> getLinkedProjectPath(dataContext) ?: getPath()
       is RunAnythingContext.ModuleContext -> getLinkedModulePath() ?: getPath()
       else -> getPath()
     }
   }
 
-  private fun RunAnythingContext.ProjectContext.getLinkedProjectPath(): String? {
-    return ElideSettings.getSettings(project)
+  /**
+   * Returns the Elide project the generic "Project" context runs in: the one owning the file the user is looking at,
+   * falling back to the first linked project.
+   *
+   * A workspace links its root alone, so the linked project is the whole workspace no matter which member the user
+   * is working in. The CLI resolves the same workspace from a member's directory and narrows what it does to that
+   * member — `elide test` there runs the member's tests and nothing else — which is what a command typed while
+   * editing a member's file means; the member is also the project whose task listing the completion belongs to.
+   */
+  private fun RunAnythingContext.ProjectContext.getLinkedProjectPath(dataContext: DataContext): String? {
+    val owner = contextFile(project, dataContext)?.let { ElideWorkspaces.owningProject(project, it) }
+
+    return owner ?: ElideSettings.getSettings(project)
       .linkedProjectsSettings
       .firstOrNull()
       ?.let { ExternalSystemApiUtil.findProjectNode(project, Constants.SYSTEM_ID, it.externalProjectPath) }
       ?.data
       ?.linkedExternalProjectPath
+  }
+
+  /**
+   * Returns the path of the file the popup was invoked over, falling back to the one the editor has selected: the
+   * action is reachable from places carrying no file of their own, where the open editor is what the user is on.
+   *
+   * A file the local file system does not back — one inside a JAR, or a scratch of another backend — names no
+   * directory a build could run in, and is left out.
+   */
+  private fun contextFile(project: Project, dataContext: DataContext): Path? {
+    val file = CommonDataKeys.VIRTUAL_FILE.getData(dataContext)
+      ?: FileEditorManager.getInstance(project).selectedFiles.firstOrNull()
+
+    return file?.let { runCatching { it.toNioPath() }.getOrNull() }
   }
 
   private fun RunAnythingContext.ModuleContext.getLinkedModulePath(): String? {

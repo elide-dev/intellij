@@ -23,7 +23,7 @@ import com.intellij.openapi.externalSystem.model.task.TaskData
 import com.intellij.openapi.project.Project
 import dev.elide.intellij.Constants
 import dev.elide.intellij.execution.nativeimage.ElideNativeImageRunConfigurations
-import dev.elide.intellij.project.model.ElideNativeImageInfo
+import dev.elide.intellij.project.ElideWorkspaces
 import dev.elide.intellij.project.model.buildTargetName
 import dev.elide.intellij.project.model.nativeImage
 import dev.elide.intellij.service.elideProjectIndex
@@ -59,8 +59,8 @@ abstract class ElideNativeImageAction(private val executor: () -> Executor) :
   }
 
   override fun perform(project: Project, systemId: ProjectSystemId, task: TaskData, e: AnActionEvent) {
-    val artifact = buildTargetName(task.name) ?: return
-    val settings = ElideNativeImageRunConfigurations.findOrCreate(project, task.linkedExternalProjectPath, artifact)
+    val target = nativeImageOf(project, task) ?: return
+    val settings = ElideNativeImageRunConfigurations.findOrCreate(project, target.externalProjectPath, target.artifact)
 
     ExecutionUtil.runConfiguration(settings, executor())
   }
@@ -72,9 +72,28 @@ class ElideNativeImageRunAction : ElideNativeImageAction(DefaultRunExecutor::get
 /** Debugs the binary of the selected Native Image task. */
 class ElideNativeImageDebugAction : ElideNativeImageAction(DefaultDebugExecutor::getDebugExecutorInstance)
 
-/** The Native Image [task] produces, as the sync reported it; `null` for every other build target. */
-internal fun nativeImageOf(project: Project, task: TaskData): ElideNativeImageInfo? {
-  val artifact = buildTargetName(task.name) ?: return null
+/**
+ * The project of the workspace declaring a Native Image artifact, paired with the name that project itself knows the
+ * artifact by.
+ *
+ * A run has to be created with both: the sync indexes artifacts per project, and a build writes the binary under the
+ * directory of the project declaring it, while the tool window's tree offers neither — every task node hangs off the
+ * linked root and names its target qualified with the project it belongs to.
+ */
+internal data class ElideNativeImageTarget(val externalProjectPath: String, val artifact: String)
 
-  return project.elideProjectIndex[task.linkedExternalProjectPath]?.nativeImage(artifact)
+/**
+ * The Native Image [task] produces, as the sync reported it, resolved to the project declaring it; `null` for every
+ * other build target.
+ *
+ * Deciding whether the action applies and creating the run both go through this, so the artifact a node is offered a
+ * run for and the one the configuration is written with cannot come apart.
+ */
+internal fun nativeImageOf(project: Project, task: TaskData): ElideNativeImageTarget? {
+  val target = buildTargetName(task.name) ?: return null
+  val (owner, artifact) = ElideWorkspaces.targetOwner(project, task.linkedExternalProjectPath, target)
+
+  if (project.elideProjectIndex[owner]?.nativeImage(artifact) == null) return null
+
+  return ElideNativeImageTarget(owner, artifact)
 }

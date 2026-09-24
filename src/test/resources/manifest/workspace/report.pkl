@@ -1,0 +1,38 @@
+amends "elide:project.pkl"
+import "elide:Jvm.pkl" as Jvm
+import "elide:Sources.pkl" as Sources
+
+local model = project("model")
+
+name = "report"
+description = "Aggregates parsed records into report rows"
+
+sources {
+  ["main"] = new Sources.SourceSetSpec {
+    paths {
+      "src/main/kotlin/**/*.kt"
+    }
+  }
+  ["test"] = new Sources.SourceSetSpec {
+    paths {
+      "src/test/kotlin/**/*.kt"
+    }
+  }
+}
+
+dependencies {
+  maven {
+    packages {
+      model
+    }
+  }
+}
+
+artifacts {
+  ["report"] = new Jvm.Jar {
+    // The JAR names itself, so the build writes it to `jar/report-fat/`; the directory name is all a
+    // resolved classpath entry carries about the artifact it holds.
+    name = "report-fat"
+    sources { "main" }
+  }
+}

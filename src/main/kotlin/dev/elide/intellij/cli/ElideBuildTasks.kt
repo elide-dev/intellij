@@ -21,10 +21,22 @@ import dev.elide.intellij.project.model.ElideBuildTaskInfo
  * two-space indented `name   description` rows, opened by a `N tasks available:` header and closed by the next
  * unindented line (`Global options:`); every task row is followed by four-space indented rows naming the options
  * that task accepts, or by a `no options declared` row, which declares none.
+ *
+ * In a workspace the header instead reads `N tasks across M projects:` and the rows are grouped by project, each
+ * group opened by the bare project name at column zero, root first and members in declaration order. An unindented
+ * row therefore no longer means the listing ended, and the two are told apart structurally: a project name carries
+ * neither whitespace nor a colon, while every trailing section (`Global options:`) does. Guessing from the indent
+ * alone would not do, as those sections print option rows in the very shape a task row has.
+ *
+ * Task names are read exactly as printed, qualifier included (`core:jar`), because that is the target `elide build`
+ * accepts for a task of a workspace — the root's own tasks are qualified as well.
  */
 object ElideBuildTasks {
-  /** Header opening the task table; a listing that does not carry it holds no tasks to read. */
-  private val HEADER = Regex("""^\d+ tasks? available:$""")
+  /** Header opening the task table, either for a standalone project or for a workspace; without it, no tasks. */
+  private val HEADER = Regex("""^\d+ tasks? (?:available|across \d+ projects?):$""")
+
+  /** A project group header: an unindented, bare project name, which Elide forbids whitespace and colons in. */
+  private val GROUP = Regex("""^[^\s:]+$""")
 
   /** A task row: exactly two spaces of indent, the task name, then its description, if it declares one. */
   private val TASK = Regex("""^ {2}(\S+)(?: {2,}(.*))?$""")
@@ -45,9 +57,12 @@ object ElideBuildTasks {
       .map { it.trimEnd() }
       .dropWhile { !HEADER.matches(it) }
       .drop(1)
-      .takeWhile { it.isEmpty() || it.startsWith(" ") }
+      .takeWhile { it.isEmpty() || it.startsWith(" ") || GROUP.matches(it) }
 
     for (row in rows) {
+      // a group header names the project the rows below it belong to; the names they carry already say so
+      if (GROUP.matches(row)) continue
+
       val task = TASK.matchEntire(row)
       if (task != null) {
         tasks += ElideBuildTaskInfo(name = task.groupValues[1], description = task.groupValues[2].trim())

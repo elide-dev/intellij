@@ -15,6 +15,7 @@ package dev.elide.intellij
 import com.intellij.openapi.externalSystem.ExternalSystemAutoImportAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.io.FileUtil
+import dev.elide.intellij.project.ElideWorkspaces
 import dev.elide.intellij.settings.ElideSettings
 import java.io.File
 import java.nio.file.Path
@@ -51,6 +52,9 @@ class ElideAutoImportAware : ExternalSystemAutoImportAware {
   /**
    * The files whose modification marks the project out of date.
    *
+   * A workspace's members are listed alongside the root: a member is never a linked project, so the platform would
+   * never ask about its manifest on its own, and an edit to it changes the model the root was built from.
+   *
    * This is `ExternalSystemAutoImportAware.getAffectedExternalProjectFilePaths`, added in build 262; it carries no
    * `override` because the plugin compiles against 261, where the interface only declares the [File] form. The JVM
    * still dispatches to it on 262, so the deprecated form below is only reached on older builds.
@@ -61,7 +65,12 @@ class ElideAutoImportAware : ExternalSystemAutoImportAware {
     return buildList {
       File(projectPath, Constants.MANIFEST_NAME).takeIf { it.exists() }?.let { add(it.toPath()) }
 
-      // the lockfile carries a version in its name, so every candidate in the output directory is watched
+      ElideWorkspaces.members(project, projectPath).forEach { member ->
+        File(member, Constants.MANIFEST_NAME).takeIf { it.exists() }?.let { add(it.toPath()) }
+      }
+
+      // the lockfile carries a version in its name, so every candidate in the output directory is watched; a
+      // workspace keeps its dependency state at the root, so the members' output directories hold none
       File(projectPath, Constants.OUTPUT_DIR).listFiles { candidate ->
         candidate.isFile && Constants.isLockfileName(candidate.name)
       }?.forEach { add(it.toPath()) }

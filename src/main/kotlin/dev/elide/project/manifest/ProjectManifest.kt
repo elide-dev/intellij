@@ -13,8 +13,11 @@
 package dev.elide.project.manifest
 
 import dev.elide.tooling.manifest.Serializers
+import dev.elide.tooling.manifest.artifacts.ProjectArtifact
+import dev.elide.tooling.manifest.jvm.Jar
 import dev.elide.tooling.manifest.jvm.JvmSourceSetSpec
 import dev.elide.tooling.manifest.jvm.JvmTargetLevel
+import dev.elide.tooling.manifest.jvm.MavenPackageDependency
 import dev.elide.tooling.manifest.kotlin.KotlinCompilerJvmOptions
 import dev.elide.tooling.manifest.kotlin.KotlinLanguageTargets
 import dev.elide.tooling.manifest.project.ProjectModule
@@ -142,3 +145,109 @@ fun KotlinCompilerJvmOptions.collect(): Sequence<String> = sequence {
 
   if (freeCompilerArgs.isNotEmpty()) yieldAll(freeCompilerArgs)
 }
+
+// -- Workspaces
+
+/**
+ * Directories of the member projects this manifest declares, relative to the directory holding it.
+ *
+ * A manifest that declares members is the root of a multi-project workspace; every other project has none, including
+ * the members themselves — Elide's workspaces are exactly two layers deep, and a member's own declaration is never
+ * composed with its root's.
+ */
+val ProjectModule.workspaceMembers: List<String> get() = workspace.members
+
+/** The name Elide knows the project rooted at [directory] by: the one it declares, else the directory's own. */
+fun ProjectModule.projectName(directory: String): String = name ?: directory
+
+/** The sibling artifact this dependency references, or `null` when it names a coordinate or a path instead. */
+val MavenPackageDependency.projectArtifact: ProjectArtifact?
+  get() = (this as? MavenPackageDependency.OfProjectArtifact)?.value
+
+/**
+ * A reference from one project of a workspace to an artifact another of them builds, as written in a dependency
+ * block: `project("core")`, or `project("core").artifact("fat")`.
+ */
+data class ProjectReference(
+  /** Name of the project declaring the artifact. */
+  val project: String,
+  /** Name of the artifact, or `null` when the reference left the choice to the project declaring exactly one. */
+  val artifact: String?,
+  /** Whether the reference was declared in a bucket only the tests consume. */
+  val test: Boolean,
+)
+
+/**
+ * Every sibling artifact this manifest's JVM dependencies reference, in declaration order.
+ *
+ * `kotlinPlugins` is left out: a compiler plugin is loaded, not put on a classpath, and Elide rejects a project
+ * reference there rather than resolving it. `exclusions` name what is *not* resolved, so a reference there describes
+ * no dependency either.
+ */
+fun ProjectModule.projectReferences(): List<ProjectReference> {
+  val maven = dependencies.maven
+
+  val compile = sequenceOf(
+    maven.packages,
+    maven.devPackages,
+    maven.modules,
+    maven.compileOnly,
+    maven.runtimeOnly,
+    maven.processors,
+  ).flatMap { it.asSequence() }.map { it to false }
+
+  return (compile + maven.testPackages.asSequence().map { it to true })
+    .mapNotNull { (dependency, test) ->
+      dependency.projectArtifact?.let { ProjectReference(it.project, it.artifact, test) }
+    }
+    .distinct()
+    .toList()
+}
+
+/**
+ * The source sets of this manifest backing the JAR artifact [artifact] references, or an empty list when it resolves
+ * to no JAR this manifest declares.
+ *
+ * A reference that names no artifact resolves against a project declaring exactly one JAR, the way Elide resolves it
+ * when the build is configured; one that names several is a manifest error the CLI reports, and is left alone here.
+ */
+fun ProjectModule.referencedSourceSets(artifact: String?): List<String> {
+  val jars = jarArtifacts()
+  val jar = when (artifact) {
+    null -> jars.values.singleOrNull()
+    else -> jars[artifact]
+  } ?: return emptyList()
+
+  return packagedSourceSets(jar)
+}
+
+/**
+ * The source sets of this manifest backing the JAR the build writes under the output name [artifact], or an empty
+ * list when this manifest declares no such JAR.
+ *
+ * Elide writes an artifact to a directory named after it — the name the artifact declares, falling back to the key it
+ * is declared under — which is the only thing a resolved classpath entry carries about it. [artifact] is `null` for an
+ * entry naming no directory of its own, and resolves the way an unnamed reference does.
+ */
+fun ProjectModule.sourceSetsForArtifactOutput(artifact: String?): List<String> {
+  val jars = jarArtifacts()
+  val jar = when (artifact) {
+    null -> jars.values.singleOrNull()
+    else -> jars.entries.find { (key, jar) -> (jar.name ?: key) == artifact }?.value
+  } ?: return emptyList()
+
+  return packagedSourceSets(jar)
+}
+
+/** The JARs this manifest declares, keyed by the name they are declared under. */
+private fun ProjectModule.jarArtifacts(): Map<String, Jar> = artifacts.entries
+  .mapNotNull { (name, declared) -> (declared as? Jar)?.let { name to it } }
+  .toMap()
+
+/** The source sets [jar] packages: those it names which this manifest declares, else the default one. */
+private fun ProjectModule.packagedSourceSets(jar: Jar): List<String> {
+  return jar.sources.filter { it in sources }.ifEmpty { listOf(DEFAULT_SOURCE_SET) }
+}
+
+/** Name of the source set Elide packages when an artifact names none. */
+const val DEFAULT_SOURCE_SET: String = "main"

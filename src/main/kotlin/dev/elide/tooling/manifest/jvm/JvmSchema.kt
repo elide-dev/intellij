@@ -3,6 +3,7 @@
 package dev.elide.tooling.manifest.jvm
 
 import dev.elide.tooling.manifest.artifacts.Artifact
+import dev.elide.tooling.manifest.artifacts.ProjectArtifact
 import dev.elide.tooling.manifest.base.PackageVersion
 import dev.elide.tooling.manifest.java.JavaCompiler
 import dev.elide.tooling.manifest.sources.SourceSetSpec
@@ -920,7 +921,8 @@ public typealias JarManifestValue = String
 public typealias JvmClass = String
 
 /**
- * Maven packages can be specified structurally, or as coordinate strings, Gradle-style coordinate strings, or purls.
+ * Maven packages can be specified structurally, as coordinate strings, as local JAR paths, or as
+ * artifacts of another project of the same workspace.
  */
 @Serializable
 @SerialName("elide.jvm.MavenPackageDependency")
@@ -952,6 +954,37 @@ public sealed interface MavenPackageDependency {
           }
         }
         OfString(value!!)
+      }
+    }
+  }
+
+  @Serializable(with = OfProjectArtifact.Companion::class)
+  @JvmInline
+  public value class OfProjectArtifact(
+    public val `value`: ProjectArtifact,
+  ) : MavenPackageDependency {
+    public companion object : KSerializer<OfProjectArtifact> {
+      override val descriptor: SerialDescriptor =
+          buildClassSerialDescriptor("elide.jvm.MavenPackageDependency.OfProjectArtifact") {
+        element<ProjectArtifact>("value",isOptional=false)
+      }
+
+      override fun serialize(encoder: Encoder, `value`: OfProjectArtifact) {
+        encoder.encodeStructure(descriptor) {
+          encodeSerializableElement(descriptor,0,serializer<ProjectArtifact>(),value.value)
+        }
+      }
+
+      override fun deserialize(decoder: Decoder): OfProjectArtifact = decoder.decodeStructure(descriptor) {
+        var value: ProjectArtifact? = null
+        while (true) {
+          when (val index = decodeElementIndex(descriptor)) {
+            0 -> value = decodeSerializableElement(descriptor,0,serializer<ProjectArtifact>())
+            CompositeDecoder.DECODE_DONE -> break
+            else -> error("""Unexpected index: $index""")
+          }
+        }
+        OfProjectArtifact(value!!)
       }
     }
   }
