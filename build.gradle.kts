@@ -11,6 +11,7 @@
  * License for the specific language governing permissions and limitations under the License.
  */
 
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.jetbrains.intellij.platform.gradle.CustomPluginRepositoryType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
@@ -153,6 +154,9 @@ configurations.runtimeClasspath {
 tasks.test {
   useJUnitPlatform()
   classpath += pklStdlib
+  // a failing test's exception is all CI gets to go on: the platform's uncaught-exception check reports work a
+  // background thread left behind, which is unreadable without the stack trace
+  testLogging { exceptionFormat = TestExceptionFormat.FULL }
 }
 
 intellijPlatform {

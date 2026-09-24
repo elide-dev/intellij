@@ -48,8 +48,10 @@ import com.intellij.testFramework.junit5.fixture.projectFixture
 import com.intellij.testFramework.junit5.fixture.sourceRootFixture
 import com.intellij.util.ThreeState
 import dev.elide.intellij.Constants
+import dev.elide.intellij.cancelPklPackageRefresh
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -60,7 +62,6 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import org.junit.jupiter.api.AfterAll
 import org.pkl.intellij.psi.PklModule
 import org.pkl.intellij.psi.PklObjectEntry
 
@@ -81,6 +82,12 @@ class ElideWorkspaceReferencesTest {
     // reading Pkl PSI starts the Pkl plugin's package service, which polls for declared packages on a
     // `java.util.Timer` of its own; the platform's leak tracker fails the test for it otherwise
     ThreadLeakTracker.longRunningThreadCreated(ApplicationManager.getApplication(), "Timer-")
+  }
+
+  @AfterTest fun stopPklPackageServiceTimer() {
+    // every edit this test makes to a manifest queues a package refresh three seconds out, which outlives the
+    // project it reads unless it is cancelled here
+    cancelPklPackageRefresh(projectFixture.get())
   }
 
   // -- Projects
@@ -483,22 +490,7 @@ class ElideWorkspaceReferencesTest {
   private fun String.withoutCaret() = replace(CARET, "")
 
   companion object {
-    /**
-     * Waits out the refresh the Pkl plugin's package service schedules three seconds after every PSI change in a
-     * Pkl file, on a timer of its own.
-     *
-     * One still queued when this class's project is disposed fails the run — as a leaked project, or as the
-     * `AlreadyDisposedException` it throws on whichever test happens to be running when it fires — so the last one
-     * is waited out here, while the project it holds is still alive.
-     */
-    @JvmStatic @AfterAll fun drainPklPackageRefresh() {
-      Thread.sleep(PKL_PACKAGE_REFRESH_MILLIS)
-    }
-
     private const val CARET = "<caret>"
-
-    /** The delay the Pkl plugin's package service debounces a refresh by, with room for it to run. */
-    private const val PKL_PACKAGE_REFRESH_MILLIS = 3_500L
 
     private val ROOT = root(members = listOf("model", "libs/core", "cli")).replace(CARET, "")
 
