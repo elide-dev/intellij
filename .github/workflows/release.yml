@@ -54,7 +54,11 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Install xmllint
-        run: sudo apt-get install -y libxml2-utils
+        # the runner image ships a stale apt index, so the version it resolves is already gone from the mirror pool
+        # and the download 404s; refreshing the index first is what makes the install reproducible
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libxml2-utils
 
       - name: Verify plugin project configuration
         run: ./gradlew verifyPluginProjectConfiguration
