@@ -1,8 +1,8 @@
 [versions]
-buildconfig = "6.0.10"
+buildconfig = "6.1.1"
 buildTimeTracker = "5.0.2"
 
-intellij-platform = "2.16.0"
+intellij-platform = "2.19.0"
 # the compile target stays on a 261 build: 2026.2 platform classes target JVM 25, which builds 253 to 261 (JBR 21)
 # cannot load
 intellij-target-ide = "2026.1.5"
@@ -11,7 +11,7 @@ intellij-untilBuild = "262.*"
 
 pkl-plugin = "0.37.0"
 # the standard library the Pkl plugin above bundles; see `pkl-stdlib` in the build
-pkl-stdlib = "0.32.0"
+pkl-stdlib = "0.32.1"
 
 # the GDB/LLDB backends behind Native Image debugging; a marketplace plugin licensed for IntelliJ IDEA Ultimate,
 # depended on optionally and never bundled with the IDE distribution
@@ -25,10 +25,10 @@ serialization = "1.11.0"
 # reads the JaCoCo execution file `elide test --coverage` leaves for JVM tests
 jacoco = "0.8.15"
 
-logback = "1.5.18"
-slf4j = "2.0.16"
+logback = "1.6.3"
+slf4j = "2.0.19"
 # 5.13 or newer: the platform's JUnit 5 fixtures call `ExtensionContext.getEnclosingTestClasses`
-junit = "5.13.4"
+junit = "6.1.3"
 # only on the test runtime classpath: the platform test framework's core jar carries JUnit 4 rules and runners
 junit4 = "4.13.2"
 
