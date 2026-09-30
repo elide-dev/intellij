@@ -7,7 +7,7 @@ intellij-platform = "2.16.0"
 # cannot load
 intellij-target-ide = "2026.1.5"
 intellij-sinceBuild = "253"
-intellij-untilBuild = "262.*"
+intellij-untilBuild = "263.*"
 
 pkl-plugin = "0.37.0"
 # the standard library the Pkl plugin above bundles; see `pkl-stdlib` in the build

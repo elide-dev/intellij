@@ -13,7 +13,9 @@
 
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.jetbrains.intellij.platform.gradle.CustomPluginRepositoryType
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.models.ProductRelease
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
 
 plugins {
@@ -131,6 +133,9 @@ dependencies {
     // `ProjectData` model both of them speak
     bundledModule("intellij.platform.coverage")
     bundledModule("intellij.platform.coverage.agent")
+    // the SM test runner the `elide test` tree is built on; a core class-path jar on the 261 compile target, a content
+    // module of the `intellij.testRunner.plugin` plugin from 262 (see `plugin-smRunner.xml`)
+    bundledModule("intellij.platform.smRunner")
     plugin(id = "org.pkl", version = libs.versions.pkl.plugin.get())
     // the Pkl plugin depends on Markdown; without it the platform refuses to load Pkl in the test IDE, and with it
     // every Pkl-language extension of this plugin (the manifest gutter icons, references and inspections)
@@ -178,6 +183,15 @@ intellijPlatform {
   pluginVerification {
     ides {
       recommended()
+      // `recommended()` only selects released builds, and the top of the supported range -- 2026.3 / 263 -- is still
+      // an EAP; without this it would go unverified until its release, which is after the marketplace starts
+      // handing the plugin to 263 users
+      select {
+        types = listOf(IntelliJPlatformType.IntellijIdeaUltimate)
+        channels = listOf(ProductRelease.Channel.EAP)
+        sinceBuild = "263"
+        untilBuild = "263.*"
+      }
     }
 
     failureLevel = listOf(

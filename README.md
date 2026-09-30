@@ -11,7 +11,7 @@ build and test output, CLI completion for custom run targets, and more.
 
 ## Requirements
 
-- IntelliJ IDEA 2025.3 or newer (builds `253` – `262.*`)
+- IntelliJ IDEA 2025.3 or newer (builds `253` – `263.*`)
 - Elide CLI installed, or a distribution directory selected in project settings
 - Optional: the [Pkl](https://pkl-lang.org) plugin (`org.pkl`) for manifest editor features
 
