@@ -59,8 +59,16 @@
        so the Debug action falls back to offering its installation when it is absent -->
   <depends optional="true" config-file="plugin-nativeDebug.xml">com.intellij.nativeDebug</depends>
 
-  <!-- the coverage engine, runner and LCOV reader behind "Run with Coverage"; a platform module, not a plugin -->
+  <!-- the SM test runner behind the test tree of an `elide test` run. Its classes are on the core class path up to
+       261; 262 moved them into the content module `intellij.platform.smRunner` of the implementation-detail plugin
+       below, and they still reached this plugin through the Kotlin plugin's dependency on that module until 263 made
+       that dependency optional. Declaring the module in `dependencies` instead would refuse to load the plugin on
+       253, where no such module exists, so it is asked for through this optional plugin dependency, which simply
+       does not resolve on the builds that do not need it -->
+  <depends optional="true" config-file="plugin-smRunner.xml">intellij.testRunner.plugin</depends>
+
   <dependencies>
+    <!-- the coverage engine, runner and LCOV reader behind "Run with Coverage"; a platform module, not a plugin -->
     <module name="intellij.platform.coverage"/>
   </dependencies>
 

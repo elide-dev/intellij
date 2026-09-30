@@ -2,7 +2,7 @@
 
 Inventory of the experimental, internal and deprecated IntelliJ Platform APIs the plugin calls, and what each one is
 used for. Builds refer to the range declared by `intellij.sinceBuild` / `intellij.untilBuild` in
-`gradle/libs.versions.toml` (253 to 262). The plugin compiles against the build named by `intellij.target-ide` (261).
+`gradle/libs.versions.toml` (253 to 263). The plugin compiles against the build named by `intellij.target-ide` (261).
 
 Every usage is reported by `./gradlew verifyPlugin` under
 `build/reports/pluginVerifier/IU-<build>/plugins/dev.elide/<version>/`, in `internal-api-usages.txt`,
@@ -51,6 +51,27 @@ Every usage is reported by `./gradlew verifyPlugin` under
 | `CommonProgramParametersPanel(Project)` | from 261 | `ElideNativeImageSettingsEditor` uses the no-arg constructor, which is declared on the whole range |
 | `ExternalSystemAutoImportAware.getAffectedExternalProjectFilePaths` | from 262 | `ElideAutoImportAware` and `ElideManager` declare a matching method without `override` |
 | `AbstractOpenProjectProvider.getProjectDirectory` | internal on the whole range | `ElideOpenProjectProvider.linkProject` derives the project directory from the `VirtualFile` |
+
+## Platform classes that move between class loaders
+
+The SM test runner the `elide test` tree is built on (`SMTRunnerConsoleView`, `SMTestRunnerResultsForm`,
+`GeneralIdBasedToSMTRunnerEventsConvertor`, `TestConsoleProperties` and the `sm.runner.events` types) sits on the core
+class path on 253, is the product module `intellij.platform.smRunner` on 261, and is a content module of the
+`intellij.testRunner.plugin` implementation-detail plugin from 262. Until 262 it reached this plugin's class loader
+through the Kotlin plugin's dependency on it; 263 made that dependency optional, which leaves every class in
+`dev.elide.intellij.execution.test` unresolvable unless the module is asked for.
+
+Naming the module in `plugin.xml`'s `dependencies` is not an option: 253 has no such module and refuses to load a
+plugin that requires one. It is requested instead through an optional dependency on the plugin that owns it, whose
+descriptor `plugin-smRunner.xml` carries the module dependency:
+
+```xml
+<depends optional="true" config-file="plugin-smRunner.xml">intellij.testRunner.plugin</depends>
+```
+
+On 253 and 261 the plugin id does not exist, the dependency is skipped, and the classes are found where they already
+are. `verifyPlugin` reports the missing classes when this wiring breaks, but it models `depends` loosely: it accepts
+module names there that the IDE rejects at run time, so a change to this element has to be tried in a real IDE.
 
 ## Stable alternatives in use
 
