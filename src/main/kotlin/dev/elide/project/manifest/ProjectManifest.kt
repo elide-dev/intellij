@@ -30,10 +30,10 @@ import kotlinx.serialization.json.Json
  * Decoding entrypoint for Elide project manifests.
  *
  * The manifest model in [dev.elide.tooling.manifest] is generated from Elide's published Pkl schema (see
- * `tools/codegen.sh`), and the plugin never evaluates Pkl itself: it runs `elide manifest`, which prints the manifest
- * the CLI resolved as JSON, and decodes that here. The two agree by construction, because the CLI serializes the same
- * generated model with the same configuration -- which is why [ManifestJson] must keep mirroring the CLI's
- * `ManifestCommand`.
+ * `tools/codegen.sh`), and the plugin never evaluates Pkl itself: it runs `elide project export`, which prints the
+ * manifest the CLI resolved as JSON, and decodes that here. The two agree by construction, because the CLI serializes
+ * the same generated model with the same configuration -- which is why [ManifestJson] must keep mirroring the
+ * CLI's `ManifestCommand`.
  */
 object ElideManifests {
   /**
@@ -52,7 +52,7 @@ object ElideManifests {
     serializersModule = Serializers.serializersModule
   }
 
-  /** Decode the JSON output of `elide manifest` into the generated manifest model. */
+  /** Decode the JSON output of `elide project export` (`elide manifest` before 1.6) into the manifest model. */
   @JvmStatic fun parse(input: String): ProjectModule {
     return runCatching { ManifestJson.decodeFromString<ProjectModule>(input) }
       .getOrElse { throw IllegalStateException("Failed to parse Elide project manifest: ${it.message}", it) }

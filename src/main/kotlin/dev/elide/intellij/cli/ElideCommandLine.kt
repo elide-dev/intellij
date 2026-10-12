@@ -160,12 +160,42 @@ suspend fun ElideCommandLine.install(onOutput: ((line: String, stderr: Boolean) 
   invoke(args = args, onOutput = onOutput)
 }
 
+/**
+ * Read the project manifest with `elide project export`, falling back to `elide manifest` on a CLI that predates the
+ * export command (before 1.6). The first attempt's standard error is held back, so a fallback leaves no usage error in
+ * the sync log.
+ */
 suspend fun ElideCommandLine.manifest(
   onOutput: ((line: String, stderr: Boolean) -> Unit)? = null,
 ): ProjectModule {
+  val held = mutableListOf<String>()
+  var fallback = false
+
+  try {
+    return readManifest("project", "export") { line, stderr ->
+      if (stderr) synchronized(held) { held.add(line) } else onOutput?.invoke(line, false)
+    }
+  } catch (cause: ElideCommandFailedException) {
+    if (!cause.isUnknownSubcommand) throw cause
+    fallback = true
+  } finally {
+    if (!fallback) synchronized(held) { held.forEach { onOutput?.invoke(it, true) } }
+  }
+
+  return readManifest("manifest", onOutput = onOutput)
+}
+
+/** Whether the CLI rejected a subcommand it does not have: a usage error (exit `2`) naming it unrecognized. */
+internal val ElideCommandFailedException.isUnknownSubcommand: Boolean
+  get() = exitCode == 2 && "unrecognized subcommand" in stderr
+
+private suspend fun ElideCommandLine.readManifest(
+  vararg args: String,
+  onOutput: ((line: String, stderr: Boolean) -> Unit)?,
+): ProjectModule {
   val output = StringBuilder()
 
-  invoke("manifest") { line, stderr ->
+  invoke(args = args) { line, stderr ->
     onOutput?.invoke(line, stderr)
     if (!stderr) output.append(line)
   }

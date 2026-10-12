@@ -193,6 +193,58 @@ class ElideCommandLineTest {
     assertEquals(listOf("tests"), templates.single().blocks.map { it.id })
   }
 
+  @Test fun `manifest reads project export on Elide 1_6`() {
+    // Elide 1.6 removed `elide manifest`, answering it with a usage error
+    val home = fakeElide(
+      """
+      case "${'$'}1 ${'$'}2" in
+        "project export") echo '$MANIFEST_JSON'; echo "argv: ${'$'}*" >&2 ;;
+        manifest*) echo 'elide manifest: removed; use `elide project export` instead' >&2; exit 2 ;;
+      esac
+      """.trimIndent(),
+    )
+    val stderr = CopyOnWriteArrayList<String>()
+
+    val manifest = runBlocking {
+      ElideCommandLine.at(home).manifest { line, isStderr -> if (isStderr) stderr.add(line.trim()) }
+    }
+
+    assertEquals("demo", manifest.name)
+    assertEquals(listOf("argv: project export"), stderr.toList())
+  }
+
+  @Test fun `manifest falls back to the manifest command on a CLI without project export`() {
+    // how Elide 1.5 answers `elide project export`; the usage error must not reach the sync log
+    val home = fakeElide(
+      """
+      case "${'$'}1 ${'$'}2" in
+        "project export") printf "error: unrecognized subcommand 'export'\n\nUsage: elide project\n" >&2; exit 2 ;;
+        manifest*) echo '$MANIFEST_JSON'; echo "argv: ${'$'}*" >&2 ;;
+      esac
+      """.trimIndent(),
+    )
+    val stderr = CopyOnWriteArrayList<String>()
+
+    val manifest = runBlocking {
+      ElideCommandLine.at(home).manifest { line, isStderr -> if (isStderr) stderr.add(line.trim()) }
+    }
+
+    assertEquals("demo", manifest.name)
+    assertEquals(listOf("argv: manifest"), stderr.toList())
+  }
+
+  @Test fun `manifest reports any other export failure without falling back`() {
+    val home = fakeElide("echo \"Pkl Error: Cannot find module 'elide:nope.pkl'\" >&2; exit 1")
+    val stderr = CopyOnWriteArrayList<String>()
+
+    val failure = assertFailsWith<ElideCommandFailedException> {
+      runBlocking { ElideCommandLine.at(home).manifest { line, isStderr -> if (isStderr) stderr.add(line.trim()) } }
+    }
+
+    assertEquals(listOf("project", "export"), failure.command.drop(1))
+    assertEquals(listOf("Pkl Error: Cannot find module 'elide:nope.pkl'"), stderr.toList())
+  }
+
   @Test fun `cancellation destroys the child process`() {
     val marker = tempDir.resolve("still-running")
     val home = fakeElide("""while true; do echo tick > "$marker"; sleep 0.1; done""")
@@ -211,5 +263,9 @@ class ElideCommandLineTest {
     val lastModified = marker.toFile().lastModified()
     Thread.sleep(500)
     assertEquals(lastModified, marker.toFile().lastModified(), "the CLI process outlived its cancelled call")
+  }
+
+  private companion object {
+    const val MANIFEST_JSON = """{"name":"demo"}"""
   }
 }
