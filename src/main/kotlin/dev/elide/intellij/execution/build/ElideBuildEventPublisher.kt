@@ -17,9 +17,10 @@ import com.intellij.build.FilePosition
 import com.intellij.build.events.BuildEvent
 import com.intellij.build.events.EventResult
 import com.intellij.build.events.MessageEvent
+import com.intellij.build.events.MessageEventResult
+import com.intellij.build.events.impl.AbstractBuildEvent
 import com.intellij.build.events.impl.FailureResultImpl
 import com.intellij.build.events.impl.FinishEventImpl
-import com.intellij.build.events.impl.MessageEventImpl
 import com.intellij.build.events.impl.OutputBuildEventImpl
 import com.intellij.build.events.impl.SkippedResultImpl
 import com.intellij.build.events.impl.StartEventImpl
@@ -299,6 +300,9 @@ internal class ElideBuildEventPublisher(
  * The description stays empty, because the console beside the node is written as output instead: a description is
  * printed as an error whatever the node's severity, and with the colour in it left as text.
  *
+ * It extends [AbstractBuildEvent] rather than `MessageEventImpl`, whose constructor taking an explicit id and time
+ * gained a parameter in 263 and is therefore not declared across the supported range.
+ *
  * @param position Source position the node opens, or `null` for a diagnostic that named no file.
  */
 private class ElideDiagnosticEvent(
@@ -307,9 +311,15 @@ private class ElideDiagnosticEvent(
   eventTime: Long,
   message: String,
   hint: String?,
-  kind: MessageEvent.Kind,
-  group: String,
+  private val kind: MessageEvent.Kind,
+  private val group: String,
   private val position: FilePosition?,
-) : MessageEventImpl(eventId, parentId, eventTime, message, hint, null, kind, group, null) {
+) : AbstractBuildEvent(eventId, parentId, eventTime, message, hint, null), MessageEvent {
+  override fun getKind(): MessageEvent.Kind = kind
+
+  override fun getGroup(): String = group
+
   override fun getNavigatable(project: Project): Navigatable? = position?.let { FileNavigatable(project, it) }
+
+  override fun getResult(): MessageEventResult = MessageEventResult { kind }
 }
