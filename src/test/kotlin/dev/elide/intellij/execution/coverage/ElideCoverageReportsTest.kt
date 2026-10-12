@@ -47,6 +47,17 @@ class ElideCoverageReportsTest {
     assertEquals(listOf(exec), artifacts.exec)
   }
 
+  @Test fun `JVM execution data is found where Elide 1_6 writes it`() {
+    // 1.6 moved the JaCoCo files from `artifacts/coverage` to `reports/coverage`, beside the guest reports
+    val exec = write("reports/coverage/jvm/jvm-test/jvm-test.exec", "not really jacoco")
+    write("reports/coverage/jvm/jvm-test/jvm-test.xml", "<report/>")
+
+    val artifacts = ElideCoverageReports.discover(root)
+
+    assertEquals(listOf(exec), artifacts.exec)
+    assertEquals(emptyList(), artifacts.lcov)
+  }
+
   @Test fun `reports older than the run that asked for them are ignored`() {
     val report = write("reports/coverage/js/lcov.info", "TN:\nSF:/src/app.ts\nDA:1,1\nend_of_record\n")
     report.setLastModifiedTime(FileTime.fromMillis(1_000L))
