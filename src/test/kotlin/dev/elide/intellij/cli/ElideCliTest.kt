@@ -170,7 +170,7 @@ class ElideCliTest {
   @Test fun `project tasks are only offered to the build command`() {
     val info = ElideProjectInfo(buildTasks = listOf(ElideBuildTaskInfo("app", "Package a JAR")))
 
-    assertEquals(listOf("info", "advice"), texts(ElideCliCompletion.tasks(listOf("project"), info)))
+    assertEquals(listOf("info", "advice", "export"), texts(ElideCliCompletion.tasks(listOf("project"), info)))
   }
 
   @Test fun `the options of a named build task are offered alongside the command's own flags`() {

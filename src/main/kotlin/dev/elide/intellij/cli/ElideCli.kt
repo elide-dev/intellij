@@ -427,7 +427,7 @@ object ElideCli {
   /** `elide project`: interrogates the current project. */
   val PROJECT: Command = Command(
     name = "project",
-    positionals = listOf("info", "advice"),
+    positionals = listOf("info", "advice", "export"),
     descriptionKey = "cli.command.project",
   )
 
@@ -447,9 +447,6 @@ object ElideCli {
     flags = listOf(Flag("offline", descriptionKey = "cli.flag.offline")),
     descriptionKey = "cli.command.classpath",
   )
-
-  /** `elide manifest`: prints the parsed project manifest. */
-  val MANIFEST: Command = Command(name = "manifest", descriptionKey = "cli.command.manifest")
 
   /** `elide info`: prints information about the Elide binary in use. */
   val INFO: Command = Command(
@@ -485,7 +482,6 @@ object ElideCli {
     PROJECT,
     PYTHON,
     CLASSPATH,
-    MANIFEST,
     INFO,
   ) + TOOLS
 
