@@ -91,12 +91,13 @@ class ElideProjectDataService : AbstractProjectDataService<ElideProjectData, Pro
     resolved: List<ElideProjectData>,
   ) {
     val root = resolved.find { it.projectPath == projectData.linkedExternalProjectPath } ?: return
-    val members = resolved.filter { it !== root }.map(::projectPojo)
+    val members = resolved.filter { it !== root }.mapTo(ArrayList(), ::projectPojo)
 
     val settings = ExternalSystemApiUtil.getLocalSettings<ElideLocalSettings>(project, Constants.SYSTEM_ID)
     val others = settings.availableProjects.filterKeys { it.path != projectData.linkedExternalProjectPath }
 
-    settings.availableProjects = others + (projectPojo(root) to members)
+    // The platform edits this map in place (`forgetExternalProjects`), so it must be mutable.
+    settings.availableProjects = HashMap(others).apply { put(projectPojo(root), members) }
   }
 
   /** The project [data] describes, named the way Elide names it: by its manifest, else by its directory. */
