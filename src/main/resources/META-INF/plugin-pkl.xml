@@ -47,4 +47,11 @@
                      level="ERROR"
                      implementationClass="dev.elide.intellij.psi.ElideManifestWorkspaceReferenceInspection"/>
   </extensions>
+
+  <!-- `elide:` modules resolve to the bundled schema, and manifests get no Pkl CLI or project-sync banners; both
+       extension points come from the Elide build of the Pkl plugin (0.37.0.1 or newer) -->
+  <extensions defaultExtensionNs="org.pkl">
+    <moduleResolver implementation="dev.elide.intellij.psi.ElidePklModuleResolver"/>
+    <standaloneFiles implementation="dev.elide.intellij.psi.ElideManifestStandaloneFiles"/>
+  </extensions>
 </idea-plugin>

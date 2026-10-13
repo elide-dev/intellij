@@ -26,6 +26,7 @@ import com.intellij.openapi.util.SystemInfoRt
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
 import dev.elide.intellij.Constants
+import java.io.File
 import java.util.Locale
 
 /**
@@ -105,6 +106,15 @@ class ElideCoverageEngine : CoverageEngine() {
 
     return setOf(if (SystemInfoRt.isWindows) path.lowercase(Locale.ROOT) else path)
   }
+
+  /**
+   * The editor's gutter asks for a file's records by "output file": the platform's default output of a source file is
+   * the file itself, and its default name for that output is none at all, which left the editor without coverage
+   * marks. The name is the source path, as in [getQualifiedNames].
+   */
+  @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+  public override fun getQualifiedName(outputFile: File, sourceFile: PsiFile): String? =
+    getQualifiedNames(sourceFile).firstOrNull()
 
   override fun coverageProjectViewStatisticsApplicableTo(fileOrDir: VirtualFile): Boolean = !fileOrDir.isDirectory
 

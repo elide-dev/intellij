@@ -2,23 +2,64 @@
 @ModuleInfo { minPklVersion = "0.28.1" }
 module elide.sources
 
+import "Base.pkl" as common
+
 /// Path or glob for a source file.
 typealias SourceGlobOrPath = String
 
 /// Types of source sets.
 typealias SourceSetType = "source" | "test" | "example" | "other"
 
+/// A directory (or single file) of files carried verbatim into whatever a source set produces.
+///
+/// Declaring resources here says they belong to *this* source set, and so travel wherever its
+/// output travels; what that means is the consuming toolchain's to decide — a JVM build puts them
+/// on the classpath entry and into JARs built from the set, a bundler would copy them beside its
+/// output. Files a project ships on their own terms, attached to nothing a source set builds, are
+/// better declared as their own source set than as resources of one.
+///
+/// `from` is read relative to the project root; `into` is the prefix the contents take inside that
+/// output, so `into = "META-INF"` publishes `<from>/services/…` as `META-INF/services/…`. The
+/// default, the empty string, publishes the contents at the output's root.
+class ResourceRoot {
+  /// Directory or file holding the resources, relative to the project root.
+  from: common.FilePath(!isEmpty)
+
+  /// Prefix the contents take in the build's output; empty places them at the root.
+  into: String = ""
+}
+
+/// Resource declaration: a structural [ResourceRoot], or a path published at the output root.
+typealias ResourceEntry = ResourceRoot | common.FilePath
+
 /// Describes a single named group, or set, of source code files.
+///
+/// Every property is optional: a source set that declares none takes the conventional layout of
+/// its name — `src/<name>` (with `src/<name>/<language>` roots honored when present, and
+/// `src/<name>/resources` as its resources), falling back to `src` for `main` and `test`/`tests`
+/// for `test`. Declaring a property replaces the convention for that property alone, so a project
+/// that only moves its sources keeps conventional resources.
 open class SourceSetSpec {
-  /// The type of source set.
-  type: SourceSetType = "source"
+  /// The type of source set; inferred from the name when absent (`test`/`tests` are test source
+  /// sets, `example`/`examples` example source sets, anything else a source set).
+  type: SourceSetType?
 
-  /// Dependencies of this source set; declarations from dependencies will be
-  /// visible to sources in this source set.
-  dependsOn: Listing<SourceSetName> = new {}
+  /// Dependencies of this source set; declarations from dependencies will be visible to sources in
+  /// this source set. Absent means the convention: a test or example source set sees `main`, and
+  /// `main` sees nothing. An empty listing declares that this source set sees nothing.
+  dependsOn: Listing<SourceSetName>?
 
-  /// Paths of source files to enclose.
+  /// Paths or globs of source files to enclose; empty takes the conventional layout for the name.
   paths: Listing<SourceGlobOrPath> = new {}
+
+  /// Files carried with this source set's output; empty takes the conventional layout
+  /// (`src/<name>/resources`, when it exists). See [ResourceRoot] for what "carried" means.
+  ///
+  /// An entry is a bare path or a structural root; the latter needs no type name, since an element
+  /// amended in place (`new { from = "assets"; into = "static" }`) takes this listing's default.
+  resources: Listing<ResourceEntry> = new {
+    default = (_) -> new ResourceRoot { from = "" }
+  }
 }
 
 /// Source set names are simple strings.
@@ -28,4 +69,7 @@ typealias SourceSetName = String
 typealias SourceSet = SourceSetSpec | SourceGlobOrPath
 
 /// Top-level container for project source code configurations.
+///
+/// A project that declares no source set at all still has the ones its layout implies; declaring
+/// one by name replaces the convention for that name only.
 typealias Sources = Mapping<SourceSetName, SourceSet>

@@ -72,7 +72,7 @@ if [[ -n "$SCHEMA_DIR" ]]; then
   fi
 elif [[ -z "$SCHEMA_BASE" ]]; then
   if [[ -z "$SCHEMA_VERSION" ]]; then
-    SCHEMA_VERSION="$(sed -n 's/^[[:space:]]*"elideVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    SCHEMA_VERSION="$(sed -n 's/^[[:space:]]*"\(elide\|schema\)Version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\2/p' \
       "$GENERATED_DIR/schema.json")"
   fi
   if [[ -z "$SCHEMA_VERSION" ]]; then

@@ -12,7 +12,7 @@ abstract class Artifact {
 }
 
 /// Name of a project within a workspace.
-typealias ProjectName = String(matches(Regex(#"^[^\s:]+$"#)))
+typealias ProjectName = String(matches(Regex(#"^[^\s:/\\]+$"#)), this != ".", this != "..")
 
 /// An artifact built by another project of the same workspace, consumed by this one.
 ///
@@ -25,8 +25,17 @@ class ProjectArtifact {
   /// Artifact declared by that project; omit when it declares exactly one usable artifact.
   artifact: ArtifactName?
 
+  /// Whether this project compiles as a *friend* of the referenced artifact: the sibling's Kotlin
+  /// `internal` declarations are visible to it. Only meaningful where this project compiles Kotlin
+  /// and only for a reference in a compile bucket (`packages`, `modules`, `compileOnly`,
+  /// `testPackages`); friendship is not transitive.
+  friend: Boolean = false
+
   /// This reference, narrowed to the artifact [name] of the same project.
   function artifact(name: ArtifactName): ProjectArtifact = (this) { artifact = name }
+
+  /// This reference, marked as a friend: the sibling's Kotlin `internal` declarations are visible.
+  function friend(): ProjectArtifact = (this) { friend = true }
 }
 
 /// Holds artifact configurations for a given project.

@@ -18,6 +18,7 @@ import com.intellij.testFramework.junit5.fixture.projectFixture
 import com.intellij.testFramework.junit5.fixture.psiFileFixture
 import com.intellij.testFramework.junit5.fixture.sourceRootFixture
 import com.intellij.testFramework.junit5.fixture.tempPathFixture
+import java.io.File
 import kotlin.io.path.writeText
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -52,5 +53,15 @@ class ElideCoverageSuiteTest {
 
     assertEquals(3, fileCoverage.getLineData(1).hits)
     assertEquals(0, fileCoverage.getLineData(2).hits)
+  }
+
+  /** The editor gutter looks a file up through its "output", which by default is the source file itself. */
+  @Suppress("DEPRECATION")
+  @Test fun `the gutter finds a file's records through its output path`() {
+    val sourceFile = sourceFileFixture.get()
+    val path = assertNotNull(sourceFile.virtualFile).path
+    val engine = ElideCoverageEngine()
+
+    assertEquals(engine.getQualifiedNames(sourceFile).single(), engine.getQualifiedName(File(path), sourceFile))
   }
 }
