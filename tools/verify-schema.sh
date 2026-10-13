@@ -48,7 +48,7 @@ SCHEMA_INDEX="$ROOT/src/main/kotlin/dev/elide/tooling/manifest/schema.json"
 
 if [[ -z "$SCHEMA_BASE" ]]; then
   if [[ -z "$SCHEMA_VERSION" ]]; then
-    SCHEMA_VERSION="$(sed -n 's/^[[:space:]]*"elideVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$SCHEMA_INDEX")"
+    SCHEMA_VERSION="$(sed -n 's/^[[:space:]]*"\(elide\|schema\)Version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\2/p' "$SCHEMA_INDEX")"
   fi
   if [[ -z "$SCHEMA_VERSION" ]]; then
     echo "error: no schema version; pass --version <elide-version> or --schema <base-url>" >&2

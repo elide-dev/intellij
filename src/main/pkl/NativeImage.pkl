@@ -121,8 +121,8 @@ open class NativeImageOptions {
 /// Configures Native Image generation settings, project-wide.
 class NativeImageSettings extends NativeImageOptions {}
 
-/// Describes a Native Image artifact within an Elide project.
-class NativeImage extends _artifacts.Artifact {
+/// Common inputs and compiler options for Native Image and Web Image artifacts.
+abstract class NativeImageArtifact extends _artifacts.Artifact {
   /// Artifacts from which to build the Native Image.
   from: Listing<_artifacts.ArtifactName> = new {}
 
@@ -133,12 +133,36 @@ class NativeImage extends _artifacts.Artifact {
   /// `moduleName` field.
   entrypoint: String?
 
-  /// Type of image to produce. Defaults to "binary".
-  type: ImageType = "binary"
-
   /// Module where the entrypoint class is located, if applicable.
   moduleName: String?
 
   /// Options which apply to this artifact only.
   options: NativeImageOptions = new {}
+}
+
+/// Describes a Native Image artifact within an Elide project.
+class NativeImage extends NativeImageArtifact {
+  /// Type of image to produce. Defaults to "binary".
+  type: ImageType = "binary"
+}
+
+/// WebAssembly memory model used by Web Image.
+typealias WebImageBackend = "wasm-gc" | "wasm-lm"
+
+/// JavaScript host supported by the generated bundle; generic supports both browser and Node APIs.
+typealias WebImageRuntime = "generic" | "browser" | "node"
+
+/// Compiles JVM code to a JavaScript loader and its companion WebAssembly module.
+class WebImage extends NativeImageArtifact {
+  /// WASM-GC uses the host garbage collector; WASM-LM uses linear memory.
+  backend: WebImageBackend = "wasm-gc"
+
+  /// JavaScript runtime to target. This does not select a WASI or provider-specific ABI.
+  runtime: WebImageRuntime = "generic"
+
+  /// Automatically start the VM when the generated JavaScript is loaded.
+  autoRun: Boolean = true
+
+  /// Generate a source map alongside the JavaScript loader.
+  sourceMap: Boolean = false
 }

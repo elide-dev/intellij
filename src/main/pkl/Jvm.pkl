@@ -6,7 +6,6 @@ import "Artifacts.pkl" as artifacts
 import "Base.pkl" as common
 import "Java.pkl" as _java
 import "Sources.pkl" as sources
-import "Testing.pkl" as testing
 
 /// JVM target levels as integers.
 typealias JvmTargetLevel = "latest" | "stable" | "auto" | Float(1.8) | Float(1.9) | Int8(isBetween(8, 29))
@@ -47,12 +46,6 @@ typealias JarManifestValue = String
 /// Class name for a JVM class, which is a string.
 typealias JvmClass = String
 
-/// Describes a source set containing JVM (Java/Kotlin) sources.
-class JvmSourceSetSpec extends sources.SourceSetSpec {
-  /// Resources to be included in JVM artifacts built from this source set.
-  resources: Mapping<common.FilePath, common.FilePath> = new {}
-}
-
 /// Options which apply to JARs.
 class JarOptions {
   /// Whether to apply compression.
@@ -65,12 +58,6 @@ class JarOptions {
   entrypoint: String?
 }
 
-/// Abstract definition of a JAR resource.
-abstract class JarResource {
-  /// File path to be mounted as a resource within the JAR.
-  path: common.FilePath
-}
-
 /// Describes a JAR output artifact.
 open class Jar extends artifacts.Artifact {
   /// Filename for the resulting JAR.
@@ -79,15 +66,14 @@ open class Jar extends artifacts.Artifact {
   /// Optional main class for this JAR, added to the manifest automatically
   main: String? = null
 
-  /// Which source set to build this JAR from.
-  sources: Listing<sources.SourceSetName> = new {
-    default {
-      "main"
-    }
-  }
+  /// Which source sets to build this JAR from; empty packages every non-test source set.
+  sources: Listing<sources.SourceSetName> = new {}
 
-  /// Which resources to add to the JAR.
-  resources: Mapping<common.FilePath, common.FilePath> = new {}
+  /// Resources to add to the JAR on top of those its source sets ship; same shape as a source
+  /// set's own, including the in-place `new { from = …; into = … }` form.
+  resources: Listing<sources.ResourceEntry> = new {
+    default = (_) -> new sources.ResourceRoot { from = "" }
+  }
 
   /// Keys and values to include in the JAR's manifest.
   manifest: Mapping<JarManifestKey, JarManifestValue> = new {}
@@ -104,12 +90,8 @@ open class Jar extends artifacts.Artifact {
 
 /// Describes a sources JAR artifact that packages source files.
 open class SourceJar extends artifacts.Artifact {
-  /// Which source set to build this JAR from.
-  sources: Listing<sources.SourceSetName> = new {
-    default {
-      "main"
-    }
-  }
+  /// Which source sets to package sources from; empty takes every non-test source set.
+  sources: Listing<sources.SourceSetName> = new {}
 
   /// Classifier for the JAR (e.g., "sources" or "no-tzdb-sources").
   classifier: String?
@@ -123,12 +105,8 @@ open class SourceJar extends artifacts.Artifact {
 
 /// Describes a Javadoc JAR artifact that generates and packages documentation.
 open class JavadocJar extends artifacts.Artifact {
-  /// Which source set to build this JAR from.
-  sources: Listing<sources.SourceSetName> = new {
-    default {
-      "main"
-    }
-  }
+  /// Which source sets to document; empty takes every non-test source set.
+  sources: Listing<sources.SourceSetName> = new {}
 
   /// Package groupings for the Javadoc (title -> packages).
   groups: Mapping<String, Listing<String>> = new {}
@@ -144,6 +122,67 @@ open class JavadocJar extends artifacts.Artifact {
 
   /// Title for the documentation.
   docTitle: String?
+}
+
+/// Archive formats a JVM application distribution can be packaged as.
+typealias ApplicationArchive = "zip" | "tar"
+
+/// Name of an application distribution: a file name that also names a directory, so the two
+/// relative path names are out — the build wipes and rewrites the directory it resolves to.
+typealias ApplicationName = common.FileName(this != ".", this != "..")
+
+/// A directory within a distribution: `/`-separated segments, none of them `.` or `..`, and never
+/// absolute, so what it names stays inside the tree the archives carry.
+typealias DistributionDirectory = String(
+  matches(Regex(#"^[^\\/:*?"<>|\r\n]+(/[^\\/:*?"<>|\r\n]+)*$"#)),
+  !split("/").contains("."),
+  !split("/").contains("..")
+)
+
+/// Options which apply to a JVM application distribution.
+class JvmApplicationOptions {
+  /// Whether to generate the POSIX shell start script.
+  unixStartScript: Boolean = true
+
+  /// Whether to generate the Windows batch start script.
+  windowsStartScript: Boolean = true
+
+  /// Archives to build from the installed distribution, alongside it.
+  archives: Listing<ApplicationArchive> = new {}
+}
+
+/// Describes a runnable, self-contained JVM application.
+///
+/// The artifact installs a distribution tree — start scripts under [executableDir], every runtime
+/// JAR under `lib/` — and, when [JvmApplicationOptions.archives] asks for them, `zip`/`tar.gz`
+/// archives of that tree. This mirrors Gradle's `application` plugin: `installDist`, `startScripts`
+/// and `distZip`/`distTar` in one artifact.
+open class JvmApplication extends artifacts.Artifact {
+  /// JAR artifacts making up the application's own code; empty packages this project's default JAR
+  /// artifacts.
+  from: Listing<artifacts.ArtifactName> = new {}
+
+  /// Name of the application: the distribution directory and the start-script filenames. Defaults
+  /// to the artifact's name.
+  name: ApplicationName?
+
+  /// Main class the start scripts launch. Defaults to the project's `jvm.main`.
+  entrypoint: JvmClass?
+
+  /// JVM options baked into the generated start scripts.
+  defaultJvmArgs: Listing<String> = new {}
+
+  /// Directory within the distribution holding the start scripts.
+  executableDir: DistributionDirectory = "bin"
+
+  /// Extra files copied into the distribution root; same shape as a source set's resources,
+  /// including the in-place `new { from = …; into = … }` form.
+  contents: Listing<sources.ResourceEntry> = new {
+    default = (_) -> new sources.ResourceRoot { from = "" }
+  }
+
+  /// Options for the distribution.
+  options: JvmApplicationOptions = new {}
 }
 
 /// Base coordinate specification for a Maven package.
@@ -180,6 +219,12 @@ class MavenRepositoryCredentials {
 
   /// Password used for authentication with the remote repository.
   password: String? = null
+
+  /// NTLM domain; setting either NTLM field selects connection-bound NTLM authentication.
+  ntlmDomain: String? = null
+
+  /// NTLM workstation name, when required by the repository.
+  ntlmWorkstation: String? = null
 }
 
 /// Describes a Maven repository to include when resolving dependencies.
@@ -255,6 +300,19 @@ class MavenDependencies {
     default = (_) -> new MavenPackageSpec {}
   }
 
+  /// Local files which stand in for Maven coordinates on every classpath that would carry them.
+  ///
+  /// The coordinate is resolved and downloaded as usual — its version, its place in the graph and
+  /// its transitive dependencies are unchanged — but the artifact handed to compiles, the runtime,
+  /// annotation processors and tests is the file named here. This is how a patched or stripped copy
+  /// of a published artifact is used without dropping the coordinate from the graph.
+  ///
+  /// A key of `group:artifact` matches every version; `group:artifact:version` matches one. Paths
+  /// are resolved against the directory of the manifest declaring them, and a workspace member sees
+  /// its workspace root's substitutions under its own. A file produced by the build needs the task
+  /// that writes it ordered ahead of whatever reads the classpath.
+  substitutions: Mapping<MavenCoordinate, common.FilePath> = new {}
+
   /// A suite of extra Maven repositories.
   repositories: Mapping<String, MavenRepository> = new {
     default = (repo) -> new MavenRepositorySpec {
@@ -325,6 +383,9 @@ class JvmFeatures {
 
   /// Whether auto-modules are enabled (JDK 9+ modulepath handling).
   automodules: Boolean = true
+
+  /// Provide GraalVM SDK APIs (`org.graalvm.nativeimage`, `word`, `collections`) at compile time.
+  graalvm: Boolean = false
 }
 
 /// Controls settings relating to the Java language.
@@ -368,41 +429,3 @@ class JvmSettings {
   /// Controls whether debug info (`-g`) is emitted during compilation. Defaults to true.
   debug: Boolean = true
 }
-
-abstract class JvmCoverageReport extends testing.CoverageReport
-
-/// Coverage report in HTML format.
-class HtmlCoverageReport extends JvmCoverageReport {
-  name = "html"
-}
-
-/// Coverage report in XML format.
-class XmlCoverageReport extends JvmCoverageReport {
-  name = "xml"
-}
-
-/// Coverage report in CSV format.
-class CsvCoverageReport extends JvmCoverageReport {
-  name = "csv"
-}
-
-/// Structured settings for configuring test coverage.
-class JvmCoverageSettings {
-  /// Whether coverage is active. Off by default: enable it here, or pass `--coverage`.
-  enabled: Boolean = false
-
-  /// Coverage reports to be generated.
-  reports: Listing<JvmCoverageReport> = new {}
-}
-
-/// Creates a new empty JVM source set.
-function sourceSet() = new JvmSourceSetSpec { }
-
-/// Configures a new default HMTL coverage report
-function htmlReport() = new HtmlCoverageReport { }
-
-/// Configures a new default XML coverage report
-function xmlReport() = new XmlCoverageReport { }
-
-/// Configures a new default CSV coverage report
-function csvReport() = new CsvCoverageReport { }

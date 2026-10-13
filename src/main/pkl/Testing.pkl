@@ -2,7 +2,6 @@
 @ModuleInfo { minPklVersion = "0.28.1" }
 module elide.testing
 
-import "Jvm.pkl" as jvm
 /// Abstract type specifying a test report.
 abstract class TestReport {
   /// Name for this report; typically the format name by default.
@@ -17,36 +16,8 @@ class XmlTestReport extends TestReport {
 /// Configures a default XML test report.
 function xmlReport() = new XmlTestReport { }
 
-
-/// Abstract type specifying a coverage report.
-abstract class CoverageReport {
-  /// Name for this report; typically the format name by default.
-  name: String
-}
-
-/// Settings for guest JavaScript/TypeScript test coverage.
-class JsCoverageSettings {
-  /// Whether guest coverage is collected. Off by default: enable it here, or pass `--coverage`.
-  enabled: Boolean = false
-
-  /// Source roots to report coverage for; empty reports everything under the project root.
-  paths: Listing<String> = new {}
-}
-
-/// Settings for test coverage in supported ecosystems.
-class CoverageSettings {
-  /// Configure JVM test coverage settings.
-  jvm: jvm.JvmCoverageSettings = new {}
-
-  /// Configure guest JavaScript/TypeScript coverage settings.
-  js: JsCoverageSettings = new {}
-}
-
 /// DSL root type where test settings and configuration are mounted.
 class Testing {
-  /// Settings which govern coverage support; collection stays off until enabled per ecosystem.
-  coverage: CoverageSettings = new {}
-
   /// Machine-readable test reports requested from each supported language runner.
   reports: Listing<TestReport> = new {}
 }

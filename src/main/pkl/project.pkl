@@ -5,6 +5,7 @@ module elide.project
 import "pkl:semver" as _semver
 import "Artifacts.pkl" as _artifacts
 import "Base.pkl" as _common
+import "Coverage.pkl" as _coverage
 import "Dev.pkl" as _dev
 import "Engine.pkl" as _engine
 import "JavaScript.pkl" as _js
@@ -290,7 +291,8 @@ dependencies: Dependencies = new {}
 /// ```
 ///
 /// Declaring the reference in place takes the qualified call, `module.project("core")`, and the
-/// underlying `Artifacts.ProjectArtifact` can always be constructed by hand instead.
+/// underlying `Artifacts.ProjectArtifact` can be constructed by hand after
+/// `import "elide:Artifacts.pkl" as Artifacts`.
 const function project(name: _artifacts.ProjectName): _artifacts.ProjectArtifact = new {
   project = name
 }
@@ -319,13 +321,13 @@ engine: _engine.EngineSettings?
 //
 
 /// Top-level project sources definition.
+///
+/// Left empty, a project's source sets are the ones its layout implies: `src/main` (or `src`) as
+/// `main`, `src/test` (or `test`) as `test`, with `src/<name>/<language>` roots and
+/// `src/<name>/resources` honored when present. Declaring a name here replaces the convention for
+/// that name; see `elide:Sources.pkl`.
 sources: _srcs.Sources = new {
-  default = (name) -> new _srcs.SourceSetSpec {
-    type = if (name == "test") "test" else "source"
-    dependsOn = if (name == "main") new {} else new { "main" }
-  }
-  ["main"] = "src/**.*"
-  ["test"] = "test/**.*"
+  default = (_) -> new _srcs.SourceSetSpec {}
 }
 
 /// Development settings for this project.
@@ -343,10 +345,13 @@ web: _web.WebSettings? = new {}
 /// Settings for testing features
 testing: _testing.Testing = new {}
 
+/// Coverage settings for this project, applied to whichever tasks `coverage.scope` names.
+coverage: _coverage.CoverageSettings = new {}
+
 /// Workspace settings: the member projects this project is the root of.
 class WorkspaceSettings {
   /// Directories of member projects, relative to this manifest's directory; each holds its own `elide.pkl`.
-  members: Listing<String>(isDistinct) = new {}
+  members: Listing<_common.FilePath>(isDistinct) = new {}
 }
 
 /// Workspace settings for this project, when it is the root of a multi-project workspace.

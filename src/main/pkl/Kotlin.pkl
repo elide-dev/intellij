@@ -75,10 +75,6 @@ class KotlinCompilerJvmOptions extends KotlinCompilerOptions {
 
 /// Specifies Kotlin-related features and options within Elide.
 class KotlinFeatureOptions {
-  /// Deprecated: KAPT is retired. This property is accepted for backward compatibility but is
-  /// ignored — annotation processing now runs under `javac` after the Kotlin compile.
-  kapt: Boolean = true
-
   /// Whether to enable Kotlin's test support features.
   testing: Boolean = true
 

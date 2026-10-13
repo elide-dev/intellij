@@ -1,13 +1,11 @@
 {
-  "manifestVersion": 2,
-  "elideVersion": "1.5.4",
+  "schemaVersion": "1.6.0",
   "minPklVersion": "0.28.1",
-  "entrypoint": "/v2/project.pkl",
-  "source": "checkout",
+  "entrypoint": "/1.6.0/project.pkl",
   "modules": {
     "Artifacts.pkl": {
-      "bytes": 1225,
-      "sha256": "b3d282bfb9a80388be03bfba9822ee1f05c513047549f11c97dadca3f676f048"
+      "bytes": 1789,
+      "sha256": "7963aca1b840846d44de8dc1794a59e1b41f6bf2e8252b0f774de45292e8b525"
     },
     "Base.pkl": {
       "bytes": 1829,
@@ -17,13 +15,17 @@
       "bytes": 1644,
       "sha256": "696d3dc4b36c74209a927838b387ce5666a8dab94c168d0cb90c668f1922bdb5"
     },
+    "Coverage.pkl": {
+      "bytes": 2580,
+      "sha256": "c48721f268c759f014f2acf18a5f7a3b4b2ebe140013084f2f2787dc6c110180"
+    },
     "Dev.pkl": {
       "bytes": 1633,
       "sha256": "6963a482f47b013a066780f97d77074f67e3e3562f721f6a0c994f075d1f7a4e"
     },
     "Engine.pkl": {
-      "bytes": 405,
-      "sha256": "172f5b3de976fa702553b769490dbdf6dc574fbfc0ca7af424263b2551e1d0de"
+      "bytes": 1259,
+      "sha256": "721d07d5fbb7bd5eafa3da8dfcac0103f438585c2867a5016c4c2c3d3c4205c7"
     },
     "Java.pkl": {
       "bytes": 599,
@@ -34,28 +36,24 @@
       "sha256": "fd663436b3b606f973288591cc34a26edb95ae483b3ee9a32ca5022d6e6adf03"
     },
     "Jvm.pkl": {
-      "bytes": 13074,
-      "sha256": "36f62e4204ca3e6bc6d93418a5ea8030094f6324b5f589ffb1f43ca260758ed7"
+      "bytes": 15612,
+      "sha256": "98ee672f2e596b6bc1022dd718d1113fd56faf9e2194e92e26b76bfd65b6c4bd"
     },
     "Kotlin.pkl": {
-      "bytes": 5428,
-      "sha256": "138ae601517015c43103c5e56b23d2ec57e9b9f6d71fd689dd8438ef2c8e3f37"
+      "bytes": 5220,
+      "sha256": "966ef34950a6b0fc3ac08601ebe64a587735517637515d81ba65b8c23b516b84"
     },
     "NativeImage.pkl": {
-      "bytes": 4706,
-      "sha256": "3c9d963a0421a013581d5e0f9d802c4bf3c727ce6b50518fcb383cf6bf2c792c"
-    },
-    "project.pkl": {
-      "bytes": 12893,
-      "sha256": "0c02f299af4e2a8e0f6caa47f08ff85ae8ea3bc5797be1d6f460d10de70dac86"
+      "bytes": 5680,
+      "sha256": "ae41882839e393355f11a06a1702f7333454ec071cc8548ce68a85bbabab04b0"
     },
     "Sources.pkl": {
-      "bytes": 1005,
-      "sha256": "1b5713b14a6f97ad64e2b149b400bfb8de515e7b3b0eed3f6876c579673f84df"
+      "bytes": 3723,
+      "sha256": "88e96ecfc7af416f3df52c4e2cf69896db312d705dcc331f7b96a7eba42a6637"
     },
     "Testing.pkl": {
-      "bytes": 1634,
-      "sha256": "c768d6702eae79c4a4edb75640f7ef8abb49355b84b37e217eac0aae9028c14b"
+      "bytes": 703,
+      "sha256": "5cb9a02e6d0ac096c833281f9a5e51d94a2cc49493907cc697f135e9776e0269"
     },
     "Toolchain.pkl": {
       "bytes": 1023,
@@ -64,6 +62,10 @@
     "Web.pkl": {
       "bytes": 2303,
       "sha256": "06fe6b4f42af39b216970827e59da43b9ed21e8247622fa6968adee66019ea36"
+    },
+    "project.pkl": {
+      "bytes": 13271,
+      "sha256": "7b58ffd7f8f345c62dcd7e23e872ead6475508df3a644324bd72fd6aa9be24e5"
     }
   }
 }
