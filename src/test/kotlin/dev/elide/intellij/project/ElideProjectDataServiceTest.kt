@@ -86,6 +86,15 @@ class ElideProjectDataServiceTest {
     assertEquals(listOf(ROOT), project.elideProjectIndex.entries.map { it.key })
   }
 
+  @Test fun `the platform can forget a synced project`() {
+    import(workspaceNodes())
+
+    val settings = ExternalSystemApiUtil.getLocalSettings<ElideLocalSettings>(projectFixture.get(), Constants.SYSTEM_ID)
+    settings.forgetExternalProjects(setOf(ROOT))
+
+    assertEquals(emptyMap(), settings.availableProjects)
+  }
+
   private companion object {
     private const val ROOT = "/projects/logstat"
     private const val MEMBER = "$ROOT/cli"
