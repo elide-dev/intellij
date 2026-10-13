@@ -5,6 +5,15 @@ All notable changes to the Elide plugin for JetBrains IDEs are documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2](https://github.com/elide-dev/intellij/compare/v0.9.1...v0.9.2) (2026-10-13)
+
+
+### Fixed
+
+* find jvm coverage where elide 1.6 writes it ([#27](https://github.com/elide-dev/intellij/issues/27)) ([8a0cad1](https://github.com/elide-dev/intellij/commit/8a0cad15ecb06edcc5b5f383ca3c4e11bd4938ea))
+* publish build diagnostics on intellij 263 ([#26](https://github.com/elide-dev/intellij/issues/26)) ([e5892b8](https://github.com/elide-dev/intellij/commit/e5892b8be6a731c7b0ada382c8e59d63c4ed404f))
+* sync with elide project export, falling back to elide manifest ([#25](https://github.com/elide-dev/intellij/issues/25)) ([676889c](https://github.com/elide-dev/intellij/commit/676889ca04c2de91ca3bc09d295137825931720d))
+
 ## [0.9.1](https://github.com/elide-dev/intellij/compare/v0.9.0...v0.9.1) (2026-09-24)
 
 
