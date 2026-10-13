@@ -69,13 +69,18 @@ internal object ElideCoverageReports {
    *
    * The threshold is what keeps a run that produced no coverage of its own from attaching the report of an earlier
    * one: the files stay in the output directory until the next `--coverage` run overwrites them.
+   *
+   * JaCoCo execution files are looked for under both coverage directories: Elide 1.6 writes them under
+   * [REPORTS_DIR] beside the guest reports, while earlier releases wrote them under [ARTIFACTS_DIR].
    */
   fun discover(projectRoot: Path, modifiedSince: Long = 0L): Artifacts {
     val output = projectRoot.resolve(Constants.OUTPUT_DIR)
+    val reports = output.resolve(REPORTS_DIR).resolve(COVERAGE_DIR)
+    val artifacts = output.resolve(ARTIFACTS_DIR).resolve(COVERAGE_DIR)
 
     return Artifacts(
-      lcov = files(output.resolve(REPORTS_DIR).resolve(COVERAGE_DIR), modifiedSince) { it.name == LCOV_NAME },
-      exec = files(output.resolve(ARTIFACTS_DIR).resolve(COVERAGE_DIR), modifiedSince) { it.extension == EXEC_EXT },
+      lcov = files(reports, modifiedSince) { it.name == LCOV_NAME },
+      exec = listOf(reports, artifacts).flatMap { dir -> files(dir, modifiedSince) { it.extension == EXEC_EXT } },
     )
   }
 
@@ -205,7 +210,7 @@ internal object ElideCoverageReports {
   /** Directory under the project output holding the reports the CLI writes for humans and tools. */
   private const val REPORTS_DIR = "reports"
 
-  /** Directory under the project output holding build artifacts, including JaCoCo execution data. */
+  /** Directory under the project output holding build artifacts, including JaCoCo execution data before Elide 1.6. */
   private const val ARTIFACTS_DIR = "artifacts"
 
   /** Directory holding coverage under both [REPORTS_DIR] and [ARTIFACTS_DIR]. */
