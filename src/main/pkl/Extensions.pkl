@@ -1,0 +1,38 @@
+/// Describes build extensions packaged by this project.
+@ModuleInfo { minPklVersion = "0.28.1" }
+module elide.extensions
+
+import "Artifacts.pkl" as _artifacts
+import "Base.pkl" as _common
+
+/// Declares an Elide build extension, packaged as an `.elx` archive.
+class ExtensionArchive extends _artifacts.Artifact {
+  /// JavaScript or TypeScript module whose default export declares the extension's tasks, relative
+  /// to the project root; packaged as the archive's entrypoint.
+  entrypoint: _common.FilePath
+
+  /// Name the package describes itself by; defaults to the project's own name.
+  name: String?
+
+  /// Version the package describes itself by; defaults to the project's own version.
+  version: _common.SemanticVersion?
+
+  /// Description of what the extension does; defaults to the project's own description.
+  description: String?
+
+  /// SPDX identifier of the license the extension is distributed under.
+  license: String?
+
+  /// Source repository the extension is developed in.
+  repository: String?
+
+  /// Homepage documenting the extension.
+  homepage: String?
+
+  /// Who authors the extension.
+  authors: Listing<String> = new {}
+
+  /// Sources packaged beside the entrypoint, as paths or glob patterns relative to the project
+  /// root. The entrypoint itself is always packaged.
+  srcs: Listing<String> = new {}
+}

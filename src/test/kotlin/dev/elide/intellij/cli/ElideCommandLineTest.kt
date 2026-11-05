@@ -14,6 +14,7 @@ package dev.elide.intellij.cli
 
 import dev.elide.intellij.ElideCommandFailedException
 import dev.elide.intellij.InvalidElideHomeException
+import dev.elide.intellij.project.model.ElideClasspathUsage
 import java.io.File
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
@@ -245,6 +246,63 @@ class ElideCommandLineTest {
     assertEquals(listOf("Pkl Error: Cannot find module 'elide:nope.pkl'"), stderr.toList())
   }
 
+  @Test fun `batched classpaths retain usage and resolve project relative entries`() {
+    val home = fakeElide("""echo '{"main:compile":["libs/a.jar"],"main:provided":["platform/android.jar"]}'""")
+    val compile = "main" to ElideClasspathUsage.COMPILE
+    val provided = "main" to ElideClasspathUsage.PROVIDED
+    val answers = runBlocking {
+      ElideCommandLine.at(home, tempDir).classpaths(listOf(compile, provided))
+    }
+    assertEquals(listOf(tempDir.resolve("libs/a.jar").toString()), answers.getValue(compile).entries)
+    assertEquals(listOf(tempDir.resolve("platform/android.jar").toString()), answers.getValue(provided).entries)
+    assertEquals(ElideClasspathUsage.PROVIDED, answers.getValue(provided).usage)
+  }
+
+  @Test fun `only unsupported JSON option falls back to individual classpath queries`() {
+    val home = fakeElide(
+      """
+      if [ "${'$'}2" = "--json" ]; then
+        echo "error: unexpected argument '--json' found" >&2
+        exit 2
+      fi
+      echo "libs/fallback.jar"
+      """.trimIndent(),
+    )
+    val query = "main" to ElideClasspathUsage.COMPILE
+    val answers = runBlocking { ElideCommandLine.at(home, tempDir).classpaths(listOf(query)) }
+    assertEquals(listOf(tempDir.resolve("libs/fallback.jar").toString()), answers.getValue(query).entries)
+  }
+
+  @Test fun `missing batch answer fails sync rather than silently importing an empty classpath`() {
+    val home = fakeElide("""echo '{"main:compile":[]}'""")
+    assertFailsWith<IllegalStateException> {
+      runBlocking {
+        ElideCommandLine.at(home, tempDir).classpaths(listOf("test" to ElideClasspathUsage.COMPILE))
+      }
+    }
+  }
+
+  @Test fun `dependency failure never falls back to individual classpath queries`() {
+    val home = fakeElide("""echo "Dependency resolution failed" >&2; exit 1""")
+    val failure = assertFailsWith<ElideCommandFailedException> {
+      runBlocking {
+        ElideCommandLine.at(home, tempDir).classpaths(listOf("main" to ElideClasspathUsage.COMPILE))
+      }
+    }
+    assertEquals(1, failure.exitCode)
+    assertContains(failure.command, "--json")
+  }
+
+  @Test fun `dependency installation cache follows build flags and classifier selection`() = runBlocking {
+    val home = fakeElide("exit 0")
+    val debug = ElideCommandLine.at(home, tempDir, listOf("debug"))
+    assertEquals(false, debug.isInstallationCurrent(listOf("sources")))
+    debug.install(listOf("sources"))
+    assertEquals(true, debug.isInstallationCurrent(listOf("sources")))
+    assertEquals(false, debug.isInstallationCurrent(listOf("docs")))
+    assertEquals(false, ElideCommandLine.at(home, tempDir, listOf("release")).isInstallationCurrent(listOf("sources")))
+  }
+
   @Test fun `cancellation destroys the child process`() {
     val marker = tempDir.resolve("still-running")
     val home = fakeElide("""while true; do echo tick > "$marker"; sleep 0.1; done""")
@@ -252,9 +310,10 @@ class ElideCommandLineTest {
     runBlocking {
       val call = async { ElideCommandLine.at(home)("serve") }
 
-      // let the child start writing, then cancel the call and wait for it to unwind
-      delay(500)
-      assertTrue(marker.toFile().exists(), "expected the fake CLI to have started")
+      // Synchronize with actual startup rather than a fixed scheduling delay on busy test hosts.
+      withTimeout(30_000) {
+        while (!marker.toFile().isFile) delay(10)
+      }
       call.cancel()
       withTimeout(30_000) { call.join() }
     }

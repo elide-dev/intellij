@@ -64,6 +64,13 @@ class ElideRunConfigurationBuildTest {
     assertNull(progressListener(project, "test"))
   }
 
+  @Test fun `Android instrumentation retains the run window for its test tree`() {
+    val project = projectFixture.get()
+    assertNull(progressListener(project, "build android-test-apk --device=emulator-5554"))
+    assertNull(progressListener(project, ":app:android-test-apk"))
+    assertEquals(BuildViewManager::class.java, progressListener(project, "build android-install-apk"))
+  }
+
   @Test fun `a build command line is a build, whichever flags it carries`() {
     assertTrue(ElideRunConfiguration.buildsArtifacts(listOf("build")))
     assertTrue(ElideRunConfiguration.buildsArtifacts(listOf("build", "compile", "--no-cache")))

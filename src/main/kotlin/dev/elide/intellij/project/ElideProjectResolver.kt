@@ -31,9 +31,13 @@ import dev.elide.intellij.WorkspaceMemberIsRootException
 import dev.elide.intellij.cli.ElideCommandLine
 import dev.elide.intellij.cli.buildTasks
 import dev.elide.intellij.cli.classpath
+import dev.elide.intellij.cli.classpaths
 import dev.elide.intellij.cli.install
 import dev.elide.intellij.cli.manifest
 import dev.elide.intellij.project.model.ElideClasspath
+import dev.elide.intellij.project.model.ElideBuildTaskInfo
+import dev.elide.intellij.project.model.taskScope
+import dev.elide.intellij.project.model.androidResourceArtifactsToPrepare
 import dev.elide.intellij.project.model.ElideClasspathUsage
 import dev.elide.intellij.project.model.ElideProjectModel
 import dev.elide.intellij.project.model.ElideResolvedProject
@@ -44,6 +48,7 @@ import dev.elide.intellij.ui.ElideNotifications
 import dev.elide.project.manifest.effectiveType
 import dev.elide.project.manifest.workspaceMembers
 import dev.elide.tooling.manifest.project.ProjectModule
+import dev.elide.tooling.manifest.android.AndroidTarget
 import dev.elide.tooling.manifest.sources.SourceSetType
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -53,6 +58,7 @@ import kotlinx.coroutines.job
 import org.jetbrains.annotations.PropertyKey
 import kotlin.io.path.Path
 import kotlin.io.path.getLastModifiedTime
+import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.listDirectoryEntries
@@ -108,7 +114,8 @@ class ElideProjectResolver : ExternalSystemProjectResolver<ElideExecutionSetting
       if (manifestPath.notExists()) throw MissingManifestException(projectPath)
 
       val elideHome = settings?.elideHome ?: resolveElideHome(id, projectPath)
-      val cli = ElideCommandLine.at(elideHome, projectRoot)
+      val flags = settings?.buildFlags.orEmpty()
+      val cli = ElideCommandLine.at(elideHome, projectRoot, flags)
 
       // call the CLI to inspect the project manifest
       listener.onStep(id, progressMessage("resolve.steps.inspect"))
@@ -116,7 +123,7 @@ class ElideProjectResolver : ExternalSystemProjectResolver<ElideExecutionSetting
 
       // a manifest declaring members is the root of a workspace: its members are resolved as part of this sync,
       // because Elide resolves and builds the whole workspace from the root as one graph
-      val members = resolveMembers(id, elideHome, projectRoot, manifest, listener)
+      val members = resolveMembers(id, elideHome, projectRoot, manifest, flags, listener)
 
       // the CLI owns the project's build graph, so its task list is read from it rather than derived from the
       // manifest; the listing is only used for completion, and a distribution that fails to produce one (or has no
@@ -133,27 +140,26 @@ class ElideProjectResolver : ExternalSystemProjectResolver<ElideExecutionSetting
       // install dependencies only when the lockfile no longer reflects the manifests it was resolved from; a
       // workspace resolves once, into the root's repository, so one install covers every member
       val manifests = listOf(manifestPath) + members.map { it.root.resolve(Constants.MANIFEST_NAME) }
-      if (!isLockfileCurrent(projectRoot, manifests)) {
+      val classifiers = settings?.installClassifiers ?: listOf("sources")
+      if (!isLockfileCurrent(projectRoot, manifests) || !cli.isInstallationCurrent(classifiers)) {
         listener.onStep(id, progressMessage("resolve.steps.sync"))
 
-        cli.install { line, err ->
+        cli.install(classifiers = classifiers) { line, err ->
           listener.onTaskOutput(id, line, if (err) ProcessOutputType.STDERR else ProcessOutputType.STDOUT)
         }
       } else {
         LOG.debug("Lockfile is up to date, skipping dependency installation")
       }
 
-      // resolve the compile classpath of every source set of every project
-      val workspace = ElideResolvedWorkspace(
-        root = ElideResolvedProject.of(projectRoot, manifest, resolveClasspaths(elideHome, projectRoot, manifest)),
-        members = members.map { member ->
-          member.copy(classpaths = resolveClasspaths(elideHome, member.root, member.manifest))
-        },
+      val resolved = resolveClasspaths(
+        id, elideHome, cli, listOf(ElideResolvedProject.of(projectRoot, manifest)) + members,
+        flags, buildTasks, listener,
       )
+      val workspace = ElideResolvedWorkspace(root = resolved.first(), members = resolved.drop(1))
 
       // build the project model from the manifests and classpaths
       listener.onStep(id, progressMessage("resolve.steps.buildModel"))
-      ElideProjectModel.buildModel(workspace, buildTasks)
+      ElideProjectModel.buildModel(workspace, buildTasks, settings?.jdkHome.orEmpty())
     } catch (cause: InvalidElideHomeException) {
       // the platform reports the failure itself (see AbstractExternalSystemTask); only the notification is ours
       ElideNotifications.notifyInvalidElideHome(id.findProject())
@@ -176,6 +182,7 @@ class ElideProjectResolver : ExternalSystemProjectResolver<ElideExecutionSetting
     elideHome: Path,
     projectRoot: Path,
     manifest: ProjectModule,
+    flags: List<String>,
     listener: ExternalSystemTaskNotificationListener,
   ): List<ElideResolvedProject> {
     val members = manifest.workspaceMembers
@@ -196,7 +203,7 @@ class ElideProjectResolver : ExternalSystemProjectResolver<ElideExecutionSetting
       }
 
       listener.onStep(id, progressMessage("resolve.steps.inspectMember", member))
-      val memberCli = ElideCommandLine.at(elideHome, memberRoot)
+      val memberCli = ElideCommandLine.at(elideHome, memberRoot, flags)
       val memberManifest = memberCli.manifest { out, err ->
         if (err) listener.onTaskOutput(id, out, ProcessOutputType.STDERR)
       }
@@ -212,26 +219,121 @@ class ElideProjectResolver : ExternalSystemProjectResolver<ElideExecutionSetting
     return resolved
   }
 
-  /**
-   * Resolve the classpath of every source set in the manifest of the project rooted at [projectRoot].
-   *
-   * Source sets which the IDE does not compile ([SourceSetType.Other]) are skipped; everything else is resolved with
-   * the `compile` usage, which is the only usage the CLI accepts for a source set (dependency *scope* is derived from
-   * the source set type when the model is built).
-   *
-   * The CLI is invoked in the project's own directory, which is what makes it the project in focus: a member's
-   * classpath is the member's, resolved against the workspace it belongs to.
-   */
+  /** Resolve all classpaths before building shared workspace targets; builds never overlap. */
   private suspend fun resolveClasspaths(
+    id: ExternalSystemTaskId,
     elideHome: Path,
-    projectRoot: Path,
-    manifest: ProjectModule,
-  ): Map<String, ElideClasspath> = buildMap {
-    val cli = ElideCommandLine.at(elideHome, projectRoot)
+    workspaceCli: ElideCommandLine,
+    projects: List<ElideResolvedProject>,
+    flags: List<String>,
+    buildTasks: List<ElideBuildTaskInfo>,
+    listener: ExternalSystemTaskNotificationListener,
+  ): List<ElideResolvedProject> {
+    val output: (String, Boolean) -> Unit = { line, err ->
+      listener.onTaskOutput(id, line, if (err) ProcessOutputType.STDERR else ProcessOutputType.STDOUT)
+    }
+    fun warning(message: String, cause: Exception) {
+      LOG.warn(message, cause)
+      output("$message: ${cause.message}\n", true)
+    }
+    suspend fun prepare(targets: List<String>, label: String) {
+      if (targets.isEmpty()) return
+      listener.onStep(id, label)
+      try {
+        workspaceCli(args = (listOf("build") + targets.distinct()).toTypedArray(), onOutput = output)
+      } catch (cause: CancellationException) {
+        throw cause
+      } catch (cause: Exception) {
+        warning(label, cause)
+      }
+    }
 
-    for ((name, sourceSet) in manifest.sources) {
-      if (sourceSet.effectiveType(name) == SourceSetType.Other) continue
-      put(name, cli.classpath(name, ElideClasspathUsage.COMPILE))
+    data class Pending(
+      val project: ElideResolvedProject,
+      val cli: ElideCommandLine,
+      val sets: List<String>,
+      val provided: Map<Pair<String, ElideClasspathUsage>, ElideClasspath>?,
+    )
+    val pending = mutableListOf<Pending>()
+    val libraries = mutableListOf<String>()
+    val resources = mutableListOf<String>()
+    val processors = mutableSetOf<String>()
+
+    for (project in projects) {
+      val cli = ElideCommandLine.at(elideHome, project.root, flags)
+      val sets = project.manifest.sources.filter { (name, set) -> set.effectiveType(name) != SourceSetType.Other }.keys.toList()
+      val android = project.manifest.android != null
+      val targets = project.manifest.artifacts.filterValues { it is AndroidTarget }.keys
+      val missingR = if (android) androidResourceArtifactsToPrepare(project.root, targets) else emptyList()
+      val compileQueries = sets.map { it to ElideClasspathUsage.COMPILE }
+      val providedQueries = if (android) sets.map { it to ElideClasspathUsage.PROVIDED } else emptyList()
+      val early = if (missingR.isEmpty()) providedQueries else emptyList()
+      var providedFailed = false
+      val answers = try {
+        cli.classpaths(compileQueries + early, output)
+      } catch (cause: CancellationException) {
+        throw cause
+      } catch (cause: Exception) {
+        if (early.isEmpty()) throw cause
+        providedFailed = true
+        cli.classpaths(compileQueries, output)
+      }
+      val compile = sets.associateWith { answers.getValue(it to ElideClasspathUsage.COMPILE) }
+      fun scoped(target: String): String = if (projects.size > 1) "${project.name}:$target" else target
+      if (compile.values.any { cp ->
+          cp.entries.any { ElideProjectModel.explodedLibraryCoordinate(it) != null && !project.root.resolve(it).exists() }
+        }) libraries += scoped("android-libraries")
+      val reusable = early.isNotEmpty() && !providedFailed
+      val unrecorded = if (reusable) androidResourceArtifactsToPrepare(
+        project.root, targets, providedQueries.flatMap { answers[it]?.entries.orEmpty() },
+      ) else emptyList()
+      resources += (missingR + unrecorded).distinct().map { scoped("android-r-$it") }
+      if (project.manifest.dependencies.maven.processors.isNotEmpty() || project.manifest.android?.hilt == true) {
+        val wanted = sets.map { "compile-java-$it" }.toSet()
+        val advertised = if (buildTasks.isNotEmpty()) buildTasks else try {
+          workspaceCli.buildTasks(output)
+        } catch (cause: CancellationException) {
+          throw cause
+        } catch (cause: Exception) {
+          warning("Could not inspect annotation processor compilation targets", cause)
+          emptyList()
+        }
+        processors += advertised.filter {
+          (it.taskScope == project.name || (it.taskScope == null && project == projects.first())) &&
+            it.name.substringAfterLast(':') in wanted
+        }.map { it.name }
+      }
+      pending += Pending(
+        project.copy(classpaths = compile), cli, sets,
+        answers.takeIf { reusable && unrecorded.isEmpty() },
+      )
+    }
+
+    prepare(libraries, "Unpacking Android libraries")
+    prepare(resources, "Generating Android resource identifiers")
+    prepare(processors.toList(), "Generating annotation processor sources")
+    return pending.map { (project, cli, sets, reused) ->
+      if (project.manifest.android == null) return@map project
+      val queries = sets.map { it to ElideClasspathUsage.PROVIDED }
+      val batch = reused ?: try {
+        cli.classpaths(queries, output)
+      } catch (cause: CancellationException) {
+        throw cause
+      } catch (cause: Exception) {
+        null
+      }
+      val provided = buildMap {
+        for (name in sets) {
+          try {
+            put(name, batch?.get(name to ElideClasspathUsage.PROVIDED) ?: cli.classpath(name, ElideClasspathUsage.PROVIDED, output))
+          } catch (cause: CancellationException) {
+            throw cause
+          } catch (cause: Exception) {
+            warning("Could not resolve Android platform for ${project.name}:$name; android.* and R may be unresolved", cause)
+          }
+        }
+      }
+      project.copy(providedClasspaths = provided)
     }
   }
 

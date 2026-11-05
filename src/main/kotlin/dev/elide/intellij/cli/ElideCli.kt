@@ -13,7 +13,7 @@
 package dev.elide.intellij.cli
 
 /**
- * Schema of the Elide command line interface, as of Elide `1.5.1`.
+ * Schema of the Elide command line interface, as of Elide `1.6.3`.
  *
  * Everything the plugin needs to know about the shape of an `elide` invocation lives here: which commands exist, which
  * flags they accept, how those flags take their values, and which token of an argument vector names the command. The
@@ -173,7 +173,10 @@ object ElideCli {
   )
 
   private val ABORT_ON_UNCAUGHT = Flag("abort-on-uncaught-exception", descriptionKey = "cli.flag.abort")
-  private val SANDBOX = Flag("sandbox", descriptionKey = "cli.flag.sandbox")
+  private val SANDBOX = Flag(
+    "sandbox", value = FlagValue.OPTIONAL_EQUALS, values = listOf("trusted"),
+    descriptionKey = "cli.flag.sandbox",
+  )
 
   private val ALLOW_READ = Flag(
     long = "allow-read",
@@ -247,6 +250,13 @@ object ElideCli {
     descriptionKey = "cli.flag.debugger",
   )
 
+  private val DEBUGGER_HOST = Flag("debugger-host", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.debugger-host")
+  private val DEBUGGER_PORT = Flag("debugger-port", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.debugger-port")
+  private val DOCUMENT_FORMAT = Flag(
+    "format", value = FlagValue.REQUIRED, values = listOf("json", "yaml", "pcf"),
+    descriptionKey = "cli.flag.document-format",
+  )
+
   private val SNIPPET = Flag(
     long = "snippet",
     short = 's',
@@ -282,6 +292,25 @@ object ElideCli {
   /** Flags the CLI declares as global: they are accepted before and after the command. */
   val GLOBAL_FLAGS: List<Flag> = listOf(
     PROJECT_PATH,
+    Flag("env-file", value = FlagValue.REQUIRED, repeatable = true, descriptionKey = "cli.flag.env-file"),
+    Flag("properties-file", value = FlagValue.REQUIRED, repeatable = true, descriptionKey = "cli.flag.properties-file"),
+    Flag("no-env", descriptionKey = "cli.flag.no-env"),
+    Flag("no-properties", descriptionKey = "cli.flag.no-properties"),
+    Flag("max-mem", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.max-mem"),
+    Flag("limit", value = FlagValue.REQUIRED, repeatable = true, descriptionKey = "cli.flag.limit"),
+    Flag("flag", 'f', FlagValue.REQUIRED, repeatable = true, descriptionKey = "cli.flag.flag"),
+    Flag("interop", descriptionKey = "cli.flag.interop"),
+    Flag("allow-env", value = FlagValue.OPTIONAL_EQUALS, repeatable = true, descriptionKey = "cli.flag.allow-env"),
+    Flag("allow-native", descriptionKey = "cli.flag.allow-native"),
+    Flag(
+      "progress", value = FlagValue.REQUIRED_EQUALS, values = listOf("auto", "plain", "json"),
+      descriptionKey = "cli.flag.progress",
+    ),
+    Flag("jfr", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.jfr"),
+    Flag("jfr-settings", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.jfr-settings"),
+    Flag("heap-dump", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.heap-dump"),
+    Flag("heap-dump-on-oom", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.heap-dump-on-oom"),
+    Flag("vmstat", descriptionKey = "cli.flag.vmstat"),
     DEBUG,
     VERBOSE,
     QUIET,
@@ -311,16 +340,24 @@ object ElideCli {
    * Unlike [GLOBAL_FLAGS] these are not taken by every command: a command that accepts one repeats it among its own
    * [Command.flags].
    */
-  val ROOT_ONLY_FLAGS: List<Flag> = listOf(DEBUGGER, PROFILER, SNIPPET, LANGUAGE)
+  val ROOT_ONLY_FLAGS: List<Flag> =
+    listOf(DEBUGGER, DEBUGGER_HOST, DEBUGGER_PORT, PROFILER, SNIPPET, LANGUAGE, DOCUMENT_FORMAT)
 
   // ---------------------------------------------------------------------------------------------------------------
   // Commands
   // ---------------------------------------------------------------------------------------------------------------
 
+  private val CONTEXTS = Flag(
+    "contexts", value = FlagValue.REQUIRED_EQUALS, values = listOf("auto"), descriptionKey = "cli.flag.contexts",
+  )
+
   /** `elide run`: runs a file, a named script, or the project's entrypoint. */
   val RUN: Command = Command(
     name = "run",
-    flags = listOf(DEBUGGER, PROFILER, COVERAGE, INSIGHTS, SNIPPET, LANGUAGE),
+    flags = listOf(
+      DEBUGGER, DEBUGGER_HOST, DEBUGGER_PORT, PROFILER, COVERAGE, INSIGHTS, SNIPPET, LANGUAGE, DOCUMENT_FORMAT,
+      CONTEXTS,
+    ),
     passthrough = true,
     descriptionKey = "cli.command.run",
   )
@@ -330,6 +367,7 @@ object ElideCli {
     name = "serve",
     aliases = listOf("start"),
     flags = listOf(
+      CONTEXTS,
       Flag("host", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.host"),
       Flag("port", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.serve.port"),
       Flag("no-tui", descriptionKey = "cli.flag.no-tui"),
@@ -342,6 +380,7 @@ object ElideCli {
   val DEV: Command = Command(
     name = "dev",
     flags = listOf(
+      CONTEXTS,
       Flag("host", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.host"),
       Flag("port", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.dev.port"),
       Flag("no-tui", descriptionKey = "cli.flag.no-tui"),
@@ -384,6 +423,7 @@ object ElideCli {
       Flag("inspect", 'i', descriptionKey = "cli.flag.inspect"),
       Flag("no-cache", descriptionKey = "cli.flag.no-cache"),
       Flag("offline", descriptionKey = "cli.flag.offline"),
+      Flag("workers", value = FlagValue.REQUIRED_EQUALS, descriptionKey = "cli.flag.workers"),
     ),
     // the project's own task names, and the options those tasks declare, are only known after an `--inspect` run;
     // these groups always exist
@@ -398,6 +438,10 @@ object ElideCli {
     name = "test",
     flags = listOf(
       TEST_NAME_PATTERN,
+      Flag("where", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.where"),
+      Flag("select", value = FlagValue.REQUIRED, repeatable = true, descriptionKey = "cli.flag.select"),
+      Flag("include-tag", value = FlagValue.REQUIRED, repeatable = true, descriptionKey = "cli.flag.include-tag"),
+      Flag("exclude-tag", value = FlagValue.REQUIRED, repeatable = true, descriptionKey = "cli.flag.exclude-tag"),
       Flag("bail", value = FlagValue.OPTIONAL_EQUALS, descriptionKey = "cli.flag.bail"),
       Flag("test-timeout", value = FlagValue.REQUIRED, descriptionKey = "cli.flag.test-timeout"),
       Flag("only", descriptionKey = "cli.flag.only"),
@@ -409,6 +453,7 @@ object ElideCli {
       DEBUGGER,
       PROFILER,
     ),
+    passthrough = true,
     descriptionKey = "cli.command.test",
   )
 
@@ -419,6 +464,7 @@ object ElideCli {
     flags = listOf(
       Flag("list-files", descriptionKey = "cli.flag.list-files"),
       Flag("list-diffs", value = FlagValue.OPTIONAL_EQUALS, descriptionKey = "cli.flag.list-diffs"),
+      Flag("install", descriptionKey = "cli.flag.format.install"),
     ),
     passthrough = true,
     descriptionKey = "cli.command.format",
@@ -444,7 +490,10 @@ object ElideCli {
   /** `elide classpath`: prints resolved classpaths for the project's source sets. */
   val CLASSPATH: Command = Command(
     name = "classpath",
-    flags = listOf(Flag("offline", descriptionKey = "cli.flag.offline")),
+    flags = listOf(
+      Flag("offline", descriptionKey = "cli.flag.offline"),
+      Flag("json", descriptionKey = "cli.flag.classpath.json"),
+    ),
     descriptionKey = "cli.command.classpath",
   )
 
@@ -526,6 +575,28 @@ object ElideCli {
   }
 
   /**
+   * Explicit build targets, excluding option values and subprocess arguments. A leading colon is the CLI's
+   * optional target marker, not part of the task's name; workspace scope separators are preserved.
+   */
+  fun buildTargets(args: List<String>, invocation: Invocation = parse(args)): List<String> {
+    if (invocation.command != BUILD) return emptyList()
+    val flags = invocation.applicableFlags()
+    val end = invocation.passthroughIndex.takeIf { it >= 0 } ?: args.size
+    return buildList {
+      var index = invocation.commandIndex + 1
+      while (index < end) {
+        val token = args[index]
+        if (token.startsWith('-')) {
+          if (flags.any { it.takesNextToken(token) }) index++
+        } else {
+          token.removePrefix(":").takeIf { it.isNotBlank() }?.let(::add)
+        }
+        index++
+      }
+    }
+  }
+
+  /**
    * Returns the index in [args] of the token naming [flag] among the arguments [invocation]'s command parses, or
    * `-1` when the flag is absent from them.
    */
@@ -533,13 +604,18 @@ object ElideCli {
     val flags = invocation.applicableFlags()
     val end = if (invocation.passthroughIndex >= 0) invocation.passthroughIndex else args.size
 
-    var index = invocation.commandIndex + 1
+    var index = if (flag in GLOBAL_FLAGS) 0 else invocation.commandIndex + 1
     while (index < end) {
       val token = args[index]
       if (flag.matches(token)) return index
 
       // a flag such as `--reporter tap` hides its value in the next token, which names no flag of its own
-      if (flags.any { it.takesNextToken(token) }) index++
+      val takesValue = if (index < invocation.commandIndex) {
+        ROOT_ONLY_FLAGS.any { it.takesNextToken(token) } || GLOBAL_FLAGS.any { it.takesNextToken(token) }
+      } else {
+        flags.any { it.takesNextToken(token) }
+      }
+      if (takesValue) index++
       index++
     }
 

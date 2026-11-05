@@ -223,4 +223,62 @@ class ElideCliTest {
     assertEquals(listOf("test"), ElideCliCompletion.context("test --only --bail", 11))
     assertEquals(emptyList(), ElideCliCompletion.context("", 0))
   }
+
+  @Test fun `current global value flags do not become command names or build targets`() {
+    for (flag in listOf("--env-file", "--properties-file", "--max-mem", "--limit", "--flag", "-f", "--jfr")) {
+      val args = listOf(flag, "run", "build", flag, "test", "core:run", "--", "guest")
+      assertEquals(ElideCli.BUILD, ElideCli.parse(args).command)
+      assertEquals(listOf("core:run"), ElideCli.buildTargets(args))
+    }
+    assertEquals(listOf("core:run"), ElideCli.buildTargets(listOf("build", ":core:run", "--workers=2")))
+  }
+
+  @Test fun `current CLI options retain their command scopes and attached value requirements`() {
+    val build = texts(ElideCliCompletion.flags(listOf("build"), null, false))
+    assertContains(build, "--workers=")
+    assertContains(build, "--progress=json")
+    assertContains(build, "--flag")
+    assertContains(build, "--sandbox=trusted")
+    assertFalse("--workers" in build)
+    assertFalse("--contexts=" in build)
+    assertFalse("--debugger" in build)
+    assertFalse("--select" in build)
+    val run = texts(ElideCliCompletion.flags(listOf("run"), null, false))
+    assertContains(run, "--contexts=")
+    assertContains(run, "--contexts=auto")
+    assertContains(run, "--format=json")
+    assertContains(run, "--debugger-host")
+    assertContains(run, "--debugger-port")
+    assertFalse("--workers=" in run)
+    val test = texts(ElideCliCompletion.flags(listOf("test", "--select=class:Example", "--include-tag=fast"), null, false))
+    assertContains(test, "--select")
+    assertContains(test, "--include-tag")
+    assertContains(test, "--exclude-tag")
+    assertContains(test, "--where")
+    assertContains(texts(ElideCliCompletion.flags(listOf("serve"), null, false)), "--contexts=")
+    assertContains(texts(ElideCliCompletion.flags(listOf("dev"), null, false)), "--contexts=auto")
+    assertContains(texts(ElideCliCompletion.flags(listOf("format"), null, false)), "--install")
+    assertContains(texts(ElideCliCompletion.flags(listOf("classpath"), null, false)), "--json")
+    assertFalse("--json" in build)
+    assertFalse("--install" in run)
+    assertFalse("--debugger-port" in test)
+    assertTrue(ElideCliCompletion.flags(listOf("test", "--select"), null, false).isEmpty())
+    assertTrue(ElideCliCompletion.flags(listOf("test", "--", "--select"), null, false).isEmpty())
+  }
+
+  @Test fun `task option completion uses real targets rather than global flag values`() {
+    val info = ElideProjectInfo(buildTasks = listOf(
+      ElideBuildTaskInfo("core:run", options = listOf(ElideBuildTaskInfo.Option("--debugger"))),
+    ))
+    assertFalse("--debugger" in texts(ElideCliCompletion.flags(listOf("build", "-f", "core:run"), info, false)))
+    assertContains(texts(ElideCliCompletion.flags(listOf("build", ":core:run"), info, false)), "--debugger")
+    assertFalse("core:run" in texts(ElideCliCompletion.tasks(listOf("build", ":core:run"), info)))
+    assertContains(texts(ElideCliCompletion.tasks(listOf("build", "-f", "core:run"), info)), "core:run")
+  }
+
+  @Test fun `flag values do not suppress completion and global flags count before the command`() {
+    assertContains(texts(ElideCliCompletion.flags(listOf("test", "-t", "--only"), null, false)), "--only")
+    assertFalse("--no-env" in texts(ElideCliCompletion.flags(listOf("--no-env", "test"), null, false)))
+    assertContains(texts(ElideCliCompletion.flags(listOf("build", "--env-file", "first.env"), null, false)), "--env-file")
+  }
 }

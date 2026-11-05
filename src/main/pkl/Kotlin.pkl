@@ -6,7 +6,7 @@ import "Jvm.pkl" as jvm
 
 /// Kotlin language targets.
 /// @schema prefix=V
-typealias KotlinLanguageTargets = "latest" | "stable" | "auto" | "1.9" | "2.0" | "2.1" | "2.2" | "2.3" | "2.4" | String
+typealias KotlinLanguageTargets = "latest" | "stable" | "auto" | "1.9" | "2.0" | "2.1" | "2.2" | "2.3" | "2.4" | "2.5" | String
 
 /// Kotlin language levels.
 typealias KotlinLanguageLevel = KotlinLanguageTargets
@@ -75,10 +75,6 @@ class KotlinCompilerJvmOptions extends KotlinCompilerOptions {
 
 /// Specifies Kotlin-related features and options within Elide.
 class KotlinFeatureOptions {
-  /// Deprecated: KAPT is retired. This property is accepted for backward compatibility but is
-  /// ignored — annotation processing now runs under `javac` after the Kotlin compile.
-  kapt: Boolean = true
-
   /// Whether to enable Kotlin's test support features.
   testing: Boolean = true
 
@@ -102,6 +98,11 @@ class KotlinFeatureOptions {
 
   /// Enable or disable the Metro dependency-injection compiler plugin.
   metro: Boolean = defaultPlugins
+
+  /// Enable or disable the Jetpack Compose compiler plugin. Off even under `defaultPlugins`: the
+  /// Compose compiler aborts any module that lacks the Compose runtime on its classpath, whether or
+  /// not the sources use `@Composable`, and Elide does not ship that runtime.
+  compose: Boolean = false
 
   /// Whether to enable Kotlin's reflection features.
   reflection: Boolean = true
@@ -148,4 +149,8 @@ class KotlinSettings {
 
   /// Configure options passed to Kotlin compiler plugins.
   plugins: Mapping<KotlinPluginId, KotlinPluginOptions> = new {}
+
+  /// Run Maven annotation processors on Kotlin stubs with kapt. Disable when the declared processors
+  /// apply only to Java sources; javac still runs them. Requires a toolchain with kapt when enabled.
+  annotationProcessing: Boolean = true
 }

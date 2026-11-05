@@ -14,6 +14,7 @@ package dev.elide.intellij.project.model
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /**
  * Covers Maven coordinate recovery from classpath entries.
@@ -71,5 +72,17 @@ class ElideProjectModelTest {
       "unknown:guava-32.1.3-jre:unknown",
       ElideProjectModel.parseLibraryName(".dev/dependencies/m2/guava/32.1.3-jre/guava-32.1.3-jre.jar", defaultRoot),
     )
+  }
+
+  @Test fun `exploded Android libraries retain coordinates for absolute and relative entries`() {
+    for (prefix in listOf("/projects/demo/", "")) {
+      assertEquals(
+        "androidx.compose.ui:ui-android:1.7.8",
+        ElideProjectModel.parseLibraryName(
+          "${prefix}.dev/android/libraries/androidx/compose/ui/ui-android/1.7.8/classes.jar", defaultRoot,
+        ),
+      )
+    }
+    assertNull(ElideProjectModel.explodedLibraryCoordinate("/project/.dev/android/app/classes.jar"))
   }
 }

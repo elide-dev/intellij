@@ -1,0 +1,293 @@
+/// Android application targets and build settings.
+@ModuleInfo { minPklVersion = "0.28.1" }
+module elide.android
+
+import "Artifacts.pkl" as artifacts
+import "Base.pkl" as common
+import "Sources.pkl" as sources
+
+/// Android API level: the platform revision an app is compiled, linked or dexed against.
+typealias AndroidApiLevel = Int(isPositive)
+
+/// Android build-tools release, as the SDK names it (`36.0.0`); supplies `aapt2`, `d8`, `zipalign`
+/// and `apksigner`.
+typealias AndroidBuildToolsVersion = String(matches(Regex(#"^\d+\.\d+\.\d+(-rc\d+)?$"#)))
+
+/// An Android ABI: the instruction set a native library is built for, and the one an emulator
+/// system image runs.
+typealias AndroidAbi = "arm64-v8a" | "x86_64" | "armeabi-v7a" | "x86"
+
+/// Name of a virtual device in [AndroidSettings.devices]: a letter, then letters, digits, `_` or
+/// `-`. `all` is taken by the task that runs every device.
+typealias AndroidDeviceName = String(matches(Regex(#"^[a-zA-Z][a-zA-Z0-9_-]*$"#)), this != "all")
+
+/// Virtual device the emulator tasks create and boot.
+class AndroidDevice {
+  /// Name of the AVD to create and boot; absent takes the project's name (`elide-android` when the
+  /// project has none), or `<project>-<name>` for a device in [AndroidSettings.devices], with any
+  /// character `avdmanager` refuses replaced by `_`.
+  avd: String(matches(Regex(#"^[a-zA-Z0-9._-]+$"#)))?
+
+  /// API level of the system image the AVD is cut from; absent takes [AndroidSettings.compileSdk].
+  /// Ignored when [systemImage] is declared.
+  api: AndroidApiLevel?
+
+  /// System image the AVD is cut from, in `sdkmanager` package form; absent takes an image already
+  /// installed for [api], else derives `system-images;android-<api>;default;<abi>` from the host
+  /// architecture.
+  systemImage: String?
+
+  /// ABI of the derived system image; absent takes the host's (`arm64-v8a` on Apple silicon and
+  /// ARM Linux, `x86_64` elsewhere). Ignored when [systemImage] is declared.
+  abi: AndroidAbi?
+
+  /// Device profile the AVD is cut from, as `avdmanager list device` names it.
+  deviceProfile: String = "pixel_6"
+}
+
+/// Android SDK settings: where the SDK lives, and which of its components the build uses.
+///
+/// The SDK is not vendored — it carries its own licenses. The build locates an installation,
+/// resolves which of its components answer for [compileSdk], and reports the `sdkmanager --install`
+/// line for anything missing; passing `--install-sdk` installs it instead, which is how its license
+/// is accepted.
+class AndroidSettings {
+  /// Installed Android SDK root. Absent reads `ANDROID_HOME`, then `ANDROID_SDK_ROOT`, then the
+  /// location the SDK installs itself in on this platform.
+  sdk: common.FilePath?
+
+  /// API level the app compiles, links and dexes against: this platform's `android.jar` lands on
+  /// the compile classpath, and is passed to `aapt2 link -I` and `d8 --lib`.
+  compileSdk: AndroidApiLevel
+
+  /// Oldest API level the dex output runs on, which `d8` dexes for. Absent dexes for [compileSdk].
+  /// The merged manifest's `minSdkVersion` is this level: a manifest omitting it receives it, and one
+  /// declaring another value fails the build, since the dex would not run where it installs.
+  minSdk: AndroidApiLevel?
+
+  /// API level an application or bundle declares it was built and tested against
+  /// (`targetSdkVersion`), which decides the platform's compatibility behaviours. Declared, the
+  /// merged manifest carries it and a manifest declaring another value fails the build; absent, a
+  /// manifest's own value stands and one declaring none receives [compileSdk]. A library's manifest
+  /// never carries it.
+  targetSdk: AndroidApiLevel?
+
+  /// Build-tools release providing `aapt2`, `d8`, `zipalign` and `apksigner`. Absent takes the
+  /// newest installed release for [compileSdk], else the newest installed release newer than it,
+  /// else `<compileSdk>.0.0`.
+  buildTools: AndroidBuildToolsVersion?
+
+  /// Virtual device the `android-emulator` and `android-run-*` tasks boot, and `android-test-*`
+  /// boots when no device is attached.
+  device: AndroidDevice = new {}
+
+  /// Virtual devices instrumented tests run on by name, as Gradle's managed devices do. Every APK
+  /// gets `android-test-<artifact>-on-<name>` per device, and `android-test-<artifact>-on-all` for
+  /// all of them. Each run creates the AVD if it is missing, boots it (headless with `--no-window`)
+  /// or adopts it if it is already running, and stops it afterwards if it booted it.
+  devices: Mapping<AndroidDeviceName, AndroidDevice> = new {}
+
+  /// Artifact whose resources, assets and merged manifest the project's JVM tests run against under
+  /// Robolectric; absent takes the first application, library or bundle the project declares.
+  hostTests: artifacts.ArtifactName?
+
+  /// Configure the Hilt annotation processor (`hilt-compiler`, which must be declared in
+  /// `dependencies.maven.processors`) to aggregate in this project, and transform the superclasses of
+  /// Android entry points (`@AndroidEntryPoint`) to the ones it generates.
+  hilt: Boolean = false
+}
+
+/// How an artifact is signed, and how `elide build android-keystore-<artifact>` creates the keystore
+/// it signs with.
+///
+/// No password is ever declared here: both are read from the environment, so a manifest committed
+/// to a repository carries no secret. A keystore this build created itself, and a keystore `adb`
+/// installs from, use the Android debug conventions when the variables are unset.
+class AndroidSigning {
+  /// Keystore holding the signing key, relative to the project root.
+  keystore: common.FilePath(!isEmpty)
+
+  /// Key alias within the keystore.
+  alias: String(!isEmpty) = "androiddebugkey"
+
+  /// Environment variable holding the keystore password; unset falls back to `android`, the
+  /// password an Android debug keystore carries.
+  passwordEnv: String(!isEmpty) = "ANDROID_KEYSTORE_PASS"
+
+  /// Environment variable holding the key password, when it differs from the store password.
+  /// Absent, or unset in the environment, reuses the store password.
+  keyPasswordEnv: String(!isEmpty)?
+
+  /// Distinguished name `elide build android-keystore-<artifact>` records in a keystore it creates.
+  dname: String(!isEmpty) = "CN=Android Debug, O=Android, C=US"
+
+  /// Days a keystore `elide build android-keystore-<artifact>` creates stays valid.
+  validity: Int(isPositive) = 10000
+}
+
+/// Fields shared by every Android artifact built from this project's sources.
+///
+/// An application package and a library archive reach `aapt2` the same way: resources compile,
+/// the manifest merges with the manifests of the Android libraries the artifact consumes, and
+/// linking produces the `R` the code is compiled against.
+abstract class AndroidTarget extends artifacts.Artifact {
+  /// File name of the published artifact; absent takes the artifact's name plus the extension of
+  /// its kind (`.apk`, `.aar`).
+  name: common.FileName?
+
+  /// Source sets whose compiled classes the artifact carries; empty takes every non-test set.
+  sources: Listing<sources.SourceSetName> = new {}
+
+  /// Android manifest of this artifact, merged with those of the libraries it consumes.
+  manifestFile: common.FilePath(!isEmpty) = "src/main/AndroidManifest.xml"
+
+  /// Resource directories compiled by `aapt2`; empty takes `src/main/res` when it exists.
+  resources: Listing<common.FilePath> = new {}
+
+  /// Directories packaged verbatim under `assets/`; empty takes `src/main/assets` when it exists.
+  assets: Listing<common.FilePath> = new {}
+
+  /// Values substituted for `${name}` placeholders while merging manifests. An application always
+  /// supplies `applicationId` too: its declared [AndroidApplication.applicationId], else the
+  /// `package` its own manifest declares. A library substitutes only these and leaves every other
+  /// placeholder, `${applicationId}` included, for the application that consumes it.
+  placeholders: Mapping<String, String> = new {}
+
+  /// Extra arguments appended to `aapt2 link`.
+  linkArgs: Listing<String> = new {}
+
+  /// Directories of native libraries, laid out as `<abi>/lib<name>.so`; empty takes
+  /// `src/main/jniLibs` when it exists.
+  jniLibs: Listing<common.FilePath> = new {}
+}
+
+/// How the Java resources an application's dexed classpath carries are packaged.
+///
+/// Beyond these, the defaults Android's own tooling applies always hold: class files, jar
+/// signatures and manifests, `META-INF/maven`, `META-INF/proguard`, root licence and notice files and
+/// version-control files never ship.
+class AndroidPackaging {
+  /// Java resources left out of the archive, as glob patterns matched against the entry's path with a
+  /// leading `/` (`/META-INF/{AL2.0,LGPL2.1}`, `META-INF/LICENSE*`); a pattern starting with neither
+  /// `/` nor a wildcard is rooted at `/`, as the Android Gradle Plugin reads it. `*`, `?` and `[…]`
+  /// match within one path segment, `**` across segments.
+  excludes: Listing<String(!isEmpty)> = new {}
+}
+
+/// Fields shared by the artifacts that are an installable application: an APK, and the bundle a store
+/// splits into APKs.
+abstract class AndroidApplication extends AndroidTarget {
+  /// Package the application is installed and published as. Absent takes the `package` its
+  /// manifest declares, which stays the namespace its `R` class and relative class names live in;
+  /// declaring one is how a debug build installs beside a release build of the same sources.
+  applicationId: String(matches(Regex(#"^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$"#)))?
+
+  /// `android:versionCode` of the merged manifest, replacing any the manifest declares.
+  versionCode: Int(isBetween(1, 2100000000))?
+
+  /// `android:versionName` of the merged manifest, replacing any the manifest declares.
+  versionName: String(!isEmpty)?
+
+  /// Whether this is a release build. `false` is a debug build: `d8` keeps debug information and
+  /// skips optimization, and the merged manifest marks the app `android:debuggable` unless a
+  /// manifest declares that attribute itself.
+  release: Boolean = true
+
+  /// Signing configuration; absent publishes the artifact unsigned. An APK is signed with
+  /// `apksigner`; a bundle with `jarsigner`, which is how a store's upload key is applied.
+  signing: AndroidSigning?
+
+  /// Extra arguments appended to the dexer: `d8`, or R8 when [minify] is set — so an argument only
+  /// one of them accepts fails the other.
+  dexArgs: Listing<String> = new {}
+
+  /// ABIs whose native libraries are packaged; empty packages every ABI found under
+  /// [AndroidTarget.jniLibs].
+  abiFilters: Listing<AndroidAbi> = new {}
+
+  /// Whether R8 shrinks, optimizes and obfuscates the classes before they are dexed, in place of
+  /// `d8`. Distinct from [release], which only decides whether debug information survives dexing.
+  minify: Boolean = false
+
+  /// ProGuard rule files, appended after the rules the consumed libraries contribute. Ignored
+  /// unless [minify] is set.
+  proguardFiles: Listing<common.FilePath> = new {}
+
+  /// How Java resources are packaged.
+  packaging: AndroidPackaging = new {}
+}
+
+/// The test runner an APK of instrumented tests declares, which `android-test-<artifact>` starts.
+class AndroidInstrumentation {
+  /// Runner class: `<instrumentation android:name>`.
+  runner: String(!isEmpty) = "androidx.test.runner.AndroidJUnitRunner"
+
+  /// Package whose process the tests run in. Absent instruments the APK itself — a
+  /// self-instrumenting test APK, which carries the code under test beside its tests.
+  targetPackage: String(!isEmpty)?
+}
+
+/// Describes an Android application package (APK) built from this project's sources.
+///
+/// The pipeline is `aapt2 compile` → `d8` → `aapt2 link` → `zipalign` → `apksigner`: resources
+/// compile to a flat archive, compiled classes and the runtime classpath dex, and the linked APK
+/// is aligned and (when [signing] is declared) signed before it is published.
+class AndroidApk extends AndroidApplication {
+  /// Declares the APK an instrumented test APK: the merged manifest gains the `<instrumentation>`
+  /// element naming [AndroidInstrumentation.runner], unless the manifest declares that runner
+  /// itself.
+  instrumentation: AndroidInstrumentation?
+}
+
+/// Describes an Android library archive (AAR) built from this project's sources.
+///
+/// The archive carries the library's classes, its resources as written, the manifest it merged
+/// and the `R.txt` naming what it declares. Resources are *not* linked into it: an application
+/// links its own and its libraries' resources in one pass, which is what gives every identifier
+/// in the application one numbering.
+class AndroidAar extends AndroidTarget {
+  /// ProGuard rule files shipped in the archive as `proguard.txt`, which an application that
+  /// minifies applies ahead of its own rules — whether it consumes the archive or this project.
+  consumerProguardFiles: Listing<common.FilePath> = new {}
+}
+
+/// Describes an Android app bundle (AAB): the publishing format Play splits into per-device APKs.
+///
+/// The pipeline is the application's own up to dexing, and then diverges: `aapt2 link` emits the
+/// manifest and resource table in protobuf form, the pieces are assembled into a bundletool
+/// *module* zip, and `bundletool build-bundle` writes the bundle. A bundle is never aligned —
+/// alignment is decided when the APKs are split out of it — and is signed with the upload key when
+/// [signing] is declared; the store re-signs the APKs it generates with the app signing key.
+class AndroidAab extends AndroidApplication {
+  /// Extra arguments appended to `bundletool build-bundle`.
+  bundleArgs: Listing<String> = new {}
+
+  /// Dynamic feature artifacts in this project, packaged as separate bundle modules.
+  features: Listing<artifacts.ArtifactName> = new {}
+}
+
+/// Delivery policy for a dynamic feature module.
+typealias AndroidFeatureDelivery = "install-time" | "on-demand"
+
+/// A separately delivered bundle module. Shared workspace/Maven libraries belong to the base;
+/// feature sources must be explicit and disjoint from the base and other features.
+///
+/// Unlike the other targets, a feature takes no defaults from the project layout: empty
+/// [sources] is an error, and empty [resources], [assets] and [jniLibs] package none. It is
+/// never published on its own, so it declares no [name].
+class AndroidFeature extends AndroidTarget {
+  /// AndroidAab artifact containing this module.
+  base: artifacts.ArtifactName
+
+  /// Delivery policy encoded in the module's distribution manifest.
+  delivery: AndroidFeatureDelivery = "on-demand"
+
+  /// Localized title resource defined by the base (for example `@string/feature_title`).
+  title: String(matches(Regex(#"^@string/[a-zA-Z0-9_]+$"#)))
+
+  /// Include this module when producing fused APKs for pre-Lollipop devices.
+  fusing: Boolean = true
+
+  /// Other feature modules this module requires, in the same bundle.
+  featureDependencies: Listing<artifacts.ArtifactName> = new {}
+}

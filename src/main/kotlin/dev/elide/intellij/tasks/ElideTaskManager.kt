@@ -22,6 +22,8 @@ import com.intellij.openapi.progress.runBlockingCancellable
 import dev.elide.intellij.Constants
 import dev.elide.intellij.InvalidElideHomeException
 import dev.elide.intellij.cli.ElideCommandLine
+import dev.elide.intellij.cli.ElideInvocationDefaults
+import dev.elide.intellij.android.testing.ElideAndroidTestParser
 import dev.elide.intellij.execution.ElideRunConfiguration
 import dev.elide.intellij.execution.build.ELIDE_PROGRESS_OUTPUT
 import dev.elide.intellij.execution.build.ElideBuildEventPublisher
@@ -49,7 +51,7 @@ class ElideTaskManager : ExternalSystemTaskManager<ElideExecutionSettings> {
       runningTasks[id] = coroutineContext.job
       try {
         val workDir = Path(projectPath)
-        val elide = ElideCommandLine.at(settings.elideHome, workDir)
+        val elide = ElideCommandLine.at(settings.elideHome, workDir, settings.buildFlags)
 
         // `taskNames` is either the argument vector of a *single* Elide invocation ("run", "src/main.kt"), the same
         // shape `ElideRunConfiguration.rawCommandLine` parses and joins — running each element on its own would turn
@@ -57,7 +59,7 @@ class ElideTaskManager : ExternalSystemTaskManager<ElideExecutionSettings> {
         // name: the tool window's "Run", task activation and keymap shortcuts all execute a task by the name it
         // carries in the project model, and those reach the CLI through `build`
         val tasks = settings.tasks.filter { it.isNotBlank() }
-        val arguments = buildCommandLine(tasks) ?: tasks
+        val arguments = ElideInvocationDefaults.apply(buildCommandLine(tasks) ?: tasks, settings.commandOptions)
         if (arguments.isEmpty()) return@runBlockingCancellable
 
         listener.onStatusChange(
@@ -74,11 +76,21 @@ class ElideTaskManager : ExternalSystemTaskManager<ElideExecutionSettings> {
         // log by the stream each arrived on, which is all the build event dispatcher passes on, so its log keeps
         // the type of the stream it was written to
         val tap = ElideRunConfiguration.emitsTap(arguments)
+        val instrumented = ElideAndroidTestParser.targets(arguments).isNotEmpty()
 
         try {
-          elide(args = arguments.toTypedArray(), environment = settings.env) { line, stderr ->
-            val claimed = stderr && progress.accept(line)
-            listener.onTaskOutput(id, line, outputType(stderr, progress = claimed && !tap))
+          val environment = settings.env + ("ELIDE_PROGRESS" to "json")
+          elide(args = arguments.toTypedArray(), environment = environment) { line, stderr ->
+            if (!stderr) {
+              listener.onTaskOutput(id, line, ProcessOutputType.STDOUT)
+            } else {
+              val decoded = progress.accept(line)
+              // The instrumented test console needs the original records and renders them itself.
+              if (instrumented) listener.onTaskOutput(id, line, ProcessOutputType.STDERR)
+              else decoded.text?.let {
+                listener.onTaskOutput(id, it, outputType(true, progress = decoded.claimed && !tap))
+              }
+            }
           }
         } finally {
           // a failed or cancelled run reports the reason on its way out, and that reason is the last thing the log

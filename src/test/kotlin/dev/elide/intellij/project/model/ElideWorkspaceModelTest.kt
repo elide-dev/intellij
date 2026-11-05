@@ -88,13 +88,10 @@ class ElideWorkspaceModelTest {
   private fun module(name: String) = modules.single { it.data.externalName == name }
 
   @Test fun `every project of the workspace contributes its own modules`() {
-    // one module per project, named after it, plus one per source set of that project; the root's own source sets
-    // come from the schema's defaults, which its manifest does not override
+    // Only declared sets or directories that exist contribute source-set modules.
     assertEquals(
       listOf(
         "logstat",
-        "logstat.main",
-        "logstat.test",
         "model",
         "model.main",
         "model.test",
@@ -106,7 +103,7 @@ class ElideWorkspaceModelTest {
     )
 
     // the directory each module belongs to, which is what the post-import step matches a manifest's settings against
-    assertEquals(root.pathString, module("logstat.main").data.linkedExternalProjectPath)
+    assertEquals(root.pathString, module("logstat").data.linkedExternalProjectPath)
     assertEquals(root.resolve("parser").pathString, module("parser.main").data.linkedExternalProjectPath)
   }
 

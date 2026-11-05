@@ -22,6 +22,10 @@ import dev.elide.intellij.service.ElideDistributionResolver.Companion.resourcesP
 import dev.elide.intellij.service.ElideDistributionResolver.Companion.validateDistributionPath
 import dev.elide.intellij.settings.ElideDistributionSetting
 import dev.elide.intellij.settings.ElideSettings
+import java.io.File
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import kotlin.io.path.Path
 import kotlin.io.path.isDirectory
@@ -73,8 +77,9 @@ class ElideDistributionResolver(private val project: Project) {
      * order:
      *
      * 1. `$ELIDE_HOME` environment variable, if set.
-     * 2. First candidate directory (in platform priority order) that already exists on disk.
-     * 3. Platform-appropriate default (regardless of whether it exists yet).
+     * 2. First valid distribution (in platform priority order); stale directories are ignored.
+     * 3. An executable on `PATH`, following symlinks back to its distribution's `bin` directory.
+     * 4. Platform-appropriate default (regardless of whether it exists yet).
      *
      * **Unix (Linux / macOS) candidates**, in order:
      * - `$XDG_DATA_HOME/elide` (when `XDG_DATA_HOME` is set)
@@ -91,8 +96,7 @@ class ElideDistributionResolver(private val project: Project) {
      * Note that the returned path is not guaranteed to contain a valid distribution or even exist on disk.
      */
     @JvmStatic fun defaultDistributionPath(): Path {
-      System.getenv("ELIDE_HOME")?.takeIf { it.isNotBlank() }?.let { return Path(it) }
-      return if (isWindows()) resolveWindowsDefaultPath() else resolveUnixDefaultPath()
+      return detectDistributionPath(System.getenv(), Path(System.getProperty("user.home")), isWindows())
     }
 
     /**
@@ -112,7 +116,7 @@ class ElideDistributionResolver(private val project: Project) {
     /** Lightly validates an Elide distribution [path], verifying some basic directories and files are presents. */
     @JvmStatic fun validateDistributionPath(path: Path): Boolean {
       if (!path.resolve(Constants.ELIDE_RESOURCES_DIR).isDirectory()) return false
-      if (!path.resolve(Constants.ELIDE_BINARIES_DIR).resolve(Constants.ELIDE_BINARY).isRegularFile()) return false
+      if (!executablePath(path).isRegularFile()) return false
 
       return true
     }
@@ -120,33 +124,48 @@ class ElideDistributionResolver(private val project: Project) {
     private fun isWindows(): Boolean =
       System.getProperty("os.name")?.lowercase()?.contains("windows") == true
 
-    private fun resolveUnixDefaultPath(): Path {
-      val userHome = System.getProperty("user.home")
-      val xdgDataHome = System.getenv("XDG_DATA_HOME")?.takeIf { it.isNotBlank() }
-      val candidates = buildList {
-        xdgDataHome?.let { add(Path(it).resolve(Constants.ELIDE_HOME)) }
-        add(Path(userHome).resolve(".local/share/${Constants.ELIDE_HOME}"))
-        add(Path("/opt/elide/current"))
-        add(Path(userHome).resolve(".${Constants.ELIDE_HOME}"))
-      }
-      return candidates.firstOrNull { it.isDirectory() }
-        ?: xdgDataHome?.let { Path(it).resolve(Constants.ELIDE_HOME) }
-        ?: Path(userHome).resolve(".local/share/${Constants.ELIDE_HOME}")
-    }
+    /** The platform-specific CLI binary, shared by discovery and process invocation. */
+    @JvmStatic fun executablePath(home: Path): Path =
+      home.resolve(Constants.ELIDE_BINARIES_DIR).resolve(if (isWindows()) "elide.exe" else Constants.ELIDE_BINARY)
 
-    private fun resolveWindowsDefaultPath(): Path {
-      val userHome = System.getProperty("user.home")
-      val localAppData = System.getenv("LOCALAPPDATA")?.takeIf { it.isNotBlank() }
-      val programFiles = System.getenv("ProgramFiles")?.takeIf { it.isNotBlank() }
+    internal fun detectDistributionPath(env: Map<String, String>, userHome: Path, windows: Boolean): Path {
+      // Explicit selections must reach the normal invalid-home diagnostic, never silently select another install.
+      env["ELIDE_HOME"]?.takeIf(String::isNotBlank)?.let { return Path(it) }
+      val preferred = env[if (windows) "LOCALAPPDATA" else "XDG_DATA_HOME"]
+        ?.takeIf(String::isNotBlank)?.let { Path(it).resolve(Constants.ELIDE_HOME) }
+      val fallback = preferred ?: userHome.resolve(".local/share/${Constants.ELIDE_HOME}")
       val candidates = buildList {
-        localAppData?.let { add(Path(it).resolve(Constants.ELIDE_HOME)) }
-        programFiles?.let { add(Path(it).resolve("Elide")) }
-        add(Path(userHome).resolve(".local/share/${Constants.ELIDE_HOME}"))
-        add(Path(userHome).resolve(".${Constants.ELIDE_HOME}"))
+        preferred?.let(::add)
+        if (windows) {
+          env["ProgramFiles"]?.takeIf(String::isNotBlank)?.let { add(Path(it).resolve("Elide")) }
+        }
+        add(userHome.resolve(".local/share/${Constants.ELIDE_HOME}"))
+        if (!windows) add(Path("/opt/elide/current"))
+        add(userHome.resolve(".${Constants.ELIDE_HOME}"))
       }
-      return candidates.firstOrNull { it.isDirectory() }
-        ?: localAppData?.let { Path(it).resolve(Constants.ELIDE_HOME) }
-        ?: Path(userHome).resolve(".local/share/${Constants.ELIDE_HOME}")
+      val binary = if (windows) "elide.exe" else Constants.ELIDE_BINARY
+      fun valid(home: Path): Boolean =
+        home.resolve(Constants.ELIDE_RESOURCES_DIR).isDirectory() &&
+          home.resolve(Constants.ELIDE_BINARIES_DIR).resolve(binary).isRegularFile()
+
+      candidates.firstOrNull(::valid)?.let { return it }
+      for (directory in env["PATH"].orEmpty().split(if (windows) ';' else File.pathSeparatorChar)) {
+        if (directory.isBlank()) continue
+        try {
+          val executable = Path(directory).resolve(binary)
+          if (!executable.isRegularFile() || (!windows && !Files.isExecutable(executable))) continue
+          val real = executable.toRealPath()
+          val bin = real.parent ?: continue
+          if (bin.fileName?.toString() != Constants.ELIDE_BINARIES_DIR || real.fileName.toString() != binary) continue
+          val home = bin.parent ?: continue
+          if (valid(home)) return home
+        } catch (_: IOException) {
+          // A dangling symlink or an inaccessible PATH entry does not hide a later valid installation.
+        } catch (_: InvalidPathException) {
+          // PATH may include entries that this filesystem cannot represent.
+        }
+      }
+      return fallback
     }
   }
 }

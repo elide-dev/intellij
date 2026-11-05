@@ -21,6 +21,13 @@ import dev.elide.intellij.project.model.ElideBuildTaskInfo
 import dev.elide.intellij.project.model.ElideClasspath
 import dev.elide.intellij.project.model.ElideClasspathUsage
 import dev.elide.intellij.service.ElideDistributionResolver
+import dev.elide.intellij.project.ElideWorkspaces
+import dev.elide.intellij.settings.ElideSettings
+import com.intellij.util.execution.ParametersListUtil
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import dev.elide.project.manifest.ElideManifests
 import dev.elide.tooling.manifest.project.ProjectModule
 import java.io.File
@@ -34,6 +41,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.io.path.isRegularFile
+import java.nio.file.Files
 
 /**
  * Bridge service used to invoke the Elide CLI on a configured distribution. Use [ElideCommandLine.at] to manually set
@@ -43,6 +51,7 @@ import kotlin.io.path.isRegularFile
 class ElideCommandLine private constructor(
   private val elideHome: Path,
   private val workDir: Path? = null,
+  private val buildFlags: List<String> = emptyList(),
 ) {
   /**
    * Launch the Elide CLI binary as a subprocess and suspend until it finishes executing. If a non-zero exit code is
@@ -56,11 +65,15 @@ class ElideCommandLine private constructor(
     environment: Map<String, String>? = null,
     onOutput: ((line: String, stderr: Boolean) -> Unit)? = null,
   ) {
-    val elideBin = elideHome.resolve(Constants.ELIDE_BINARIES_DIR).resolve(Constants.ELIDE_BINARY)
+    val elideBin = ElideDistributionResolver.executablePath(elideHome)
     if (!elideBin.isRegularFile()) throw InvalidElideHomeException(elideHome)
 
     val command = buildList {
       add(elideBin.toString())
+      for (flag in buildFlags) {
+        add("-f")
+        add(flag)
+      }
       addAll(elements = args)
     }
 
@@ -122,6 +135,35 @@ class ElideCommandLine private constructor(
     }
   }
 
+  /** Resolve CLI-relative paths against the queried project, not the IDE's working directory. */
+  internal fun absoluteClasspath(entries: List<String>): List<String> = entries.map {
+    val path = Path.of(it)
+    (if (path.isAbsolute) path else (workDir ?: Path.of("")).resolve(path)).normalize().toString()
+  }
+
+  private fun installationSelection(classifiers: List<String>): String = JsonObject(mapOf(
+    "classifiers" to JsonArray(classifiers.map(::JsonPrimitive)),
+    "flags" to JsonArray(buildFlags.map(::JsonPrimitive)),
+  )).toString()
+
+  internal suspend fun isInstallationCurrent(classifiers: List<String>): Boolean {
+    val root = workDir ?: return false
+    return withContext(Dispatchers.IO) {
+      runCatching {
+        Files.readString(root.resolve(".dev/ide/intellij-install-classifiers")) == installationSelection(classifiers)
+      }.getOrDefault(false)
+    }
+  }
+
+  internal suspend fun recordInstalledClassifiers(classifiers: List<String>) {
+    val root = workDir ?: return
+    withContext(Dispatchers.IO) {
+      val marker = root.resolve(".dev/ide/intellij-install-classifiers")
+      Files.createDirectories(marker.parent)
+      Files.writeString(marker, installationSelection(classifiers))
+    }
+  }
+
   companion object {
     /** Upper bound on the amount of standard error output retained for failure messages. */
     private const val STDERR_CAPTURE_LIMIT = 64 * 1024
@@ -130,13 +172,23 @@ class ElideCommandLine private constructor(
     private const val TERMINATION_GRACE_MILLIS = 5_000L
 
     /** Returns an [ElideCommandLine] at the given [elideHome], optionally using [workDir] when invoking commands. */
-    @JvmStatic fun at(elideHome: Path, workDir: Path? = null): ElideCommandLine {
-      return ElideCommandLine(elideHome, workDir)
+    @JvmStatic fun at(
+      elideHome: Path,
+      workDir: Path? = null,
+      buildFlags: List<String> = emptyList(),
+    ): ElideCommandLine {
+      return ElideCommandLine(elideHome, workDir, buildFlags)
     }
 
     /** Returns an [ElideCommandLine] configured according to a linked external project's settings. */
     @JvmStatic fun resolve(project: Project, externalProjectPath: String, workDir: Path? = null): ElideCommandLine {
-      return at(ElideDistributionResolver.getElideHome(project, externalProjectPath), workDir)
+      val linked = ElideWorkspaces.linkedRoot(project, externalProjectPath) ?: externalProjectPath
+      val settings = ElideSettings.getSettings(project).getLinkedProjectSettings(linked)
+      return at(
+        ElideDistributionResolver.getElideHome(project, externalProjectPath),
+        workDir,
+        ParametersListUtil.parse(settings?.buildFlags.orEmpty()),
+      )
     }
 
     /**
@@ -154,10 +206,20 @@ class ElideCommandLine private constructor(
   }
 }
 
-suspend fun ElideCommandLine.install(onOutput: ((line: String, stderr: Boolean) -> Unit)? = null) {
-  val args = arrayOf("install")
-
-  invoke(args = args, onOutput = onOutput)
+suspend fun ElideCommandLine.install(
+  classifiers: List<String> = listOf("sources"),
+  onOutput: ((line: String, stderr: Boolean) -> Unit)? = null,
+) {
+  val args = buildList {
+    add("install")
+    add("--slim")
+    for (classifier in classifiers) {
+      add("--with")
+      add(classifier)
+    }
+  }
+  invoke(args = args.toTypedArray(), onOutput = onOutput)
+  recordInstalledClassifiers(classifiers)
 }
 
 /**
@@ -215,7 +277,48 @@ suspend fun ElideCommandLine.classpath(
     if (!stderr) output.append(line)
   }
 
-  return ElideClasspath(usage, ElideCommandLine.parseClasspath(output.toString()))
+  return ElideClasspath(usage, absoluteClasspath(ElideCommandLine.parseClasspath(output.toString())))
+}
+
+/**
+ * Ask a recent CLI for all usages in one project evaluation. Only an explicit rejection of `--json` falls back;
+ * dependency and malformed-output failures must remain failures rather than being hidden by another invocation.
+ */
+suspend fun ElideCommandLine.classpaths(
+  queries: List<Pair<String, ElideClasspathUsage>>,
+  onOutput: ((line: String, stderr: Boolean) -> Unit)? = null,
+): Map<Pair<String, ElideClasspathUsage>, ElideClasspath> {
+  if (queries.isEmpty()) return emptyMap()
+  val unique = queries.distinct()
+  val output = StringBuilder()
+  val diagnostics = mutableListOf<String>()
+  var fallback = false
+  try {
+    invoke(args = (listOf("classpath", "--json") + unique.map { (set, usage) ->
+      "$set:${usage.name.lowercase()}"
+    }).toTypedArray()) { line, stderr ->
+      if (stderr) diagnostics.add(line) else output.append(line)
+    }
+  } catch (cause: ElideCommandFailedException) {
+    if (cause.exitCode != 2 || "--json" !in cause.stderr ||
+      !(cause.stderr.contains("unexpected argument") || cause.stderr.contains("unrecognized option"))) throw cause
+    fallback = true
+    return unique.associateWith { (set, usage) -> classpath(set, usage, onOutput) }
+  } finally {
+    if (!fallback) diagnostics.forEach { onOutput?.invoke(it, true) }
+  }
+  val json = Json.parseToJsonElement(output.toString()) as? JsonObject
+    ?: error("Elide classpath --json returned no object")
+  return unique.associateWith { (set, usage) ->
+    val query = "$set:${usage.name.lowercase()}"
+    val values = json[query] as? JsonArray ?: error("Elide classpath did not answer $query")
+    val entries = values.map {
+      val value = it as? JsonPrimitive
+      require(value?.isString == true) { "Elide classpath returned a non-string entry for $query" }
+      value.content
+    }
+    ElideClasspath(usage, absoluteClasspath(entries))
+  }
 }
 
 /**

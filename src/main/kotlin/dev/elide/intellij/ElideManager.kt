@@ -27,6 +27,8 @@ import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Pair
+import com.intellij.util.execution.ParametersListUtil
+import dev.elide.intellij.project.ElideWorkspaces
 import com.intellij.util.Function
 import dev.elide.intellij.project.ElideProjectResolver
 import dev.elide.intellij.service.ElideDistributionResolver
@@ -94,10 +96,21 @@ class ElideManager : ExternalSystemAutoImportAware, ExternalSystemConfigurableAw
   override fun getExecutionSettingsProvider(): Function<Pair<Project, String>, ElideExecutionSettings> = Function {
     val project = it.first
     val path = it.second
+    val linked = ElideWorkspaces.linkedRoot(project, path) ?: path
+    val preferences = ElideSettings.getSettings(project).getLinkedProjectSettings(linked) ?: ElideProjectSettings()
 
     LOG.debug("Preparing execution settings for project at '$path': $project")
     ElideExecutionSettings(
       elideHome = ElideDistributionResolver.getElideHome(project, path),
+      buildFlags = ParametersListUtil.parse(preferences.buildFlags),
+      commandOptions = mapOf(
+        "build" to preferences.buildOptions,
+        "run" to preferences.runOptions,
+        "test" to preferences.testOptions,
+        "install" to preferences.installOptions,
+      ),
+      installClassifiers = preferences.installClassifiers.split(',').map(String::trim).filter(String::isNotEmpty),
+      jdkHome = preferences.jdkHome,
     )
   }
 

@@ -27,6 +27,7 @@ import com.intellij.openapi.externalSystem.service.execution.ExternalSystemRunna
 import com.intellij.openapi.project.Project
 import com.intellij.util.execution.ParametersListUtil
 import dev.elide.intellij.Constants
+import dev.elide.intellij.android.testing.ElideAndroidTestParser
 import dev.elide.intellij.cli.ElideCli
 import dev.elide.intellij.execution.coverage.ElideCoverageProgramRunner
 import dev.elide.intellij.project.model.ElideEntrypointInfo
@@ -52,8 +53,8 @@ class ElideRunConfiguration(
   /**
    * Whether this configuration can be debugged over JDWP, which decides if the IDE offers the "Debug" action for it.
    *
-   * Only JVM code started by `elide run` or `elide test` exposes a JDWP server; for guest languages the same flag
-   * activates the Chrome DevTools or Debug Adapter protocol instead, neither of which the IDE's Java debugger speaks.
+   * JVM run/test entrypoints and explicit build targets can expose a JDWP server. Guest-language run entrypoints
+   * activate CDP/DAP instead, neither of which the IDE's Java debugger speaks.
    */
   val supportsDebugger: Boolean
     get() = supportsDebugger(settings.taskNames, entrypointKind, entrypointValue)
@@ -130,7 +131,7 @@ class ElideRunConfiguration(
       // a build belongs in the Build window, the way it does for every other build system: naming a progress
       // listener of its own sends the run's build tree there instead of to a view of the Run window, and the
       // platform's own runner hides the run content whose console that view would have been
-      if (buildsArtifacts(commandLine)) {
+      if (buildsArtifacts(commandLine) && ElideAndroidTestParser.targets(commandLine).isEmpty()) {
         state.putUserData(PROGRESS_LISTENER_KEY, BuildViewManager::class.java)
       }
     }
@@ -177,30 +178,39 @@ class ElideRunConfiguration(
      * `--reporter=tap`, so its results reach the test tree while the debugger is attached instead of piling up in a
      * console. Coverage is not collected: the coverage executor has a runner of its own, and this is not it.
      */
-    fun debugCommandLine(taskNames: List<String>): List<String> =
-      debuggerCommandLine(executionCommandLine(taskNames, coverage = false) ?: taskNames)
+    fun debugCommandLine(taskNames: List<String>): List<String> {
+      val commandLine = buildCommandLine(taskNames) ?: taskNames
+      return debuggerCommandLine(executionCommandLine(commandLine, coverage = false) ?: commandLine)
+    }
 
     /**
-     * Returns [taskNames] with [ElideCli.DEBUGGER] inserted right after the command, where it precedes the
-     * entrypoint, any paths narrowing a test run, and any `--` separated arguments.
-     *
-     * Command lines naming no command receive the flag in leading position, where it configures the implicit root
-     * `run`. That is the only other place the CLI takes it: the flag is declared by `run`, `test` and the root
-     * command rather than being global, so `elide --debugger test` is parsed by the root command and the test run
-     * never sees it.
+     * Returns [taskNames] with [ElideCli.DEBUGGER] in the command's option position. Build options follow their
+     * explicit targets and precede passthrough arguments. Android debug targets establish JDWP themselves.
      */
     fun debuggerCommandLine(taskNames: List<String>): List<String> {
-      if (taskNames.any(ElideCli.DEBUGGER::matches)) return taskNames
+      val commandLine = buildCommandLine(taskNames) ?: taskNames
+      val invocation = ElideCli.parse(commandLine)
+      val targets = ElideCli.buildTargets(commandLine, invocation)
+      if (invocation.command == ElideCli.BUILD) {
+        require(targets.isNotEmpty()) { Constants.Strings["execution.error.debugBuildTargetRequired"] }
+        if (targets.all { it.substringAfterLast(':').startsWith("android-debug-") }) return commandLine
+      }
+      if (ElideCli.flagIndex(commandLine, invocation, ElideCli.DEBUGGER) >= 0) return commandLine
+      val index = when {
+        invocation.command == ElideCli.BUILD -> invocation.passthroughIndex.takeIf { it >= 0 } ?: commandLine.size
+        invocation.command != null -> invocation.commandIndex + 1
+        else -> 0
+      }
 
-      val invocation = ElideCli.parse(taskNames)
-      val index = if (invocation.command != null) invocation.commandIndex + 1 else 0
-
-      return taskNames.toMutableList().apply { add(index, ElideCli.DEBUGGER.option) }
+      return commandLine.toMutableList().apply { add(index, ElideCli.DEBUGGER.option) }
     }
 
     /** Returns whether the entrypoint described by [taskNames], [kind] and [value] runs on a debuggable JVM. */
     fun supportsDebugger(taskNames: List<String>, kind: Kind?, value: String?): Boolean {
-      val command = ElideCli.parse(taskNames).command
+      val commandLine = buildCommandLine(taskNames) ?: taskNames
+      val invocation = ElideCli.parse(commandLine)
+      val command = invocation.command
+      if (command == ElideCli.BUILD) return ElideCli.buildTargets(commandLine, invocation).isNotEmpty()
       if (command != ElideCli.RUN && command != ElideCli.TEST) return false
 
       return when (kind) {
@@ -209,7 +219,7 @@ class ElideRunConfiguration(
         Kind.Script -> false
         // `elide test --debugger` puts the test JVM behind the same suspended JDWP server `elide run` uses
         Kind.JvmTest -> true
-        // an artifact is assembled by `elide build`, which the command line check above has already rejected
+        // Artifact entrypoints only support debugging through their explicit build invocation.
         Kind.Artifact -> false
         Kind.Generic -> value?.substringAfterLast('.')?.lowercase() in JVM_ENTRYPOINT_EXTENSIONS
         // hand-written command lines carry no entrypoint metadata, so the CLI's own resolution decides: `entrypoint`

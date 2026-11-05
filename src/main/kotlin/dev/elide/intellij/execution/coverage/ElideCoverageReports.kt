@@ -17,7 +17,10 @@ import dev.elide.intellij.Constants
 import org.jacoco.core.analysis.Analyzer
 import org.jacoco.core.analysis.CoverageBuilder
 import org.jacoco.core.analysis.ICounter
-import org.jacoco.core.analysis.ISourceFileCoverage
+import javax.xml.XMLConstants
+import javax.xml.stream.XMLInputFactory
+import javax.xml.stream.XMLStreamConstants
+import javax.xml.stream.XMLStreamException
 import org.jacoco.core.tools.ExecFileLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -27,16 +30,16 @@ import kotlin.io.path.extension
 import kotlin.io.path.getLastModifiedTime
 import kotlin.io.path.fileSize
 import kotlin.io.path.name
+import kotlin.io.path.nameWithoutExtension
 import kotlin.io.path.readText
 
 /**
  * The coverage a `--coverage` run leaves in an Elide project's output directory, and its merge into the single LCOV
  * report the IDE reads.
  *
- * The CLI writes one file per engine, in two formats: guest coverage is LCOV, keyed by absolute source path, while
- * JVM coverage is a JaCoCo execution file, which carries only probe hits per class and has to be resolved against
- * the compiled classes to say anything about lines. Both become LCOV here, so the IDE sees one report covering every
- * language of the run rather than one suite per engine.
+ * Guest coverage is LCOV, keyed by absolute source path. JVM coverage is either JaCoCo execution data resolved
+ * against compiled classes or a JaCoCo XML report with instruction and branch counters. Both become LCOV here,
+ * so the IDE sees one report covering every language of the run rather than one suite per engine.
  */
 internal object ElideCoverageReports {
   /** Coverage artifacts of a single project, as they exist on disk. */
@@ -45,9 +48,11 @@ internal object ElideCoverageReports {
     val lcov: List<Path>,
     /** JaCoCo execution files written by the JVM test runs. */
     val exec: List<Path>,
+    /** JaCoCo XML reports, usable without compiled classes. */
+    val xml: List<Path>,
   ) {
     /** Whether the run produced no coverage at all. */
-    val isEmpty: Boolean get() = lcov.isEmpty() && exec.isEmpty()
+    val isEmpty: Boolean get() = lcov.isEmpty() && exec.isEmpty() && xml.isEmpty()
 
     /**
      * Identity of this set of files, used to tell a report that has been re-generated from one that has not.
@@ -56,7 +61,7 @@ internal object ElideCoverageReports {
      * hashing megabytes of execution data to answer "is this the report I already attached" is not worth it.
      */
     fun fingerprint(): String = buildString {
-      for (path in lcov + exec) {
+      for (path in lcov + exec + xml) {
         append(path.absolutePathString()).append(':')
         append(runCatching { path.fileSize() }.getOrDefault(-1L)).append(':')
         append(runCatching { path.getLastModifiedTime().toMillis() }.getOrDefault(-1L)).append('\n')
@@ -70,17 +75,35 @@ internal object ElideCoverageReports {
    * The threshold is what keeps a run that produced no coverage of its own from attaching the report of an earlier
    * one: the files stay in the output directory until the next `--coverage` run overwrites them.
    *
-   * JaCoCo execution files are looked for under both coverage directories: Elide 1.6 writes them under
-   * [REPORTS_DIR] beside the guest reports, while earlier releases wrote them under [ARTIFACTS_DIR].
+   * Reports are looked for under both coverage directories: Elide 1.6 writes them under [REPORTS_DIR],
+   * while earlier releases wrote JVM coverage under [ARTIFACTS_DIR].
    */
   fun discover(projectRoot: Path, modifiedSince: Long = 0L): Artifacts {
     val output = projectRoot.resolve(Constants.OUTPUT_DIR)
     val reports = output.resolve(REPORTS_DIR).resolve(COVERAGE_DIR)
     val artifacts = output.resolve(ARTIFACTS_DIR).resolve(COVERAGE_DIR)
+    val directories = listOf(reports, artifacts)
+    val discovered = directories.flatMap { dir ->
+      files(dir, modifiedSince) { it.name == LCOV_NAME || it.extension == EXEC_EXT || it.extension == XML_EXT }
+    }
+    // The same task may have outputs in both layouts after a CLI upgrade. Keep only its newest copy.
+    fun identity(path: Path): Path {
+      val directory = directories.first { path.startsWith(it) }
+      val relative = directory.relativize(path)
+      return relative.resolveSibling(path.nameWithoutExtension)
+    }
+    fun newest(extension: String): List<Path> = discovered.filter { it.extension == extension }
+      .groupBy(::identity)
+      .values.map { copies -> copies.maxBy { it.getLastModifiedTime() } }
 
+    val exec = newest(EXEC_EXT)
+    val executionReports = exec.mapTo(HashSet(), ::identity)
     return Artifacts(
-      lcov = files(reports, modifiedSince) { it.name == LCOV_NAME },
-      exec = listOf(reports, artifacts).flatMap { dir -> files(dir, modifiedSince) { it.extension == EXEC_EXT } },
+      lcov = discovered.filter { it.name == LCOV_NAME },
+      exec = exec,
+      // XML is another rendering of this task's probes, not another measurement. Never fall back to a possibly
+      // stale XML sibling if reading current execution data fails. Filtering by run time happens before pairing.
+      xml = newest(XML_EXT).filterNot { identity(it) in executionReports },
     )
   }
 
@@ -111,9 +134,23 @@ internal object ElideCoverageReports {
         appendGuestReport(text, projectRoot, canonicalRoot)
       }
 
-      for (path in artifacts.exec) {
-        runCatching { appendExecutionData(path, classRoots, sourceRoots) }
-          .onFailure { cause -> LOG.warn("Failed to read JVM coverage report $path", cause) }
+      val jvm = linkedMapOf<String, MutableMap<Int, LineCoverage>>()
+      runCatching { readExecutionData(artifacts.exec, classRoots, sourceRoots) }
+        .onSuccess { mergeCounters(jvm, it) }
+        .onFailure { LOG.warn("Failed to analyze JVM coverage", it) }
+
+      for (path in artifacts.xml) {
+        runCatching { readXmlReport(path, sourceRoots) }
+          .onSuccess { mergeCounters(jvm, it) }
+          .onFailure { LOG.warn("Failed to read JVM XML coverage report $path", it) }
+      }
+      for ((source, lines) in jvm) {
+        append(SOURCE_FILE_PREFIX).append(source).append('\n')
+        for ((line, counters) in lines.toSortedMap()) {
+          append(LINE_HITS_PREFIX).append(line).append(',').append(counters.hit).append('\n')
+          appendBranches(line, counters.covered, counters.total - counters.covered)
+        }
+        append(END_OF_RECORD).append('\n')
       }
     }
 
@@ -147,11 +184,29 @@ internal object ElideCoverageReports {
   private fun classRoots(projectRoot: Path): List<Path> =
     listOf(projectRoot.resolve(Constants.OUTPUT_DIR).resolve(JVM_DIR).resolve(CLASSES_DIR)).filter { it.exists() }
 
-  /** Appends the LCOV records described by the JaCoCo execution file at [exec]. */
-  private fun StringBuilder.appendExecutionData(exec: Path, classRoots: List<Path>, sourceRoots: List<Path>) {
+  /** Loads each report atomically, then unions probes before deriving line and branch counters. */
+  private fun readExecutionData(
+    reports: List<Path>,
+    classRoots: List<Path>,
+    sourceRoots: List<Path>,
+  ): Map<String, Map<Int, LineCoverage>> {
     val loader = ExecFileLoader()
-    loader.load(exec.toFile())
+    var loaded = false
+    for (path in reports) {
+      runCatching {
+        // A truncated report may already have supplied probes before load throws. Do not let any of them escape.
+        val report = ExecFileLoader().also { it.load(path.toFile()) }
+        val entries = report.executionDataStore.contents
+        for (entry in entries) {
+          loader.executionDataStore.get(entry.id)?.assertCompatibility(entry.id, entry.name, entry.probes.size)
+        }
+        for (entry in entries) loader.executionDataStore.put(entry)
+        loaded = true
+      }.onFailure { LOG.warn("Failed to read JVM coverage report $path", it) }
+    }
+    if (!loaded) return emptyMap()
 
+    val result = linkedMapOf<String, MutableMap<Int, LineCoverage>>()
     val coverage = CoverageBuilder()
     val analyzer = Analyzer(loader.executionDataStore, coverage)
     for (root in classRoots) analyzer.analyzeAll(root.toFile())
@@ -160,36 +215,127 @@ internal object ElideCoverageReports {
       // a class compiled without debug information carries no line table, and nothing about it can be shown in an
       // editor; the console report the CLI prints still counts it
       if (source.firstLine < FIRST_LINE) continue
-      val path = locate(source, sourceRoots) ?: continue
+      val path = locate(source.packageName, source.name, sourceRoots) ?: continue
 
-      append(SOURCE_FILE_PREFIX).append(path).append('\n')
+      val lines = result.getOrPut(path) { linkedMapOf() }
       for (line in source.firstLine..source.lastLine) {
         val status = source.getLine(line).status
         if (status == ICounter.EMPTY) continue
 
         // LCOV counts executions, JaCoCo only knows whether a line was reached: a partly covered line (one branch
         // of a condition taken) is a line that ran
-        append(LINE_HITS_PREFIX).append(line).append(',')
-        append(if (status == ICounter.NOT_COVERED) 0 else 1).append('\n')
+        val branches = source.getLine(line).branchCounter
+        lines[line] = LineCoverage(
+          if (status == ICounter.NOT_COVERED) 0 else 1,
+          branches.coveredCount,
+          branches.totalCount,
+        )
       }
-      append(END_OF_RECORD).append('\n')
+    }
+    return result
+  }
+
+  /** Reads JaCoCo's counters without loading its DTD or resolving entities from the report. */
+  private fun readXmlReport(xml: Path, sourceRoots: List<Path>): Map<String, Map<Int, LineCoverage>> {
+    val result = linkedMapOf<String, MutableMap<Int, LineCoverage>>()
+    val factory = XMLInputFactory.newDefaultFactory().apply {
+      setProperty(XMLInputFactory.SUPPORT_DTD, false)
+      setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false)
+      setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "")
+      setXMLResolver { _, _, _, _ -> throw XMLStreamException("External XML resources are disabled") }
+    }
+    Files.newInputStream(xml).use { input ->
+      val reader = factory.createXMLStreamReader(input)
+      try {
+        var depth = 0
+        var packageDepth = -1
+        var sourceDepth = -1
+        var packageName: String? = null
+        var source: String? = null
+        while (reader.hasNext()) {
+          when (reader.next()) {
+            XMLStreamConstants.START_ELEMENT -> {
+              depth++
+              val name = reader.localName
+              if (depth == 1 && name != "report") return emptyMap()
+              when {
+                name == "package" && packageDepth < 0 -> {
+                  packageName = reader.getAttributeValue(null, "name")
+                  packageDepth = depth
+                }
+                name == "sourcefile" && depth == packageDepth + 1 -> {
+                  sourceDepth = depth
+                  source = reader.getAttributeValue(null, "name")?.let { locate(packageName, it, sourceRoots) }
+                }
+                name == "line" && source != null && depth == sourceDepth + 1 -> {
+                  fun counter(name: String): Int =
+                    reader.getAttributeValue(null, name)?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+                  val line = counter("nr")
+                  if (line < FIRST_LINE) continue
+                  val covered = counter("cb")
+                  val counters = LineCoverage(if (counter("ci") > 0) 1 else 0, covered, covered + counter("mb"))
+                  val lines = result.getOrPut(source) { linkedMapOf() }
+                  lines[line] = lines[line]?.union(counters) ?: counters
+                }
+              }
+            }
+            XMLStreamConstants.END_ELEMENT -> {
+              if (depth == sourceDepth) {
+                source = null
+                sourceDepth = -1
+              }
+              if (depth == packageDepth) {
+                packageName = null
+                packageDepth = -1
+              }
+              depth--
+            }
+          }
+        }
+      } finally {
+        reader.close()
+      }
+    }
+    return result
+  }
+
+  private data class LineCoverage(val hit: Int, val covered: Int, val total: Int) {
+    // XML has no branch identities. The greatest observed covered count is the only guaranteed union;
+    // adding counts could double-count the same branch. Retain the greatest observed denominator as well.
+    fun union(other: LineCoverage) =
+      LineCoverage(maxOf(hit, other.hit), maxOf(covered, other.covered), maxOf(total, other.total))
+  }
+
+  private fun mergeCounters(
+    target: MutableMap<String, MutableMap<Int, LineCoverage>>,
+    report: Map<String, Map<Int, LineCoverage>>,
+  ) {
+    for ((source, incoming) in report) {
+      val lines = target.getOrPut(source) { linkedMapOf() }
+      for ((line, counters) in incoming) lines[line] = lines[line]?.union(counters) ?: counters
     }
   }
 
   /**
-   * Returns the absolute path of the source JaCoCo describes as [source], or `null` when no source root holds it.
-   *
-   * A source that cannot be resolved is dropped rather than recorded under its package path: an LCOV record naming
-   * `polyglot/Greeter.kt` points at no file the IDE can annotate, and would only show up in the coverage view as a
-   * row that navigates nowhere.
+   * Encodes final counts as synthetic LCOV slots, not identities of bytecode branches. Emit these only after
+   * merging probes and conservatively combining XML counters, never once per input report.
    */
-  private fun locate(source: ISourceFileCoverage, sourceRoots: List<Path>): String? {
-    val relative = source.packageName?.takeIf { it.isNotEmpty() }?.let { "$it/${source.name}" } ?: source.name
+  private fun StringBuilder.appendBranches(line: Int, covered: Int, missed: Int) {
+    for (branch in 0 until covered + missed) {
+      append("BRDA:").append(line).append(",0,").append(branch).append(',')
+        .append(if (branch < covered) 1 else 0).append('\n')
+    }
+  }
 
-    return sourceRoots.asSequence()
-      .map { it.resolve(relative).normalize() }
-      .firstOrNull { it.exists() }
-      ?.absolutePathString()
+  /** Resolves a package-relative source only within a configured source root. */
+  private fun locate(packageName: String?, name: String, sourceRoots: List<Path>): String? {
+    val relative = packageName?.takeIf { it.isNotEmpty() }?.let { "$it/$name" } ?: name
+    for (root in sourceRoots) {
+      val normalizedRoot = root.toAbsolutePath().normalize()
+      val candidate = normalizedRoot.resolve(relative).normalize()
+      if (candidate.startsWith(normalizedRoot) && Files.isRegularFile(candidate)) return candidate.absolutePathString()
+    }
+    return null
   }
 
   /** Returns the regular files under [directory] that satisfy [predicate] and are not older than [modifiedSince]. */
@@ -199,7 +345,7 @@ internal object ElideCoverageReports {
     return runCatching {
       Files.walk(directory).use { paths ->
         paths.filter { Files.isRegularFile(it) && predicate(it) && it.getLastModifiedTime().toMillis() >= modifiedSince }
-          .toList()
+          .sorted().toList()
       }
     }.getOrElse { cause ->
       LOG.warn("Failed to scan coverage reports under $directory", cause)
@@ -227,6 +373,9 @@ internal object ElideCoverageReports {
 
   /** Extension of a JaCoCo execution file. */
   private const val EXEC_EXT = "exec"
+
+  /** Extension of a JaCoCo XML report. */
+  private const val XML_EXT = "xml"
 
   /** Lowest line number a source file can report; JaCoCo answers `-1` for a class without line information. */
   private const val FIRST_LINE = 1

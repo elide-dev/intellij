@@ -1,0 +1,246 @@
+/// Configures OpenTelemetry traces, metrics, logs, and profiles for an Elide project.
+///
+/// Unset properties take Elide's defaults; `OTEL_*` and `ELIDE_OTEL_*` environment variables override this block, and
+/// `--otel-*` flags override both.
+@ModuleInfo { minPklVersion = "0.28.1" }
+module elide.opentelemetry
+
+/// Telemetry provider preset. `otlp` is any OTLP endpoint, such as a collector or agent.
+typealias Provider = "otlp" | "sentry" | "datadog" | "posthog" | "honeycomb" | "grafana"
+
+/// OTLP wire protocol.
+typealias Protocol = "grpc" | "http/protobuf" | "http/json"
+
+/// Telemetry signal. Errors travel as trace exception events and error-severity log records.
+typealias Signal = "traces" | "metrics" | "logs" | "profiles"
+
+/// Request body compression.
+typealias Compression = "gzip" | "none"
+
+/// Head sampler, as named by `OTEL_TRACES_SAMPLER`.
+typealias Sampler =
+  "always_on"
+  | "always_off"
+  | "traceidratio"
+  | "parentbased_always_on"
+  | "parentbased_always_off"
+  | "parentbased_traceidratio"
+
+/// Context propagator.
+typealias Propagator = "tracecontext" | "baggage" | "none"
+
+/// Log severity threshold.
+typealias Level = "trace" | "debug" | "info" | "warn" | "error" | "fatal" | "off"
+
+/// Metric aggregation temporality.
+typealias Temporality = "cumulative" | "delta"
+
+/// Name of an environment variable; holds a credential so it never appears in the manifest.
+typealias EnvVarName = String(matches(Regex(#"^[A-Za-z_][A-Za-z0-9_]*$"#)))
+
+/// HTTP(S) URL.
+typealias EndpointUrl = String(startsWith("http://") || startsWith("https://"))
+
+/// Resource attribute value.
+typealias ResourceValue = String | Boolean | Int | Float
+
+/// Service identity, exported as `service.*` resource attributes.
+class ServiceSettings {
+  /// `service.name`.
+  name: String?
+
+  /// `service.version`.
+  version: String?
+
+  /// `service.namespace`.
+  namespace: String?
+
+  /// `deployment.environment.name`.
+  environment: String?
+}
+
+/// Settings for one signal of a destination; set properties replace the destination's own.
+class SignalOverride {
+  /// Complete URL for this signal, used as given.
+  endpoint: EndpointUrl?
+
+  /// Wire protocol for this signal.
+  protocol: Protocol?
+
+  /// Literal, non-secret headers.
+  headers: Mapping<String, String> = new {}
+
+  /// Headers whose values are read from the named environment variables.
+  headerEnv: Mapping<String, EnvVarName> = new {}
+
+  /// Body compression.
+  compression: Compression?
+
+  /// Per-request timeout.
+  timeout: Duration(isPositive)?
+}
+
+/// A place telemetry is sent.
+class Destination {
+  /// Provider preset; `otlp` when unset.
+  provider: Provider?
+
+  /// Base endpoint; for presets, replaces the provider's host. HTTP signal paths are appended.
+  endpoint: EndpointUrl?
+
+  /// Wire protocol; `http/protobuf` when unset.
+  protocol: Protocol?
+
+  /// Literal, non-secret headers.
+  headers: Mapping<String, String> = new {}
+
+  /// Headers whose values are read from the named environment variables.
+  headerEnv: Mapping<String, EnvVarName> = new {}
+
+  /// Environment variable holding the provider's API key or token. Defaults: `DD_API_KEY`, `POSTHOG_PROJECT_TOKEN`,
+  /// `HONEYCOMB_API_KEY`, `GRAFANA_CLOUD_OTLP_CREDENTIAL` (`<instance id>:<token>`).
+  credential: EnvVarName?
+
+  /// Environment variable holding a Sentry DSN; `SENTRY_DSN` when unset.
+  dsn: EnvVarName?
+
+  /// Datadog site, such as `us5`, `eu`, or `datadoghq.com`; `DD_SITE` or `datadoghq.com` when unset.
+  site: String?
+
+  /// PostHog or Honeycomb region (`us`, `eu`), or Grafana Cloud zone (`prod-us-east-0`).
+  region: String?
+
+  /// Signals to send here; every signal the provider accepts when unset.
+  signals: Listing<Signal>(isDistinct)?
+
+  /// Body compression; `gzip` when unset.
+  compression: Compression?
+
+  /// Per-request timeout; 10 seconds when unset.
+  timeout: Duration(isPositive)?
+
+  /// Per-signal overrides.
+  perSignal: Mapping<Signal, SignalOverride> = new {}
+}
+
+/// Application trace settings.
+class TraceSettings {
+  /// Record application spans; on when unset.
+  enabled: Boolean?
+
+  /// Head sampler; `parentbased_always_on` when unset.
+  sampler: Sampler?
+
+  /// Ratio for ratio-based samplers.
+  ratio: Float(isBetween(0, 1))?
+
+  /// Propagators for incoming and outgoing requests; `tracecontext` and `baggage` when unset.
+  propagators: Listing<Propagator>(isDistinct)?
+}
+
+/// Application metric settings.
+class MetricSettings {
+  /// Record application metrics; on when unset.
+  enabled: Boolean?
+
+  /// Export interval; 60 seconds when unset.
+  interval: Duration(isPositive)?
+
+  /// Aggregation temporality; `cumulative` when unset, `delta` when sending metrics to Datadog.
+  temporality: Temporality?
+}
+
+/// Application log settings.
+class LogSettings {
+  /// Export application log records; on when unset.
+  enabled: Boolean?
+
+  /// Minimum severity; `info` when unset.
+  level: Level?
+
+  /// Export `console.*`, Python `logging`, and similar output as log records; on when unset.
+  console: Boolean?
+}
+
+/// Guest code profiling settings (experimental).
+class ProfileSettings {
+  /// Sample guest CPU usage; off when unset.
+  enabled: Boolean?
+
+  /// Samples per second; 100 when unset.
+  frequency: Int(isBetween(1, 10000))?
+}
+
+/// Elide's own telemetry: serving, fetch, and lifecycle spans, runtime metrics, and runtime logs.
+class RuntimeSettings {
+  /// Runtime spans; on when unset.
+  traces: Boolean?
+
+  /// Runtime metrics; on when unset.
+  metrics: Boolean?
+
+  /// Minimum severity of Elide's own log records to export; `warn` when unset.
+  logs: Level?
+}
+
+/// W3C Baggage key: an HTTP token.
+typealias BaggageKey = String(matches(Regex(#"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$"#)))
+
+/// Runtime HTTP baggage propagation. Inbound baggage is untrusted input, so each direction is off
+/// until enabled, and `OTEL_PROPAGATORS` does not enable it for runtime HTTP.
+class BaggageSettings {
+  /// Parse inbound `baggage` headers on served requests into the request context.
+  inbound: Boolean = false
+
+  /// Inject the current context's baggage into runtime HTTP client requests; a caller-set header
+  /// is never overwritten.
+  outbound: Boolean = false
+
+  /// Keys allowed in both directions; all keys pass an enabled direction when unset.
+  allow: Listing<BaggageKey>(isDistinct, length <= 180)?
+
+  /// Inbound keys copied onto the server span as `baggage.<key>` attributes.
+  spanAttributes: Listing<BaggageKey>(isDistinct, length <= 180) = new {}
+}
+
+/// Runtime context propagation.
+class PropagationSettings {
+  /// Runtime HTTP baggage.
+  baggage: BaggageSettings = new {}
+}
+
+/// OpenTelemetry settings for this project.
+class OpenTelemetrySettings {
+  /// `false` turns telemetry off, whatever the environment says.
+  enabled: Boolean?
+
+  /// Service identity.
+  service: ServiceSettings = new {}
+
+  /// Extra resource attributes.
+  resource: Mapping<String, ResourceValue> = new {}
+
+  /// Named destinations. Telemetry is off when there are none.
+  destinations: Mapping<String, Destination> = new {}
+
+  /// Application traces.
+  traces: TraceSettings = new {}
+
+  /// Application metrics.
+  metrics: MetricSettings = new {}
+
+  /// Application logs.
+  logs: LogSettings = new {}
+
+  /// Guest profiling.
+  profiles: ProfileSettings = new {}
+
+  /// Elide's own telemetry.
+  runtime: RuntimeSettings = new {}
+
+  /// Runtime context propagation.
+  propagation: PropagationSettings = new {}
+
+  /// Final export deadline at exit; 5 seconds when unset.
+  shutdownTimeout: Duration(isPositive)?
+}

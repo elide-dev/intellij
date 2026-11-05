@@ -22,11 +22,11 @@ import com.intellij.execution.ui.RunContentDescriptor
 /**
  * Program runner backing the IDE's "Debug" action for [ElideRunConfiguration].
  *
- * The CLI starts JVM entrypoints and JVM test runs under a suspended JDWP server when it is passed `--debugger`
- * ([dev.elide.intellij.cli.ElideCli.DEBUGGER], added to the command line by
+ * The CLI starts JVM entrypoints, JVM test runs, and debugger-capable build targets under a suspended JDWP server
+ * when passed `--debugger` ([dev.elide.intellij.cli.ElideCli.DEBUGGER], added to the command line by
  * [ElideRunConfiguration.getState]), so all this runner does is point the IDE's Java debugger at that server;
  * [ElideDebugRunnableState] carries the connection, and triggers the attach once the run's own agent announces the
- * port it bound.
+ * port it bound. Android debug build targets announce their adb-forwarded endpoint through the same banner.
  *
  * The registration in `plugin.xml` is ordered first on purpose: the platform's own
  * `ExternalSystemTaskDebugRunner` accepts every external system run configuration, and expects the opposite

@@ -14,6 +14,7 @@ package dev.elide.intellij.project.model
 
 import com.intellij.openapi.externalSystem.model.Key
 import com.intellij.openapi.util.io.toCanonicalPath
+import dev.elide.intellij.android.ElideAndroidInfo
 import dev.elide.project.manifest.argValue
 import dev.elide.project.manifest.collect
 import dev.elide.project.manifest.explicitOrNull
@@ -43,6 +44,7 @@ data class ElideProjectData(
   val buildTasks: List<ElideBuildTaskInfo> = emptyList(),
   /** Artifacts producing a runnable Native Image binary; see [ElideNativeImageInfo]. */
   val nativeImages: List<ElideNativeImageInfo> = emptyList(),
+  val android: ElideAndroidInfo? = null,
   /** Directory of the workspace root this project is a member of, or `null` when it is a member of none. */
   val workspaceRoot: String? = null,
   /** Directories of the members this project is the workspace root of, empty when it is the root of none. */
@@ -96,6 +98,9 @@ data class ElideProjectData(
             ElideNativeImageInfo(artifact = key, outputName = image.name)
           }
         },
+        android = ElideAndroidInfo.from(project.root, manifest.name, manifest.android, manifest.artifacts,
+          if (isRoot) buildTasks.filter { it.taskScope == null || it.taskScope == project.name }
+          else buildTasksOf(project.name, buildTasks)),
         workspaceRoot = if (isRoot) null else workspace.root.root.toCanonicalPath(),
         members = if (isRoot) workspace.members.map { it.root.toCanonicalPath() } else emptyList(),
       )

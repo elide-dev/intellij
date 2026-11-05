@@ -293,6 +293,37 @@ public class NativeImageSettings(
 }
 
 /**
+ * Common inputs and compiler options for Native Image and Web Image artifacts.
+ */
+public interface NativeImageArtifact : Artifact {
+  /**
+   * Artifacts from which to build the Native Image.
+   */
+  public val from: List<String>
+
+  /**
+   * Name of the output artifact (binary or library). If not provided, one is calculated.
+   */
+  public val name: String?
+
+  /**
+   * Entrypoint class for the Native Image. If the class is within a JPMS module, the module should be specified in the
+   * `moduleName` field.
+   */
+  public val entrypoint: String?
+
+  /**
+   * Module where the entrypoint class is located, if applicable.
+   */
+  public val moduleName: String?
+
+  /**
+   * Options which apply to this artifact only.
+   */
+  public val options: NativeImageOptions
+}
+
+/**
  * Describes a Native Image artifact within an Elide project.
  */
 @Serializable
@@ -305,29 +336,78 @@ public data class NativeImage(
   /**
    * Artifacts from which to build the Native Image.
    */
-  public val from: List<String> = emptyList(),
+  override val from: List<String> = emptyList(),
   /**
    * Name of the output artifact (binary or library). If not provided, one is calculated.
    */
-  public val name: String? = null,
+  override val name: String? = null,
   /**
    * Entrypoint class for the Native Image. If the class is within a JPMS module, the module should be specified in the
    * `moduleName` field.
    */
-  public val entrypoint: String? = null,
+  override val entrypoint: String? = null,
+  /**
+   * Module where the entrypoint class is located, if applicable.
+   */
+  override val moduleName: String? = null,
+  /**
+   * Options which apply to this artifact only.
+   */
+  override val options: NativeImageOptions = NativeImageOptions(),
   /**
    * Type of image to produce. Defaults to "binary".
    */
   public val type: ImageType = ImageType.Binary,
+) : NativeImageArtifact
+
+/**
+ * Compiles JVM code to a JavaScript loader and its companion WebAssembly module.
+ */
+@Serializable
+@SerialName("elide.nativeImage.WebImage")
+public data class WebImage(
+  /**
+   * Other artifacts this artifact depends on.
+   */
+  override val dependsOn: List<String> = emptyList(),
+  /**
+   * Artifacts from which to build the Native Image.
+   */
+  override val from: List<String> = emptyList(),
+  /**
+   * Name of the output artifact (binary or library). If not provided, one is calculated.
+   */
+  override val name: String? = null,
+  /**
+   * Entrypoint class for the Native Image. If the class is within a JPMS module, the module should be specified in the
+   * `moduleName` field.
+   */
+  override val entrypoint: String? = null,
   /**
    * Module where the entrypoint class is located, if applicable.
    */
-  public val moduleName: String? = null,
+  override val moduleName: String? = null,
   /**
    * Options which apply to this artifact only.
    */
-  public val options: NativeImageOptions = NativeImageOptions(),
-) : Artifact
+  override val options: NativeImageOptions = NativeImageOptions(),
+  /**
+   * WASM-GC uses the host garbage collector; WASM-LM uses linear memory.
+   */
+  public val backend: WebImageBackend = WebImageBackend.Wasm_gc,
+  /**
+   * JavaScript runtime to target. This does not select a WASI or provider-specific ABI.
+   */
+  public val runtime: WebImageRuntime = WebImageRuntime.Generic,
+  /**
+   * Automatically start the VM when the generated JavaScript is loaded.
+   */
+  public val autoRun: Boolean = true,
+  /**
+   * Generate a source map alongside the JavaScript loader.
+   */
+  public val sourceMap: Boolean = false,
+) : NativeImageArtifact
 
 /**
  * Flag for the Native Image compiler.
@@ -389,4 +469,30 @@ public enum class ClassInitialization {
   Buildtime,
   @SerialName("runtime")
   Runtime,
+}
+
+/**
+ * WebAssembly memory model used by Web Image.
+ */
+@Serializable
+@SerialName("elide.nativeImage.WebImageBackend")
+public enum class WebImageBackend {
+  @SerialName("wasm-gc")
+  Wasm_gc,
+  @SerialName("wasm-lm")
+  Wasm_lm,
+}
+
+/**
+ * JavaScript host supported by the generated bundle; generic supports both browser and Node APIs.
+ */
+@Serializable
+@SerialName("elide.nativeImage.WebImageRuntime")
+public enum class WebImageRuntime {
+  @SerialName("generic")
+  Generic,
+  @SerialName("browser")
+  Browser,
+  @SerialName("node")
+  Node,
 }

@@ -109,6 +109,28 @@ class ElideManifestGutterTest {
     assertEquals("app", configuration.entrypointValue)
   }
 
+  @Test fun `extension archives use the package extension task`() = runBlocking {
+    val configuration = assertNotNull(configurationAtCaret("extension.pkl", """
+      artifacts {
+        ["too<caret>ls"] = new Extensions.ExtensionArchive {
+          entrypoint = "tools/tasks.ts"
+        }
+      }
+    """.trimIndent()))
+    assertEquals("build package-extension-tools", configuration.rawCommandLine)
+    assertEquals("package-extension-tools", configuration.entrypointValue)
+  }
+
+  @Test fun `Android features use the module task`() = runBlocking {
+    val configuration = assertNotNull(configurationAtCaret("feature.pkl", """
+      artifacts {
+        ["fea<caret>ture"] = new Android.AndroidFeature {}
+      }
+    """.trimIndent()))
+    assertEquals("build android-module-feature", configuration.rawCommandLine)
+    assertEquals("android-module-feature", configuration.entrypointValue)
+  }
+
   @Test fun `a caret inside an artifact declaration builds nothing`() = runBlocking {
     // the nearest mapping entry there is a resource, which as a build target would read `elide build res`
     assertNull(configurationAtCaret("resource.pkl", manifest(resourceKey = "r<caret>es")))

@@ -11,7 +11,7 @@
   ~ License for the specific language governing permissions and limitations under the License.
   -->
 
-<idea-plugin>
+<idea-plugin xmlns:xi="http://www.w3.org/2001/XInclude">
   <id>dev.elide</id>
   <name>Elide</name>
   <vendor url="https://elide.dev" email="engineering@elide.dev">Elide Technologies Inc.</vendor>
@@ -32,6 +32,11 @@
       <li>Run and debug JVM <code>main</code> functions and JUnit tests from the editor gutter</li>
       <li>Report <code>elide test</code> runs in the IDE's test runner, with jump-to-source for JVM tests</li>
       <li>Attach the IDE's Java debugger to the CLI's JDWP server</li>
+      <li>Run and debug Android apps and invoke project-specific SDK, emulator, signing, and mapping tasks</li>
+      <li>Report Android instrumentation tests in the native test tree</li>
+      <li>Render live Komodo Compose previews with unsaved Kotlin updates, layout inspection, and interactive input</li>
+      <li>Track structured build progress and JaCoCo/LCOV line and branch coverage</li>
+      <li>Author build extensions with TypeScript completion, templates, and manifest navigation</li>
       <li>Run Elide commands ad hoc through Run Anything</li>
       <li>Select the Elide distribution used per project</li>
       <li>Create new projects from the templates Elide ships, driven by <code>elide init</code></li>
@@ -54,24 +59,22 @@
   <depends>org.jetbrains.kotlin</depends>
 
   <depends optional="true" config-file="plugin-pkl.xml">org.pkl</depends>
+  <depends optional="true" config-file="plugin-javascript.xml">JavaScript</depends>
 
   <!-- the GDB/LLDB backends a Native Image debug session runs on; a marketplace plugin for IntelliJ IDEA Ultimate,
        so the Debug action falls back to offering its installation when it is absent -->
   <depends optional="true" config-file="plugin-nativeDebug.xml">com.intellij.nativeDebug</depends>
 
-  <!-- the SM test runner behind the test tree of an `elide test` run. Its classes are on the core class path up to
-       261; 262 moved them into the content module `intellij.platform.smRunner` of the implementation-detail plugin
-       below, and they still reached this plugin through the Kotlin plugin's dependency on that module until 263 made
-       that dependency optional. Declaring the module in `dependencies` instead would refuse to load the plugin on
-       253, where no such module exists, so it is asked for through this optional plugin dependency, which simply
-       does not resolve on the builds that do not need it -->
-  <depends optional="true" config-file="plugin-smRunner.xml">intellij.testRunner.plugin</depends>
+  <!-- The legacy plugin alias exposes the test runner's public required content modules on 262+.
+       It is optional because 253 provides the same classes on the core class path. -->
+  <depends optional="true">intellij.testRunner.plugin</depends>
 
   <dependencies>
     <!-- the coverage engine, runner and LCOV reader behind "Run with Coverage"; a platform module, not a plugin -->
     <module name="intellij.platform.coverage"/>
   </dependencies>
 
+  <xi:include href="/META-INF/plugin-android.xml" xpointer="xpointer(/idea-plugin/*)"/>
   <resource-bundle>i18n.Strings</resource-bundle>
 
   <extensions defaultExtensionNs="org.jetbrains.kotlin">
@@ -126,6 +129,7 @@
     <externalSystemUnlinkedProjectAware implementation="dev.elide.intellij.project.ElideUnlinkedProjectAware"/>
     <externalIconProvider key="ELIDE" implementationClass="dev.elide.intellij.ui.ElideIconProvider"/>
     <postStartupActivity implementation="dev.elide.intellij.startup.ElideStartupActivity"/>
+    <postStartupActivity implementation="dev.elide.intellij.authoring.ElideBuildAuthoringStartupActivity"/>
     <moduleBuilder builderClass="dev.elide.intellij.wizard.ElideNewProjectWizardBuilder"/>
     <externalSystemManager id="ELIDE" implementation="dev.elide.intellij.ElideManager"/>
     <projectConfigurable
@@ -141,6 +145,10 @@
                 icon="/icons/toolWindowElide.svg"/>
     <!-- labels the task nodes of the tool window's tree; the platform's default contributor builds them -->
     <externalSystemViewContributor implementation="dev.elide.intellij.ui.ElideViewContributor"/>
+    <toolWindow id="Elide Compose Preview" anchor="right"
+                factoryClass="dev.elide.intellij.android.compose.ElideComposePreviewToolWindowFactory"/>
+    <codeInsight.lineMarkerProvider language="kotlin"
+        implementationClass="dev.elide.intellij.android.compose.ComposePreviewLineMarker"/>
     <notificationGroup id="Elide Notifications"
                        displayType="BALLOON"
                        key="elide.notifications.group"/>
@@ -148,6 +156,32 @@
 
   <actions>
     <action id="Elide.Run" class="dev.elide.intellij.action.ElideRunAction" icon="AllIcons.Actions.RunAnything"/>
+    <action id="Elide.Android.Logcat" class="dev.elide.intellij.android.ElideAndroidNativeLogcatAction"
+            text="Open Native Android Logcat">
+      <add-to-group group-id="Elide.Android" anchor="last"/>
+    </action>
+    <action id="Elide.Android.Tests" class="dev.elide.intellij.android.testing.ElideAndroidTestAction"
+            text="Run Android Instrumented Tests">
+      <add-to-group group-id="Elide.Android" anchor="last"/>
+    </action>
+    <action id="Elide.Android.AppInspection" class="dev.elide.intellij.android.ElideAndroidNativeInspectionAction"
+            text="Open Native Android App Inspection">
+      <add-to-group group-id="Elide.Android" anchor="last"/>
+    </action>
+    <action id="Elide.Android.DeviceManager" class="dev.elide.intellij.android.ElideAndroidNativeDevicesAction"
+            text="Open Native Android Device Manager">
+      <add-to-group group-id="Elide.Android" anchor="last"/>
+    </action>
+    <action id="Elide.ComposePreview" class="dev.elide.intellij.android.compose.ElideComposePreviewAction"
+            text="Open Elide Compose Preview">
+      <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+      <add-to-group group-id="Elide.Android" anchor="last"/>
+    </action>
+    <group id="Elide.TaskMenu">
+      <reference ref="ExternalSystemView.TaskMenu"/>
+      <action id="Elide.DebugTask" class="dev.elide.intellij.ui.ElideDebugTaskAction"
+              text="Debug with Elide" icon="AllIcons.Actions.StartDebugger"/>
+    </group>
 
     <!-- non-popup: the entries inline into the task node's context menu and into the tool window's toolbar -->
     <group id="Elide.NativeImage">

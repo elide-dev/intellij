@@ -3,14 +3,18 @@
 module elide.project
 
 import "pkl:semver" as _semver
+import "Android.pkl" as _android
 import "Artifacts.pkl" as _artifacts
 import "Base.pkl" as _common
+import "Coverage.pkl" as _coverage
 import "Dev.pkl" as _dev
 import "Engine.pkl" as _engine
 import "JavaScript.pkl" as _js
 import "Jvm.pkl" as _jvm
 import "Kotlin.pkl" as _kotlin
 import "NativeImage.pkl" as _nativeImage
+import "OpenTelemetry.pkl" as _otel
+import "Publishing.pkl" as _publishing
 import "Sources.pkl" as _srcs
 import "Testing.pkl" as _testing
 import "Toolchain.pkl" as _toolchain
@@ -42,6 +46,261 @@ typealias ScriptValue = _common.ShellCommand
 
 /// Script mappings; each entry is a name and a script to run.
 scripts: Mapping<ScriptName, ScriptValue> = new {}
+
+/// Where a build extension comes from: a path relative to the project root, or `scheme:rest`
+/// naming something to fetch.
+///
+/// A path names a JavaScript or TypeScript module whose default export declares build tasks, or a
+/// `.elx` package carrying one. The three schemes fetch exactly one of those:
+///
+/// - `url:https://…/tasks.elx` downloads the file the URL names.
+/// - `npm:@scope/tasks@1.2.3` resolves a package tarball through the npm registry.
+/// - `maven:group:artifact:1.2.3` resolves one artifact against the `maven.repositories` this
+///   manifest configures, with the usual `[:packaging[:classifier]]` in between.
+///
+/// A remote version must be pinned to one exact release; ranges, dist-tags and `-SNAPSHOT` are
+/// rejected. Only those three schemes are reserved, so anything else is a path.
+typealias BuildExtensionSource = _common.FilePath
+
+/// The three schemes a build extension may be fetched over; anything else is a path.
+const local extensionSchemes: List<String> = List("url", "npm", "maven")
+
+/// The scheme [value] opens with, folded to lowercase, or the whole value when it names none.
+///
+/// A scheme is case-insensitive (RFC 3986 §3.1) and `ExtensionOrigins.parse` reads it that way, so
+/// `NPM:tasks@1.0.0` must not be a path here while it is a fetch there. Only the scheme is folded.
+const local function extensionScheme(value: String): String =
+  value.split(":").first.toLowerCase()
+
+/// True when [value] names something Elide fetches rather than a file under the project.
+const local function isFetchedExtension(value: String): Boolean =
+  extensionSchemes.contains(extensionScheme(value))
+
+/// An absolute `http`/`https` URL naming a host, matched as `URI` reads a scheme.
+const local _httpUrl: Regex = Regex(#"(?i)https?://[^/?#]+(?:[/?#].*)?"#)
+
+/// True when [rest] carries both a package name and a version: the separator is the last `@`,
+/// since a scoped name opens with one.
+const local function _pinsNpmVersion(rest: String): Boolean =
+  let (separator = rest.lastIndexOfOrNull("@"))
+    separator != null && separator > 0 && separator < rest.length - 1
+
+/// True when [rest] carries group, artifact and version, each spelled out.
+const local function _pinsMavenVersion(rest: String): Boolean =
+  let (parts = rest.split(":")) parts.length >= 3 && parts.every((part) -> !part.isEmpty)
+
+/// True when [value] names a file or one of the fetchable schemes, spelled out far enough to
+/// resolve.
+///
+/// Each scheme check tests the component, not just its separator: a source that parses here and
+/// fails at fetch time gives the author the wrong error in the wrong phase.
+const local function isExtensionSource(value: String): Boolean =
+  let (scheme = extensionScheme(value))
+    if (!extensionSchemes.contains(scheme)) true
+    else
+      let (rest = value.drop(scheme.length + 1))
+        if (rest.isEmpty)
+          throw("Build extension '\(value)' names a \(scheme) source but does not say which one.")
+        else if (scheme == "url" && !rest.matches(_httpUrl))
+          throw("Build extension '\(value)' must name an absolute http or https URL.")
+        else if (scheme == "npm" && !_pinsNpmVersion(rest))
+          throw("Build extension '\(value)' must pin a version: npm:package@1.2.3.")
+        else if (scheme == "maven" && !_pinsMavenVersion(rest))
+          throw("Build extension '\(value)' must pin a version: maven:group:artifact:1.2.3.")
+        else true
+
+/// Digest an author may pin fetched bytes to, in Subresource Integrity spelling.
+const local _integrityPin: Regex = Regex(#"(?:sha256|sha512)-[A-Za-z0-9+/]+={0,2}"#)
+
+/// True when [value] spells a digest Elide can check.
+const local function isIntegrityPin(value: String): Boolean =
+  if (value.matches(_integrityPin)) true
+  else
+    throw("""
+      Build extension integrity '\(value)' is not a digest Elide can check. Write it as
+      Subresource Integrity: `sha256-<base64>` or `sha512-<base64>`.
+      """)
+
+/// True when [source] is fetched, the only kind of declaration whose bytes a digest can pin.
+const local function isPinnableSource(source: String): Boolean =
+  if (isFetchedExtension(source)) true
+  else
+    throw("""
+      Build extension '\(source)' is a path under the project, whose bytes are already whatever the
+      tree holds. Drop `integrity`, or name a `url:`, `npm:` or `maven:` source.
+      """)
+
+/// Deepest a free-form configuration value may nest.
+///
+/// Every walk over one — the Pkl decoder, `FreeFormValue` on the JSON side, and the serializers
+/// that encode it — recurses one frame per level, and a `StackOverflowError` is an `Error` no
+/// decoding path catches. Bounded here so an over-deep block is a manifest problem instead.
+const local freeFormDepthLimit: Int = 32
+
+/// True when every entry of [members] keys on a string and carries a free-form value; [path]
+/// names the value [members] belong to.
+///
+/// The rule holds at every depth: a nested `Mapping` decodes through the same map as the top-level
+/// one, and `Map<String, Any?>` cannot represent a key that is not text.
+const local function _isFreeFormMembers(members: Map, depth: Int, path: String): Boolean =
+  members.every((key, member) ->
+    if (!(key is String))
+      throw("""
+        A free-form configuration value cannot key on `\(key)`: its keys are read as text, however
+        deeply the mapping is nested. Write the key as a string.
+        """)
+    else isFreeFormValue(member, depth + 1, "\(path).\(key)")
+  )
+
+/// True when every element of [elements] is a free-form value; [path] names their container.
+const local function _isFreeFormElements(elements: Collection, depth: Int, path: String): Boolean =
+  elements.foldIndexed(true, (index, result, element) ->
+    result && isFreeFormValue(element, depth + 1, "\(path)[\(index)]")
+  )
+
+/// True when [value], found at [path], holds no inline object elements, no non-string key, no
+/// more than [freeFormDepthLimit] levels of nesting and no value without a data form, none of which
+/// a free-form value can carry.
+///
+/// Every container Pkl can put inside a configuration is walked: a `List`, `Set`, `Map` or `Pair`
+/// hides an inline element from this check as readily as a `Listing` does. A leaf must be data an
+/// extension can read; `Bytes`, a class, a type alias or a function is not, and would otherwise
+/// only fail once something reads the configuration.
+const local function isFreeFormValue(value: Any, depth: Int, path: String): Boolean =
+  if (depth > freeFormDepthLimit)
+    throw("""
+      A free-form configuration value nests more than \(freeFormDepthLimit) levels deep. Flatten
+      it: reading one walks the whole tree, a level at a time.
+      """)
+  else if (value is Dynamic)
+    if (!value.toList().isEmpty)
+      throw("""
+        A free-form configuration value cannot carry inline object elements. Write a list as a
+        `Listing`: `plugins = new Listing { "grpc" }`, or `plugins = List("grpc")`.
+        """)
+    else _isFreeFormMembers(value.toMap(), depth, path)
+  else if (value is Mapping) _isFreeFormMembers(value.toMap(), depth, path)
+  else if (value is Typed) _isFreeFormMembers(value.toMap(), depth, path)
+  else if (value is Listing) _isFreeFormElements(value.toList(), depth, path)
+  else if (value is Map) _isFreeFormMembers(value, depth, path)
+  else if (value is Collection) _isFreeFormElements(value, depth, path)
+  else if (value is Pair)
+    isFreeFormValue(value.first, depth + 1, "\(path).first")
+      && isFreeFormValue(value.second, depth + 1, "\(path).second")
+  else if (
+    value == null
+      || value is String
+      || value is Boolean
+      || value is Number
+      || value is Duration
+      || value is DataSize
+      || value is Regex
+  )
+    true
+  else
+    throw("""
+      `\(path)` holds a `\(value.getClass().simpleName)`, which an extension cannot read as
+      configuration. Use a string, boolean, number, `Duration`, `DataSize` or `Regex`, or a block,
+      `Listing`, `List`, `Set`, `Map` or `Pair` of those.
+      """)
+
+/// True when [value] is a block of named settings, the only shape a configuration is read as.
+const local function isFreeFormConfig(value: Object): Boolean =
+  if (value is Listing)
+    throw("""
+      An extension's `config` is a block of named settings, not a list. Name the list:
+      `config { items = new Listing { "grpc" } }`.
+      """)
+  else isFreeFormValue(value, 0, "config")
+
+/// A build extension declared together with the settings it reads.
+class ExtensionSpec {
+  /// Where the extension module or archive comes from: a path relative to the project root, or a
+  /// `url:`, `npm:` or `maven:` source Elide fetches. A path may not resolve outside the project
+  /// root, or outside the workspace root when this project is a workspace member.
+  from: BuildExtensionSource(!isEmpty, isExtensionSource(this))
+
+  /// Digest the fetched bytes must match, spelled as Subresource Integrity: `sha256-<base64>` or
+  /// `sha512-<base64>`.
+  ///
+  /// An extension is code the build runs, and a URL is trusted on TLS and its host alone; a pin
+  /// is what makes the bytes reproducible. It is checked before a download is cached and again on
+  /// every cache hit, so neither the server nor the workspace's shared cache can change what runs.
+  /// A digest an npm or Maven registry publishes is checked as well, never instead of this one.
+  ///
+  /// Only a fetched source can be pinned.
+  integrity: String(isIntegrityPin(this), isPinnableSource(from))?
+
+  /// Settings for this extension, carried through the manifest unchanged; the extension reads
+  /// this block as `ctx.config`.
+  config: Object(isFreeFormConfig(this)) = new Dynamic {}
+}
+
+/// An extension declaration: a bare source, or a source carrying that extension's configuration.
+typealias BuildExtension = ExtensionSpec | BuildExtensionSource(!isEmpty, isExtensionSource(this))
+
+/// The module an extension entry names, whichever way it was written.
+const local function extensionPath(entry: BuildExtension): String =
+  if (entry is ExtensionSpec) entry.from else entry
+
+/// True when no two entries name the same module.
+const local function isDistinctExtensions(entries: Listing<BuildExtension>): Boolean =
+  let (paths = entries.toList().map((entry) -> extensionPath(entry)))
+    if (paths.isDistinct) true
+    else
+      let (repeated = paths.filter((path) -> paths.count((other) -> other == path) > 1).first)
+        throw("""
+          Build extension declared more than once: \(repeated). Declare it once; its settings
+          belong in that entry's `config` block.
+          """)
+
+/// Build extensions loaded when this project's build is configured.
+///
+/// Each entry names a JavaScript or TypeScript module whose default export is called with the
+/// build's extension API, or a `.elx` package carrying one. The tasks it declares join the
+/// project's task graph alongside Elide's own.
+///
+/// An entry is a path relative to the project root — which it may not resolve outside of, nor
+/// outside the workspace root when this project is a member — or a [BuildExtensionSource] Elide
+/// fetches and caches: a `url:`, an `npm:` package or a `maven:` artifact.
+///
+/// An entry that takes settings is amended in place; the settings reach that extension alone. A
+/// fetched entry may also pin the digest of the bytes it expects ([ExtensionSpec.integrity]).
+///
+/// Settings an extension types as a Pkl class are written against a copy of its module kept in the
+/// project: a manifest imports local files, the Pkl standard library and Elide's own schema, never
+/// a `package://` or other network URI.
+///
+/// ```
+/// import "tools/Codegen.pkl"
+///
+/// extensions {
+///   "tools/lint.ts"
+///   "tools/codegen.js"
+///   "tools/checks.elx"
+///   "npm:@acme/build-tasks@1.4.0"
+///   "maven:com.acme:build-tasks:1.4.0"
+///   "url:https://downloads.example.com/protoc-tasks-1.4.0.elx"
+///   new {
+///     from = "tools/protoc.ts"
+///     config {
+///       version = "25.1"
+///       plugins = new Listing { "grpc" }
+///     }
+///   }
+///   new {
+///     from = "npm:@acme/codegen@2.0.1"
+///     config = new Codegen.Settings { target = "es2022" }
+///   }
+///   new {
+///     from = "url:https://downloads.example.com/codegen-2.0.1.elx"
+///     integrity = "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="
+///   }
+/// }
+/// ```
+extensions: Listing<BuildExtension>(isDistinctExtensions(this)) = new {
+  default = (_) -> new ExtensionSpec {}
+}
 
 /// Represents a release channel for the Elide version running the build.
 /// @schema ignore
@@ -239,6 +498,10 @@ class NpmDependencies {
 
   /// A list of NPM packages to make available at dev-time only.
   devPackages: Listing<NpmPackageDependency> = new {}
+
+  /// Registry `npm:` build extensions are fetched from; defaults to Elide's `npm.pkg.st` proxy, or
+  /// to `ELIDE_PKGST_NPM_ENDPOINT` when that is set. NPM package dependencies do not read it.
+  registry: String?
 }
 
 /// Configuration for PyPI dependency resolution.
@@ -263,6 +526,9 @@ class Dependencies {
 
   /// Configure Spring Boot starters; expands into `maven` at manifest parse time.
   spring: _jvm.SpringDependencies?
+
+  /// Micronaut core modules and the matching annotation processor.
+  micronaut: _jvm.MicronautDependencies?
 }
 
 /// Dependency resolution configuration.
@@ -290,7 +556,8 @@ dependencies: Dependencies = new {}
 /// ```
 ///
 /// Declaring the reference in place takes the qualified call, `module.project("core")`, and the
-/// underlying `Artifacts.ProjectArtifact` can always be constructed by hand instead.
+/// underlying `Artifacts.ProjectArtifact` can be constructed by hand after
+/// `import "elide:Artifacts.pkl" as Artifacts`.
 const function project(name: _artifacts.ProjectName): _artifacts.ProjectArtifact = new {
   project = name
 }
@@ -303,10 +570,26 @@ const function project(name: _artifacts.ProjectName): _artifacts.ProjectArtifact
 jvm: _jvm.JvmSettings?
 
 /// Configure Kotlin language settings.
-kotlin: _kotlin.KotlinSettings?
+///
+/// An Android project (one declaring [android]) defaults `kotlinx`, `defaultPlugins` and `reflection`
+/// off: whatever they put on the runtime classpath is dexed into the app, and none of it is something
+/// an Android app is assumed to use. Declaring a feature turns it back on.
+kotlin: _kotlin.KotlinSettings? =
+  if (android != null)
+    new _kotlin.KotlinSettings {
+      features {
+        kotlinx = false
+        defaultPlugins = false
+        reflection = false
+      }
+    }
+  else Null(new _kotlin.KotlinSettings {})
 
 /// Configure JavaScript language settings.
 javascript: _js.JavaScriptSettings?
+
+/// Configure the Android SDK this project builds against.
+android: _android.AndroidSettings?
 
 /// Project-wide settings for the Native Image compiler.
 nativeImage: _nativeImage.NativeImageSettings?
@@ -314,18 +597,21 @@ nativeImage: _nativeImage.NativeImageSettings?
 /// Configuration for the execution engine.
 engine: _engine.EngineSettings?
 
+/// OpenTelemetry traces, metrics, logs, and profiles; off unless destinations are configured here or in the environment.
+opentelemetry: _otel.OpenTelemetrySettings?
+
 //
 // ------ Structure -------------------------------------------------------------------------------------------------
 //
 
 /// Top-level project sources definition.
+///
+/// Left empty, a project's source sets are the ones its layout implies: `src/main` (or `src`) as
+/// `main`, `src/test` (or `test`) as `test`, with `src/<name>/<language>` roots and
+/// `src/<name>/resources` honored when present. Declaring a name here replaces the convention for
+/// that name; see `elide:Sources.pkl`.
 sources: _srcs.Sources = new {
-  default = (name) -> new _srcs.SourceSetSpec {
-    type = if (name == "test") "test" else "source"
-    dependsOn = if (name == "main") new {} else new { "main" }
-  }
-  ["main"] = "src/**.*"
-  ["test"] = "test/**.*"
+  default = (_) -> new _srcs.SourceSetSpec {}
 }
 
 /// Development settings for this project.
@@ -337,16 +623,22 @@ toolchain: _toolchain.ToolchainSettings = new {}
 /// Artifacts to be produced by this project.
 artifacts: _artifacts.Artifacts = new {}
 
+/// How `elide publish` publishes this project's artifacts.
+publishing: _publishing.PublishingSettings = new {}
+
 /// Settings which apply to web-based projects and applications.
 web: _web.WebSettings? = new {}
 
 /// Settings for testing features
 testing: _testing.Testing = new {}
 
+/// Coverage settings for this project, applied to whichever tasks `coverage.scope` names.
+coverage: _coverage.CoverageSettings = new {}
+
 /// Workspace settings: the member projects this project is the root of.
 class WorkspaceSettings {
   /// Directories of member projects, relative to this manifest's directory; each holds its own `elide.pkl`.
-  members: Listing<String>(isDistinct) = new {}
+  members: Listing<_common.FilePath>(isDistinct) = new {}
 }
 
 /// Workspace settings for this project, when it is the root of a multi-project workspace.

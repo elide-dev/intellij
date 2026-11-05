@@ -82,6 +82,7 @@ internal data class ElideBuildStep(
 internal data class ElideBuildLine(
   val claimed: Boolean,
   val step: ElideBuildStep? = null,
+  val record: ElideBuildProgressRecord? = null,
 )
 
 /**
@@ -189,12 +190,28 @@ internal class ElideBuildProgressParser {
    * CLI was asked to emit are removed here rather than by the caller.
    */
   fun line(text: String): ElideBuildLine {
+    ElideBuildProgressRecord.parse(text)?.let {
+      closeDiagnostic()
+      return ElideBuildLine(claimed = true, record = it)
+    }
     val line = ANSI.replace(text, "").trimEnd('\n', '\r')
     val stamped = STAMPED.matchEntire(line)
 
     // an unstamped line continues the diagnostic above it: its `In file:` line, or a line of source excerpt. With no
     // diagnostic open it is not the CLI's line at all, but something the program it ran wrote on the same stream
-    if (stamped == null) return ElideBuildLine(claimed = continueDiagnostic(line))
+    if (stamped == null) {
+      // Program JSON, including unknown future records, must not become a source excerpt.
+      if (line.trimStart().startsWith('{')) {
+        closeDiagnostic()
+        return ElideBuildLine(claimed = false)
+      }
+      if (DIAGNOSTIC.matches(line)) {
+        closeDiagnostic()
+        openDiagnostic(line, null)
+        return ElideBuildLine(claimed = true)
+      }
+      return ElideBuildLine(claimed = continueDiagnostic(line))
+    }
 
     // a stamped line always ends the diagnostic above it, whether it reports a step or opens another diagnostic
     closeDiagnostic()
@@ -251,7 +268,7 @@ internal class ElideBuildProgressParser {
   /** Opens a diagnostic when [body] names a severity, or drops the line when it is ordinary log output. */
   private fun openDiagnostic(body: String, elapsedMillis: Long?) {
     val diagnostic = DIAGNOSTIC.matchEntire(body) ?: return
-    val severity = SEVERITIES[diagnostic.groupValues[1]] ?: return
+    val severity = SEVERITIES[diagnostic.groupValues[1].lowercase()] ?: return
 
     // the CLI repeats the severity in brackets on some diagnostics ("warning: [warning] kotlinc: …"); the message
     // reads better without the repetition, and the severity is already known from the prefix that carried it
@@ -329,7 +346,7 @@ internal class ElideBuildProgressParser {
     private val BUILD_RESULT = Regex("""^Build (successful|failed|cancelled)\b""")
 
     /** A diagnostic's opening line, e.g. `error: kotlinc: Unresolved reference 'boom'.`. */
-    private val DIAGNOSTIC = Regex("""(error|warning|info):\s+(.*)""", RegexOption.IGNORE_CASE)
+    private val DIAGNOSTIC = Regex("""(error|warning|info|hint):\s+(.*)""", RegexOption.IGNORE_CASE)
 
     /** The tool a diagnostic names before its message, e.g. `kotlinc: `. */
     private val TOOL = Regex("""([\w.+-]+):\s+(.*)""")
@@ -351,6 +368,7 @@ internal class ElideBuildProgressParser {
       "error" to ElideBuildSeverity.ERROR,
       "warning" to ElideBuildSeverity.WARNING,
       "info" to ElideBuildSeverity.INFO,
+      "hint" to ElideBuildSeverity.INFO,
     )
 
     private val UNIT_MILLIS: Map<String, Long> = mapOf(

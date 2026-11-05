@@ -84,7 +84,8 @@ object ElideCliCompletion {
     // rest name artifacts, source sets and dependency sets, and are listed by the CLI during sync. A task already
     // on the command line is dropped: naming it twice runs it once either way
     if (command == ElideCli.BUILD) {
-      val projectTasks = info?.buildTasks.orEmpty().filter { it.name !in typed }.map { it.variant() }
+      val selected = ElideCli.buildTargets(typed, invocation).toSet()
+      val projectTasks = info?.buildTasks.orEmpty().filter { it.name !in selected }.map { it.variant() }
 
       return (projectTasks + positionals).distinctBy { it.text } + passthroughVariant()
     }
@@ -106,7 +107,7 @@ object ElideCliCompletion {
     if (invocation.passthroughIndex >= 0 || typed.endsWithFlagValue(invocation)) return emptyList()
 
     val declared = invocation.applicableFlags()
-      .filter { flag -> flag.repeatable || typed.none(flag::matches) }
+      .filter { flag -> flag.repeatable || ElideCli.flagIndex(typed, invocation, flag) < 0 }
       .flatMap { it.variants(includeShort) }
 
     return taskOptions(typed, invocation, info) + declared
@@ -124,9 +125,10 @@ object ElideCliCompletion {
     info: ElideProjectInfo?,
   ): List<Variant> {
     if (invocation.command != ElideCli.BUILD) return emptyList()
+    val selected = ElideCli.buildTargets(typed, invocation).toSet()
 
     return info?.buildTasks.orEmpty()
-      .filter { it.name in typed }
+      .filter { it.name in selected }
       .flatMap { task -> task.options.map { task.name to it } }
       .filter { (_, option) -> typed.none { it == option.option || it.startsWith("${option.option}=") } }
       .map { (task, option) -> option.variant(task) }

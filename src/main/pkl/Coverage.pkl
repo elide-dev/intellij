@@ -1,0 +1,73 @@
+/// Describes code coverage collection and reporting for an Elide project.
+@ModuleInfo { minPklVersion = "0.28.1" }
+module elide.coverage
+
+/// Abstract type specifying a coverage report.
+abstract class CoverageReport {
+  /// Name for this report; typically the format name by default.
+  name: String
+}
+
+/// Report format written by the JVM collector (JaCoCo).
+abstract class JvmCoverageReport extends CoverageReport
+
+/// Coverage report in HTML format.
+class HtmlCoverageReport extends JvmCoverageReport {
+  name = "html"
+}
+
+/// Coverage report in XML format.
+class XmlCoverageReport extends JvmCoverageReport {
+  name = "xml"
+}
+
+/// Coverage report in CSV format.
+class CsvCoverageReport extends JvmCoverageReport {
+  name = "csv"
+}
+
+/// Settings for JVM coverage, collected by JaCoCo.
+class JvmCoverageSettings {
+  /// Coverage reports to be generated; each collecting task writes them under its own report root.
+  reports: Listing<JvmCoverageReport> = new {}
+
+  /// Class-name patterns the agent must not instrument, in JaCoCo's own syntax (`*` and `?`
+  /// wildcards). Generated and build-time-only code belongs here: instrumenting it costs startup
+  /// and reports coverage nothing can exercise.
+  excludes: Listing<String> = new {}
+}
+
+/// Settings for guest JavaScript/TypeScript coverage.
+class JsCoverageSettings {
+  /// Source roots to report coverage for; empty reports everything under the project root.
+  paths: Listing<String> = new {}
+}
+
+/// Task kinds which collect coverage once it is enabled.
+typealias CoverageScope = "tests" | "runs" | "all"
+
+/// Coverage settings for a project, independent of the task that measures it.
+class CoverageSettings {
+  /// Whether coverage is collected. Off by default: enable it here, or pass `--coverage`.
+  enabled: Boolean = false
+
+  /// Which tasks collect when [enabled]. Instrumenting a program run forks a JVM and attaches an
+  /// agent, which a project reporting coverage for its tests never asked to pay for, so `tests` is
+  /// the default; `--coverage` always collects from whichever task it was passed to.
+  scope: CoverageScope = "tests"
+
+  /// Configure JVM coverage settings.
+  jvm: JvmCoverageSettings = new {}
+
+  /// Configure guest JavaScript/TypeScript coverage settings.
+  js: JsCoverageSettings = new {}
+}
+
+/// Configures a new default HTML coverage report
+function htmlReport() = new HtmlCoverageReport { }
+
+/// Configures a new default XML coverage report
+function xmlReport() = new XmlCoverageReport { }
+
+/// Configures a new default CSV coverage report
+function csvReport() = new CsvCoverageReport { }

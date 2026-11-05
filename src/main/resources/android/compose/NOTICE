@@ -1,0 +1,3 @@
+The Kotlin runtime pins, Maven-version ordering, workspace archive preparation, and Komodo preview integration adapt elide-vscode packages/core/src/composeInputs.ts and mavenVersion.ts, and packages/vscode/src/composeRuntime.ts, composeKomodo.ts and komodoLsp.ts, under the MIT license.
+Source: https://github.com/elide-dev/elide-vscode
+See LICENSE in this directory. The pinned Google Android renderer and layoutlib retain their original licenses and notices in the runtime cache. Komodo is a separately installed native service; no snapshot renderer or compiler helpers are bundled.

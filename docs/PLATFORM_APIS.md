@@ -13,11 +13,13 @@ Every usage is reported by `./gradlew verifyPlugin` under
 | API | Used by | Used for |
 |---|---|---|
 | `ExternalSystemUnlinkedProjectAware.getLinkedProjectsPaths` | `ElideUnlinkedProjectAware` | Telling the IDE which Elide project paths are currently linked, so unlinked projects can be offered for import. The interface declares the method with a body that throws, so an implementation is mandatory |
-| `GeneralIdBasedToSMTRunnerEventsConvertor` (class, constructor) | `ElideTestsExecutionConsole.startSession` | Publishing the events decoded from the CLI's TAP stream into the test tree of an `elide test` run, addressed by the node ids TAP numbers a test's start and output with. The only public route to the same class is `OutputToGeneralTestEventsConverter`, which reaches it by way of TeamCity service-message text and would mean re-encoding every decoded event as a string for the platform to parse back |
+| `GeneralIdBasedToSMTRunnerEventsConvertor` (class, constructor) | `ElideTestsExecutionConsole.startSession` | Publishing decoded TAP and Android instrumentation events into the native test tree, addressed by stable node ids. The only public route to the same class is `OutputToGeneralTestEventsConverter`, which reaches it by way of TeamCity service-message text and would mean re-encoding every decoded event as a string for the platform to parse back |
 | `StartBuildEventImpl` (class, constructor) | `ElideTestsExecutionConsoleManager.quietened` | Re-issuing an `elide test` run's start event to the Build window with a descriptor that does not raise that window on failure, since a failed test fails the build and the failures are already shown in the test tree. `StartBuildEvent.builder` is the public replacement and is not declared on 253 |
 | `StartEventImpl`, `FinishEventImpl` (classes, constructors), `AbstractBuildEvent` (class, constructor) | `ElideBuildEventPublisher`, `ElideDiagnosticEvent` | Publishing one build tree node per step of an Elide run, with the diagnostics that step printed. The public factories that replace them — `StartEvent.builder`, `FinishEvent.builder`, `MessageEvent.builder` — are declared from 261 and are absent on 253. The constructors taking an explicit event id and time are used, since the shorter ones are deprecated. `ElideDiagnosticEvent` extends `AbstractBuildEvent` and implements `MessageEvent` itself because `MessageEventImpl`'s constructor taking an id and time gained an `outputIds` parameter in 263, so no such constructor is declared on both 253 and 263; it implements `getNavigatable` to open the position its diagnostic named, which is what `FileMessageEventImpl` does with the position it carries; that class is deliberately not used, because the tree renders a file event as a node per file, named by the path, with the message a level under it |
 | `OutputBuildEventImpl` (class, constructor) | `ElideTestsExecutionConsoleManager.plain`, `ElideBuildEventPublisher.output` | Re-issuing the CLI's log to the Build window as ordinary output rather than as the error output the stream it arrives on makes it, and writing the block a diagnostic was printed with to the console of its node, where the colour it is rendered with is decoded rather than shown. `OutputBuildEvent.builder` is the public replacement and is not declared on 253 |
 | `CoverageEngine.coverageProjectViewStatisticsApplicableTo` | `ElideCoverageEngine` | Declaring that a file, but not a directory, carries a coverage percentage of its own in the Project view. The base implementation answers `false` for everything, which leaves an attached Elide suite with no per-file figures there; the method is the only way the platform asks |
+| `ExternalSystemRunnableState.TASK_NOTIFICATION_LISTENER_KEY` | `ElideDebugRunnableState.execute` | Connecting external-task output to the JDWP banner listener, including Android's dynamically forwarded port |
+| `DelayedRemoteConnectionImpl.getAttachRunnable` | `ElideDebugRunnableState.JdwpBannerListener` | Starting the deferred native JVM debugger attachment only after Elide announces its endpoint |
 
 ## Experimental APIs
 
@@ -43,6 +45,9 @@ Every usage is reported by `./gradlew verifyPlugin` under
 | `FilePosition(File, int, int)` | `ElideBuildEventPublisher.filePosition` | Pointing a compiler diagnostic at the file, line and column it names. Scheduled for removal on 262, which replaces it with a `Path` constructor; that constructor is not declared on 253 to 261, so the file form is the only one available across the range |
 | `XDebuggerManager.startSession`, `XDebugSession.getRunContentDescriptor` | `ElideNativeImageDebugRunner.execute` | Starting the GDB/LLDB session of a Native Image run and handing its content back to the platform. Deprecated on 261 in favour of `XDebuggerManager.newSessionBuilder`, which is not declared on 253 |
 | `CommonProgramParametersPanel()` | `ElideNativeImageSettingsEditor` | The program arguments, working directory and environment fields of a Native Image run. Deprecated on 261 in favour of the constructors taking a `Project`, which widen the macros the fields complete and are not declared on 253 |
+| `DefaultLiveTemplatesProvider` | `ElideBuildTemplates` | Supplying bundled build-extension live templates. Its extension point is non-dynamic, so plugin installation/update requires an IDE restart |
+| `ReadAction.compute` | `ComposePreviewService` | Capturing editor buffers and project SDK information under the platform read lock before background preview compilation |
+| `ActionToolbar.setLayoutPolicy` | `ComposePreviewPanel` | Keeping preview and console actions in compact native toolbars; the legacy layout-policy API is deprecated on the compile target |
 
 ## Signatures missing on part of the range
 
@@ -54,24 +59,25 @@ Every usage is reported by `./gradlew verifyPlugin` under
 
 ## Platform classes that move between class loaders
 
-The SM test runner the `elide test` tree is built on (`SMTRunnerConsoleView`, `SMTestRunnerResultsForm`,
-`GeneralIdBasedToSMTRunnerEventsConvertor`, `TestConsoleProperties` and the `sm.runner.events` types) sits on the core
-class path on 253, is the product module `intellij.platform.smRunner` on 261, and is a content module of the
-`intellij.testRunner.plugin` implementation-detail plugin from 262. Until 262 it reached this plugin's class loader
-through the Kotlin plugin's dependency on it; 263 made that dependency optional, which leaves every class in
-`dev.elide.intellij.execution.test` unresolvable unless the module is asked for.
+The SM test runner used by both TAP and Android instrumentation results (`SMTRunnerConsoleView`,
+`SMTestRunnerResultsForm`, `GeneralIdBasedToSMTRunnerEventsConvertor`, `TestConsoleProperties`, and the
+`sm.runner.events` types) sits on the core class path on 253, is the product module
+`intellij.platform.smRunner` on 261, and belongs to the test-runner plugin from 262.
 
-Naming the module in `plugin.xml`'s `dependencies` is not an option: 253 has no such module and refuses to load a
-plugin that requires one. It is requested instead through an optional dependency on the plugin that owns it, whose
-descriptor `plugin-smRunner.xml` carries the module dependency:
+The optional legacy dependency below reaches that plugin through its published alias. Its public, required
+content modules are visible to legacy plugin dependents; the native test UI was exercised on build `263.6800.24`.
+On older builds without the alias, the dependency is skipped and the existing core classes remain available.
 
 ```xml
-<depends optional="true" config-file="plugin-smRunner.xml">intellij.testRunner.plugin</depends>
+<depends optional="true">intellij.testRunner.plugin</depends>
 ```
 
-On 253 and 261 the plugin id does not exist, the dependency is skipped, and the classes are found where they already
-are. `verifyPlugin` reports the missing classes when this wiring breaks, but it models `depends` loosely: it accepts
-module names there that the IDE rejects at run time, so a change to this element has to be tried in a real IDE.
+A mandatory root module dependency would prevent loading on 253, where the module does not exist.
+Putting `<dependencies><module>` in an optional `depends` subdescriptor does not solve this: the actual IDE loader
+ignores it and logs a warning. Such a subdescriptor is therefore unnecessary. Plugin Verifier does not fully model
+this class-loader behavior; changes to the dependency must also be exercised in a real IDE.
+The verifier consequently reports one descriptor advisory: the optional dependency has no `config-file`.
+It is left visible rather than adding an empty descriptor solely to suppress the warning.
 
 ## Stable alternatives in use
 
@@ -83,6 +89,22 @@ compiler PSI, `KotlinPsiHeuristics` and `ClassUtil.getJVMClassName`, instead of 
 Project linking and re-sync use `ExternalSystemUtil.linkExternalProject(settings, ImportSpec)` and
 `ExternalSystemUtil.refreshProject(path, ImportSpec)`; build output is streamed with
 `ExternalSystemTaskNotificationListener.onTaskOutput(id, text, ProcessOutputType)`.
+
+`ElideExecutionService` creates an external-system run configuration and dispatches it through
+`ProgramRunnerUtil.executeConfiguration`. `ExternalSystemUtil.runTask` hard-codes the generic external-system runner
+for Debug, bypassing Elide's delayed JDWP attach and waiting for the opposite handshake. The regular run-configuration
+dispatch respects `ElideDebugRunner` for tool-window and Android shortcut actions.
+
+Generic Android tooling is delegated through `ToolWindowManager` to the registered `Logcat`, `Device Manager 2`,
+and `App Inspection` windows. Their IDs are declared by Android tooling's `logcat.xml`, `device-manager-v2.xml`,
+and `app-inspection.xml`; Elide neither imports Android Studio implementation classes nor registers replacement
+windows. Missing or unavailable windows produce a prerequisite message. Device selection for Elide deployment and
+project-specific CLI tasks remain Elide-owned. IDEA's Compose code-insight/resource plugin does not expose a
+composable-preview input contract for Elide projects. Elide therefore owns a preview-only standalone Komodo process,
+using LSP document synchronization/discovery and authenticated loopback JSONL live rendering. This does not replace
+IDEA's Kotlin tooling. The preview surface uses native `ActionToolbar`, toggle actions, and `ConsoleView` controls;
+layout inspection and input operate on Komodo's measured nodes and live frames. Normal Elide compiler records supply
+the Android platform/compiler classpath, and Maven source archives supply Compose inline-source mappings.
 
 `ElideProjectSettingsControl` builds the distribution path field from `TextFieldWithBrowseButton` plus
 `installFileCompletionAndBrowseDialog` instead of the experimental `Row.textFieldWithBrowseButton` shorthand;

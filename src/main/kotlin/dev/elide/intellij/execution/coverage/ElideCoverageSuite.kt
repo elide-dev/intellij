@@ -45,4 +45,7 @@ class ElideCoverageSuite : BaseCoverageSuite {
    * test folders out would show the run's own files as covered by nothing.
    */
   override fun isTrackTestFolders(): Boolean = true
+
+  /** LCOV and JaCoCo both supply branch counters; the reader retains them even for imported suites. */
+  override fun isBranchCoverage(): Boolean = true
 }

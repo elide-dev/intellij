@@ -1,0 +1,8 @@
+<idea-plugin>
+  <extensions defaultExtensionNs="com.intellij">
+    <additionalLibraryRootsProvider implementation="dev.elide.intellij.authoring.ElideBuildLibraryProvider"/>
+    <defaultLiveTemplatesProvider implementation="dev.elide.intellij.authoring.ElideJavaScriptLiveTemplates"/>
+    <liveTemplateContext contextId="ELIDE_TYPESCRIPT" implementation="dev.elide.intellij.authoring.ElideTypeScriptTemplateContext"/>
+    <liveTemplateContext contextId="ELIDE_JAVASCRIPT" implementation="dev.elide.intellij.authoring.ElideJavaScriptTemplateContext"/>
+  </extensions>
+</idea-plugin>

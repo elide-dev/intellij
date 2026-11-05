@@ -23,6 +23,8 @@ import com.intellij.ui.components.installFileCompletionAndBrowseDialog
 import com.intellij.ui.dsl.builder.Cell
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindText
+import com.intellij.ui.dsl.builder.bindSelected
+import dev.elide.intellij.cli.ElideInvocationDefaults
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.layout.selectedValueIs
 import com.intellij.ui.layout.selectedValueMatches
@@ -49,6 +51,7 @@ class ElideProjectSettingsControl(
   private var distributionPath: String = initialSettings.elideDistributionPath
   private var nativeDebugger: ElideNativeDebuggerSetting = initialSettings.nativeDebugger
   private var gdbPath: String = initialSettings.gdbPath
+  private val invocationSettings = initialSettings.copy()
 
   private fun controlsPanel(): DialogPanel = panel {
     group(Constants.Strings["settings.project.execution.title"]) {
@@ -83,6 +86,28 @@ class ElideProjectSettingsControl(
 
         rowComment(Constants.Strings["settings.project.distribution.comment"])
       }
+
+      row(Constants.Strings["settings.project.flags.label"]) {
+        textField().bindText(invocationSettings::buildFlags)
+        rowComment(Constants.Strings["settings.project.flags.comment"])
+      }
+      row(Constants.Strings["settings.project.buildOptions.label"]) { textField().bindText(invocationSettings::buildOptions) }
+      row(Constants.Strings["settings.project.runOptions.label"]) { textField().bindText(invocationSettings::runOptions) }
+      row(Constants.Strings["settings.project.testOptions.label"]) { textField().bindText(invocationSettings::testOptions) }
+      row(Constants.Strings["settings.project.installOptions.label"]) { textField().bindText(invocationSettings::installOptions) }
+      row(Constants.Strings["settings.project.classifiers.label"]) {
+        textField().bindText(invocationSettings::installClassifiers)
+        rowComment(Constants.Strings["settings.project.classifiers.comment"])
+      }
+      row(Constants.Strings["settings.project.jdkHome.label"]) { textField().bindText(invocationSettings::jdkHome) }
+    }
+
+    group(Constants.Strings["settings.project.android.title"]) {
+      row(Constants.Strings["settings.project.android.sdk.label"]) {
+        textField().bindText(invocationSettings::androidSdk)
+        rowComment(Constants.Strings["settings.project.android.sdk.comment"])
+      }
+      row { checkBox(Constants.Strings["settings.project.android.emulatorWindow"]).bindSelected(invocationSettings::emulatorWindow) }
     }
 
     group(Constants.Strings["settings.project.nativeDebug.title"]) {
@@ -133,6 +158,15 @@ class ElideProjectSettingsControl(
     if (distributionType != initialSettings.elideDistributionType) return true
     if (nativeDebugger != initialSettings.nativeDebugger) return true
     if (gdbPath != initialSettings.gdbPath) return true
+    if (invocationSettings.buildFlags != initialSettings.buildFlags ||
+      invocationSettings.buildOptions != initialSettings.buildOptions ||
+      invocationSettings.runOptions != initialSettings.runOptions ||
+      invocationSettings.testOptions != initialSettings.testOptions ||
+      invocationSettings.installOptions != initialSettings.installOptions ||
+      invocationSettings.installClassifiers != initialSettings.installClassifiers ||
+      invocationSettings.jdkHome != initialSettings.jdkHome ||
+      invocationSettings.androidSdk != initialSettings.androidSdk ||
+      invocationSettings.emulatorWindow != initialSettings.emulatorWindow) return true
 
     return false
   }
@@ -142,6 +176,7 @@ class ElideProjectSettingsControl(
     distributionType = initialSettings.elideDistributionType
     nativeDebugger = initialSettings.nativeDebugger
     gdbPath = initialSettings.gdbPath
+    copyInvocationSettings(initialSettings, invocationSettings)
 
     updateWorkspaceScope()
     projectControls.reset()
@@ -183,6 +218,7 @@ class ElideProjectSettingsControl(
     initialSettings.elideDistributionType = distributionType
     initialSettings.nativeDebugger = nativeDebugger
     initialSettings.gdbPath = gdbPath
+    copyInvocationSettings(invocationSettings, initialSettings)
   }
 
   override fun applyExtraSettings(settings: ElideProjectSettings) {
@@ -192,11 +228,38 @@ class ElideProjectSettingsControl(
     settings.elideDistributionType = distributionType
     settings.nativeDebugger = nativeDebugger
     settings.gdbPath = gdbPath
+    copyInvocationSettings(invocationSettings, settings)
   }
 
   override fun validate(settings: ElideProjectSettings): Boolean {
     projectControls.apply()
+    for (options in listOf(
+      invocationSettings.buildOptions, invocationSettings.runOptions,
+      invocationSettings.testOptions, invocationSettings.installOptions,
+    )) {
+      try {
+        ElideInvocationDefaults.parse(options)
+      } catch (cause: IllegalArgumentException) {
+        throw com.intellij.openapi.options.ConfigurationException(cause.message ?: "Invalid command options")
+      }
+    }
+    val classifiers = invocationSettings.installClassifiers.split(',').map(String::trim).filter(String::isNotEmpty)
+    if (classifiers.any { it !in setOf("sources", "docs", "javadoc") }) {
+      throw com.intellij.openapi.options.ConfigurationException("Dependency classifiers must be sources, docs or javadoc")
+    }
     return true
+  }
+
+  private fun copyInvocationSettings(from: ElideProjectSettings, to: ElideProjectSettings) {
+    to.buildFlags = from.buildFlags
+    to.buildOptions = from.buildOptions
+    to.runOptions = from.runOptions
+    to.testOptions = from.testOptions
+    to.installOptions = from.installOptions
+    to.installClassifiers = from.installClassifiers
+    to.jdkHome = from.jdkHome
+    to.androidSdk = from.androidSdk
+    to.emulatorWindow = from.emulatorWindow
   }
 
   private data object DistributionTypeRenderer : ListCellRenderer<ElideDistributionSetting?> {

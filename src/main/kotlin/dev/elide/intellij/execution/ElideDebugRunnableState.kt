@@ -39,15 +39,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Task state used for debug runs of an [ElideRunConfiguration], driven by [ElideDebugRunner].
  *
- * The command line the state executes carries [ElideCli.DEBUGGER], which makes the CLI start the JVM entrypoint, or
- * the test JVM of an `elide test` run, behind a suspended JDWP server. Because the debuggee owns the socket, the
- * connection handed to the debugger is a client-mode one.
- *
- * The CLI always debugs on [Constants.DEBUGGER_PORT] — `--debugger-port` is accepted but has no effect on the JVM as
- * of Elide 1.5.3 — so the attach is deferred until *this* run's JDWP agent announces that port ([JDWP_BANNER]).
- * Dialling the port as soon as the run starts would instead hand the session whatever already listens there: a
- * suspended debuggee left behind by an earlier debug run answers immediately, the IDE debugs that stale JVM, and
- * this run's agent dies with `transport error 202: bind failed`, having never been debugged at all.
+ * The command line starts a suspended JVM, or an Android debug target forwarding JDWP to a local socket.
+ * The attach is deferred until this run announces its own listening port, rather than dialing a stale debuggee
+ * left by another run. Build targets may choose a free port; only default run/test launches use the 5005 preflight.
  */
 internal class ElideDebugRunnableState(
   settings: ExternalSystemTaskExecutionSettings,
@@ -62,6 +56,12 @@ internal class ElideDebugRunnableState(
   /* env = */ environment,
 ),
   RemoteConnectionCreator {
+  private val probeDefaultPort = ElideCli.parse(settings.taskNames).let { invocation ->
+    invocation.command != ElideCli.BUILD &&
+      settings.taskNames.getOrNull(ElideCli.flagIndex(settings.taskNames, invocation, ElideCli.DEBUGGER)) ==
+      ElideCli.DEBUGGER.option
+  }
+
   private val connection = DelayedRemoteConnectionImpl(
     /* useSockets = */ true,
     /* hostName = */ Constants.DEBUGGER_HOST,
@@ -75,7 +75,7 @@ internal class ElideDebugRunnableState(
   override fun isPollConnection(): Boolean = false
 
   override fun execute(executor: Executor?, runner: ProgramRunner<*>): ExecutionResult? {
-    checkDebuggerPortFree()
+    if (probeDefaultPort) checkDebuggerPortFree()
 
     // read by `ExternalSystemRunnableState.execute` below, which registers the listener for the task it starts, so
     // this run's output reaches the listener whichever console claims it: a test run's output is handed to
@@ -88,9 +88,8 @@ internal class ElideDebugRunnableState(
   /**
    * Fails the run when a JDWP server already answers on [Constants.DEBUGGER_PORT], before the CLI is started.
    *
-   * The CLI's agent binds that port and nothing else, so a debuggee already parked on it makes this run
-   * undebuggable: the agent it starts dies with `transport error 202: bind failed`, and the message names the
-   * likely reason rather than leaving the run to fail in the CLI's output.
+   * The default run/test agent binds this port, so a debuggee already parked on it makes this run undebuggable.
+   * Build targets and explicitly addressed debugger launches own their endpoint and skip this probe.
    *
    * The port is dialled rather than bound. A bind answers a different question on every platform this runs on: the
    * socket the previous debug session left in `TIME_WAIT` refuses one for minutes after that session ended, and
@@ -116,15 +115,27 @@ internal class ElideDebugRunnableState(
   /** Attaches the debugger to the JDWP server this run's agent announces, once. */
   private inner class JdwpBannerListener : ExternalSystemTaskNotificationListener {
     private val announced = AtomicBoolean(false)
+    private val pending = mutableMapOf<ProcessOutputType, StringBuilder>()
 
     override fun onTaskOutput(id: ExternalSystemTaskId, text: String, outputType: ProcessOutputType) {
-      if (TRANSPORT_NAME !in text) return
-      val port = JDWP_BANNER.find(text)?.groupValues?.get(1) ?: return
-      if (!announced.compareAndSet(false, true)) return
-
-      connection.debuggerAddress = port
-      connection.applicationAddress = port
-      scheduleAttach(attempt = 0)
+      if (announced.get()) return
+      // External task output is chunked, not line-oriented. Never attach to a partial port token.
+      synchronized(pending) {
+        val buffer = pending.getOrPut(outputType) { StringBuilder() }
+        buffer.append(text)
+        var newline = buffer.indexOf("\n")
+        while (newline >= 0) {
+          val port = announcedPort(buffer.substring(0, newline))
+          buffer.delete(0, newline + 1)
+          if (port != null && announced.compareAndSet(false, true)) {
+            connection.debuggerAddress = port
+            connection.applicationAddress = port
+            scheduleAttach(attempt = 0)
+            return
+          }
+          newline = buffer.indexOf("\n")
+        }
+      }
     }
 
     /**
@@ -146,7 +157,7 @@ internal class ElideDebugRunnableState(
     }
   }
 
-  private companion object {
+  internal companion object {
     /** Time the port probe waits for an answer; the debuggee it looks for is on this machine. */
     private const val PROBE_TIMEOUT_MILLIS = 500
 
@@ -155,6 +166,13 @@ internal class ElideDebugRunnableState(
 
     /** Transport the JDWP agent names in its banner; used to keep the regex off every other output line. */
     private const val TRANSPORT_NAME = "dt_socket"
+
+    /** Both JVM agents and Android adb-forward targets emit this banner, possibly wrapped in a TAP comment. */
+    internal fun announcedPort(line: String): String? {
+      if (TRANSPORT_NAME !in line) return null
+      val port = JDWP_BANNER.find(line)?.groupValues?.get(1)?.toIntOrNull() ?: return null
+      return port.takeIf { it in 1..65535 }?.toString()
+    }
 
     /**
      * Banner the JDWP agent prints once its transport is listening, carrying the port it bound.

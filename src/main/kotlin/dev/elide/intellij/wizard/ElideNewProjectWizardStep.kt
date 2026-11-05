@@ -178,7 +178,7 @@ class ElideNewProjectWizardStep(
   /** Whether [home] holds an Elide CLI binary; the same check [dev.elide.intellij.cli.ElideCommandLine] makes. */
   private fun hasElideBinary(home: String): Boolean =
     home.isNotBlank() &&
-      Path(home).resolve(Constants.ELIDE_BINARIES_DIR).resolve(Constants.ELIDE_BINARY).isRegularFile()
+      ElideDistributionResolver.executablePath(Path(home)).isRegularFile()
 
   private fun reloadTemplates() {
     loading?.cancel()

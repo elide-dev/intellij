@@ -12,10 +12,13 @@
  */
 package dev.elide.intellij.execution
 
+import dev.elide.intellij.project.model.ElideBuildTaskInfo
 import dev.elide.intellij.project.model.ElideEntrypointInfo.Kind
+import dev.elide.intellij.ui.ElideDebugTaskAction
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /** Pins the command line and the entrypoints the IDE's "Debug" action applies to. */
@@ -76,7 +79,7 @@ class ElideRunConfigurationDebugTest {
     )
   }
 
-  @Test fun `only run and test commands are debuggable`() {
+  @Test fun `run test and explicitly targeted build commands are debuggable`() {
     assertTrue(ElideRunConfiguration.supportsDebugger(listOf("--verbose", "run"), Kind.JvmMainClass, "app.MainKt"))
     // a global flag's value is not a command name
     assertTrue(ElideRunConfiguration.supportsDebugger(listOf("-p", "./app", "run"), Kind.JvmMainClass, "app.MainKt"))
@@ -101,8 +104,63 @@ class ElideRunConfigurationDebugTest {
     assertTrue(ElideRunConfiguration.supportsDebugger(listOf("test", "-t", "x"), Kind.JvmTest, "a.B#c"))
     assertTrue(ElideRunConfiguration.supportsDebugger(listOf("test"), null, null))
 
-    // a test id carries no command of its own: `elide build test` runs the build group of the same name, which
-    // assembles test classes and opens no JDWP server
-    assertFalse(ElideRunConfiguration.supportsDebugger(listOf("build", "test"), Kind.JvmTest, "a.B#c"))
+    // Explicit build targets are resolved by the build graph, independently of run entrypoint metadata.
+    assertTrue(ElideRunConfiguration.supportsDebugger(listOf("build", "test"), Kind.JvmTest, "a.B#c"))
+  }
+
+  @Test fun `build debugging requires a target rather than an option value or passthrough argument`() {
+    for (args in listOf(
+      listOf("build"),
+      listOf("build", "--project", "app"),
+      listOf("build", "-f", "run"),
+      listOf("build", "--workers=2", "--", "run"),
+    )) {
+      assertFalse(ElideRunConfiguration.supportsDebugger(args, null, null))
+      assertFailsWith<IllegalArgumentException> { ElideRunConfiguration.debugCommandLine(args) }
+    }
+  }
+
+  @Test fun `build debugger options follow explicit targets and precede passthrough`() {
+    assertEquals(
+      listOf("build", "run", "jvm-test", "--debugger", "--", "guest-argument"),
+      ElideRunConfiguration.debugCommandLine(listOf("build", "run", "jvm-test", "--", "guest-argument")),
+    )
+    assertEquals(
+      listOf("build", "core:run", "--debugger"),
+      ElideRunConfiguration.debugCommandLine(listOf(":core:run")),
+    )
+    assertTrue(ElideRunConfiguration.supportsDebugger(listOf(":core:run"), null, null))
+    val addressed = listOf("build", "run", "--debugger=127.0.0.1:5023")
+    assertEquals(addressed, ElideRunConfiguration.debugCommandLine(addressed))
+  }
+
+  @Test fun `a debugger flag belonging to the guest does not suppress the agent`() {
+    assertEquals(
+      listOf("run", "--debugger", "--", "--debugger"),
+      ElideRunConfiguration.debugCommandLine(listOf("run", "--", "--debugger")),
+    )
+    assertEquals(
+      listOf("run", "--debugger", "--snippet", "--debugger"),
+      ElideRunConfiguration.debugCommandLine(listOf("run", "--snippet", "--debugger")),
+    )
+  }
+
+  @Test fun `android debug targets retain their target-owned debugger invocation`() {
+    val command = listOf("build", "app:android-debug-apk", "--device=emulator-5554")
+    assertTrue(ElideRunConfiguration.supportsDebugger(command, null, null))
+    assertEquals(command, ElideRunConfiguration.debugCommandLine(command))
+  }
+
+  @Test fun `task debug capability uses exact workspace names and advertised options`() {
+    val tasks = listOf(
+      ElideBuildTaskInfo("core:run", options = listOf(ElideBuildTaskInfo.Option("--debugger"))),
+      ElideBuildTaskInfo("other:run"),
+      ElideBuildTaskInfo("app:android-debug-apk"),
+    )
+    assertTrue(ElideDebugTaskAction.supportsTask(":core:run", tasks))
+    assertTrue(ElideDebugTaskAction.supportsTask(":app:android-debug-apk", tasks))
+    assertFalse(ElideDebugTaskAction.supportsTask(":other:run", tasks))
+    assertFalse(ElideDebugTaskAction.supportsTask(":run", tasks))
+    assertFalse(ElideDebugTaskAction.supportsTask(":unknown", tasks))
   }
 }

@@ -20,6 +20,9 @@ import com.intellij.openapi.projectRoots.Sdk
 import dev.elide.project.manifest.majorVersionOrNull
 import dev.elide.tooling.manifest.jvm.JvmTargetLevel
 import dev.elide.tooling.manifest.project.ProjectModule
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.util.io.FileUtil
+import java.nio.file.Path
 
 /**
  * Selects the JDK used by an imported Elide project, based on the manifest's JVM settings.
@@ -59,7 +62,28 @@ object ElideJdkSelector {
    * @param manifest The Elide package manifest.
    * @return The name of the selected JDK, or null if no suitable JDK is available.
    */
-  fun selectJdk(manifest: ProjectModule): String? {
+  fun selectJdk(manifest: ProjectModule, projectRoot: Path? = null, jdkHome: String = ""): String? {
+    val requested = jdkHome.takeIf { it.isNotBlank() } ?: manifest.jvm?.javaHome
+    val home = requested ?: System.getenv("JAVA_HOME")?.takeIf { it.isNotBlank() }
+    if (home != null) {
+      val path = Path.of(home).let { if (it.isAbsolute || projectRoot == null) it else projectRoot.resolve(it) }
+        .toAbsolutePath().normalize().toString()
+      val java = JavaSdk.getInstance()
+      if (!java.isValidSdkHome(path)) {
+        require(requested == null) { "Not a valid JDK home: $path" }
+      } else {
+        val application = ApplicationManager.getApplication()
+        val existing = application.runReadAction<Sdk?> {
+          ProjectJdkTable.getInstance().allJdks.firstOrNull { FileUtil.pathsEqual(it.homePath, path) }
+        }
+        if (existing != null) return existing.name
+        val sdk = java.createJdk("Elide ${java.getVersionString(path) ?: Path.of(path).fileName} ($path)", path, false)
+        application.invokeAndWait({
+          application.runWriteAction { ProjectJdkTable.getInstance().addJdk(sdk) }
+        }, ModalityState.defaultModalityState())
+        return sdk.name
+      }
+    }
     // the JDK table is application state, so it is read under a read action; the Kotlin `runReadAction` helpers are
     // avoided because they are not available across the whole supported build range (251+)
     val javaSdks = ApplicationManager.getApplication().runReadAction<List<Sdk>> {

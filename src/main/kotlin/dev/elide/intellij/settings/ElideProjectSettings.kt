@@ -30,6 +30,19 @@ data class ElideProjectSettings(
   var nativeDebugger: ElideNativeDebuggerSetting = ElideNativeDebuggerSetting.Auto,
   /** GDB executable to debug Native Image binaries with; empty resolves the first one on `PATH`. */
   var gdbPath: String = "",
+  /** Space-separated NAME[=VALUE] flags; quote values containing spaces. Applied during sync as well as execution. */
+  var buildFlags: String = "",
+  /** JSON option maps; explicit run-configuration options override these defaults by name. */
+  var buildOptions: String = "{}",
+  var runOptions: String = "{}",
+  var testOptions: String = "{}",
+  var installOptions: String = "{}",
+  /** Comma-separated dependency classifiers; empty installs classes only. */
+  var installClassifiers: String = "sources",
+  /** JDK for imported modules; empty follows the manifest and installed JDKs. */
+  var jdkHome: String = "",
+  var androidSdk: String = "",
+  var emulatorWindow: Boolean = true,
 ) : ExternalProjectSettings() {
   override fun clone(): ExternalProjectSettings = copy()
 }

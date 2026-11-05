@@ -2,6 +2,7 @@
 
 package dev.elide.tooling.manifest.artifacts
 
+import kotlin.Boolean
 import kotlin.String
 import kotlin.Suppress
 import kotlin.collections.List
@@ -36,6 +37,13 @@ public data class ProjectArtifact(
    * Artifact declared by that project; omit when it declares exactly one usable artifact.
    */
   public val artifact: String? = null,
+  /**
+   * Whether this project compiles as a *friend* of the referenced artifact: the sibling's Kotlin
+   * `internal` declarations are visible to it. Only meaningful where this project compiles Kotlin
+   * and only for a reference in a compile bucket (`packages`, `modules`, `compileOnly`,
+   * `testPackages`); friendship is not transitive.
+   */
+  public val friend: Boolean = false,
 )
 
 /**

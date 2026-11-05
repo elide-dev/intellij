@@ -152,7 +152,7 @@ class ElideCoverageService(private val project: Project, private val scope: Coro
         /* suiteToMergeWith = */ null,
         /* coverageRunner = */ ElideCoverageRunner.instance,
         /* coverageByTestEnabled = */ false,
-        /* branchCoverage = */ false,
+        /* branchCoverage = */ true,
       )
     } ?: return
 

@@ -22,16 +22,21 @@ import com.intellij.openapi.roots.DependencyScope
 import com.intellij.openapi.util.io.toCanonicalPath
 import dev.elide.intellij.Constants
 import dev.elide.project.manifest.effectiveType
-import dev.elide.project.manifest.paths
+import dev.elide.project.manifest.dependencies
+import dev.elide.project.manifest.sourcePaths
+import dev.elide.project.manifest.packagedSourceSets
 import dev.elide.project.manifest.projectReferences
 import dev.elide.project.manifest.referencedSourceSets
-import dev.elide.project.manifest.resources
+import dev.elide.project.manifest.resourcePaths
 import dev.elide.project.manifest.sourceSetsForArtifactOutput
 import dev.elide.tooling.manifest.project.ProjectModule
 import dev.elide.tooling.manifest.sources.SourceSet
 import dev.elide.tooling.manifest.sources.SourceSetType
+import dev.elide.tooling.manifest.android.AndroidTarget
+import dev.elide.tooling.manifest.android.AndroidFeature
 import java.nio.file.Path
 import kotlin.io.path.isRegularFile
+import kotlin.io.path.isDirectory
 import kotlin.io.path.nameWithoutExtension
 import kotlin.io.path.pathString
 
@@ -51,6 +56,8 @@ object ElideProjectModel {
     val contentRoots: MutableList<ContentRootData>,
   )
 
+  private data class ScopedLibrary(val library: LibraryData, val provided: Boolean)
+
   /**
    * Build the IDE's model of the projects [workspace] holds, from their manifests and resolved classpaths.
    *
@@ -63,6 +70,7 @@ object ElideProjectModel {
   fun buildModel(
     workspace: ElideResolvedWorkspace,
     buildTasks: List<ElideBuildTaskInfo> = emptyList(),
+    jdkHome: String = "",
   ): DataNode<ProjectData> {
     val projectPath = workspace.root.root
     val projectData = ProjectData(
@@ -80,7 +88,7 @@ object ElideProjectModel {
     val artifacts = ArtifactIndex(workspace.projects)
 
     // the JDK is selected per project and applied to its own modules; contributors must not re-run it
-    val jdks = workspace.projects.associate { it.name to ElideJdkSelector.selectJdk(it.manifest) }
+    val jdks = workspace.projects.associate { it.name to ElideJdkSelector.selectJdk(it.manifest, it.root, jdkHome) }
 
     // a member resolves its dependencies into the workspace root's repository, so the layout the library names are
     // parsed against is the one the manifest that owns that repository declares
@@ -90,23 +98,25 @@ object ElideProjectModel {
     val modules = mutableListOf<SourceSetModel>()
 
     // the sibling artifacts each source set of each project actually resolved, keyed by project name and source set
-    val artifactRefs = mutableMapOf<String, Map<String, List<ArtifactOutput>>>()
+    val artifactRefs = mutableMapOf<String, Map<String, List<Pair<ArtifactOutput, Boolean>>>>()
 
     for (project in workspace.projects) {
-      val classified = project.classpaths.mapValues { (_, classpath) ->
-        classpath.entries.distinct().map { entry -> entry to artifacts.resolve(entry) }
+      val classified = project.manifest.sources.keys.associateWith { name ->
+        val provided = project.providedClasspaths[name]?.entries.orEmpty().toSet()
+        (project.classpaths[name]?.entries.orEmpty() + provided).distinct().map { entry ->
+          Triple(entry, artifacts.resolve(project.root.resolve(entry).toString()), entry in provided)
+        }
       }
-
       val projectLibraries = classified.mapValues { (_, entries) ->
-        entries.filter { (_, output) -> output == null }
-          .map { (entry, _) -> buildLibraryData(entry, project.root, librariesRoot) }
+        entries.filter { (_, output, _) -> output == null }.map { (entry, _, provided) ->
+          ScopedLibrary(buildLibraryData(entry, project.root, workspace.root.root, librariesRoot), provided)
+        }
       }
-
       artifactRefs[project.name] = classified.mapValues { (_, entries) ->
-        entries.mapNotNull { (_, output) -> output }.distinct()
+        entries.mapNotNull { (_, output, provided) -> output?.let { it to provided } }.distinct()
       }
 
-      libraries += projectLibraries.values.flatten()
+      libraries += projectLibraries.values.flatten().map { it.library }
 
       val container = projectNode.createChild(ProjectKeys.MODULE, containerModule(workspace, project, projectData))
       container.createChild(ModuleSdkData.KEY, ModuleSdkData(jdks[project.name]))
@@ -220,6 +230,7 @@ object ElideProjectModel {
     val project: String,
     /** Name the artifact is written under, or `null` when the entry named no artifact directory of its own. */
     val name: String?,
+    val staged: Boolean = false,
   )
 
   /**
@@ -230,12 +241,14 @@ object ElideProjectModel {
    * is `/private/tmp` on macOS), so neither form alone matches what a classpath entry carries.
    */
   private class ArtifactIndex(projects: List<ElideResolvedProject>) {
-    private val roots: List<Pair<Path, String>> = projects.flatMap { project ->
+    private val roots: List<Triple<Path, String, Boolean>> = projects.flatMap { project ->
       val lexical = project.root.toAbsolutePath().normalize()
       val real = runCatching { project.root.toRealPath() }.getOrDefault(lexical)
-
-      setOf(lexical, real).map { root ->
-        root.resolve(Constants.OUTPUT_DIR).resolve(Constants.ARTIFACTS_DIR) to project.name
+      setOf(lexical, real).flatMap { root ->
+        listOf(
+          Triple(root.resolve(Constants.OUTPUT_DIR).resolve(Constants.ARTIFACTS_DIR), project.name, false),
+          Triple(root.resolve(".dev/android"), project.name, true),
+        )
       }
     }
 
@@ -248,10 +261,11 @@ object ElideProjectModel {
      */
     fun resolve(entry: String): ArtifactOutput? {
       val path = runCatching { Path.of(entry).toAbsolutePath().normalize() }.getOrNull() ?: return null
-      val (dir, project) = roots.firstOrNull { (dir, _) -> path.startsWith(dir) } ?: return null
+      val (dir, project, staged) = roots.firstOrNull { (dir, _, staged) ->
+        path.startsWith(dir) && (!staged || (dir.relativize(path).nameCount == 2 && path.fileName.toString() == "classes.jar"))
+      } ?: return null
       val relative = dir.relativize(path)
-
-      return ArtifactOutput(project, relative.takeIf { it.nameCount >= 2 }?.getName(1)?.toString())
+      return ArtifactOutput(project, relative.takeIf { it.nameCount >= 2 }?.getName(if (staged) 0 else 1)?.toString(), staged)
     }
   }
 
@@ -341,18 +355,16 @@ object ElideProjectModel {
   }
 
   private fun configureModuleDependencies(modules: List<SourceSetModel>) {
-    // only source sets of the same project: a dependency on another project of the workspace is resolved, not
-    // implied, and is wired by `configureProjectDependencies`
     for ((_, projectModules) in modules.groupBy { it.project.name }) {
-      val mainModules = projectModules.filter { it.sourceSet.effectiveType(it.name) == SourceSetType.Source }
-      val otherModules = projectModules.filter { it.sourceSet.effectiveType(it.name) != SourceSetType.Source }
-
-      // other modules depend on main modules
-      for (test in otherModules) {
-        for (main in mainModules) {
-          val data = ModuleDependencyData(test.module.data, main.module.data)
-          data.scope = DependencyScope.TEST
-          test.module.createChild(ProjectKeys.MODULE_DEPENDENCY, data)
+      val byName = projectModules.associateBy { it.name }
+      for (consumer in projectModules) {
+        val scope = dependencyScope(consumer.sourceSet.effectiveType(consumer.name)) ?: continue
+        for (name in consumer.sourceSet.dependencies(consumer.name).distinct()) {
+          val target = byName[name]?.takeUnless { it === consumer } ?: continue
+          val data = ModuleDependencyData(consumer.module.data, target.module.data)
+          data.scope = scope
+          data.isExported = true
+          consumer.module.createChild(ProjectKeys.MODULE_DEPENDENCY, data)
         }
       }
     }
@@ -376,7 +388,7 @@ object ElideProjectModel {
   private fun configureProjectDependencies(
     workspace: ElideResolvedWorkspace,
     modules: List<SourceSetModel>,
-    artifactRefs: Map<String, Map<String, List<ArtifactOutput>>>,
+    artifactRefs: Map<String, Map<String, List<Pair<ArtifactOutput, Boolean>>>>,
   ) {
     if (!workspace.isWorkspace) return
 
@@ -405,12 +417,19 @@ object ElideProjectModel {
     for (consumer in modules) {
       val scope = dependencyScope(consumer.sourceSet.effectiveType(consumer.name)) ?: continue
 
-      for (output in artifactRefs[consumer.project.name]?.get(consumer.name).orEmpty()) {
-        // a project's own artifacts stand for its own source sets, which are already wired by type
+      for ((output, provided) in artifactRefs[consumer.project.name]?.get(consumer.name).orEmpty()) {
         if (output.project == consumer.project.name) continue
-
         val target = workspace.project(output.project) ?: continue
-        wire(consumer, modulesOf(target.name, target.manifest.sourceSetsForArtifactOutput(output.name)), scope)
+        val selectedSets = target.manifest.sourceSetsForArtifactOutput(output.name, output.staged)
+        val references = consumer.project.manifest.projectReferences().filter { reference ->
+          reference.project == output.project &&
+            target.manifest.referencedSourceSets(reference.artifact).any { it in selectedSets }
+        }
+        val providedOnly = provided || (references.isNotEmpty() && references.all { it.provided })
+        wire(
+          consumer, modulesOf(target.name, selectedSets),
+          if (providedOnly) DependencyScope.PROVIDED else scope,
+        )
       }
     }
 
@@ -436,15 +455,32 @@ object ElideProjectModel {
         }
 
         for (consumer in consumers) {
-          wire(consumer, targets, if (reference.test) DependencyScope.TEST else DependencyScope.COMPILE)
+          wire(consumer, targets, when {
+            reference.test -> DependencyScope.TEST
+            reference.provided -> DependencyScope.PROVIDED
+            else -> DependencyScope.COMPILE
+          })
         }
       }
     }
   }
 
   private fun configureResourceRoots(projectPath: Path, module: SourceSetModel) {
-    // only JVM source sets declare resources; the rest report none
-    val resourcePaths = module.sourceSet.resources.values.toList()
+    val resourcePaths = module.sourceSet.resourcePaths(projectPath, module.name) +
+      module.project.manifest.artifacts.values.filterIsInstance<AndroidTarget>()
+        .filter { module.name in module.project.manifest.packagedSourceSets(it) }
+        .flatMap { target ->
+          listOf(
+            target.resources to "src/main/res",
+            target.assets to "src/main/assets",
+            target.jniLibs to "src/main/jniLibs",
+          ).flatMap { (declared, conventional) ->
+            declared.ifEmpty {
+              if (target !is AndroidFeature && projectPath.resolve(conventional).isDirectory()) listOf(conventional)
+              else emptyList()
+            }
+          }
+        }
     if (resourcePaths.isEmpty()) return
 
     val type = when (module.sourceSet.effectiveType(module.name)) {
@@ -452,7 +488,7 @@ object ElideProjectModel {
       else -> ExternalSystemSourceType.RESOURCE
     }
 
-    ElideSourceRoots.collect(projectPath, resourcePaths).forEach { (root, paths) ->
+    ElideSourceRoots.collect(projectPath, resourcePaths.distinct()).forEach { (root, paths) ->
       // resources may live outside every source content root, in which case they get one of their own instead of
       // being silently dropped from the model
       val containingRoot = module.contentRoots.asSequence()
@@ -483,7 +519,7 @@ object ElideProjectModel {
     projectNode: DataNode<ProjectData>,
     workspace: ElideResolvedWorkspace,
     project: ElideResolvedProject,
-    libraries: Map<String, List<LibraryData>>,
+    libraries: Map<String, List<ScopedLibrary>>,
     sourceSetName: String,
     sourceSet: SourceSet,
     jdkName: String?,
@@ -512,10 +548,10 @@ object ElideProjectModel {
     // IDE, so they take no libraries at all
     val scope = dependencyScope(effectiveType)
 
-    if (scope != null) libraries[sourceSetName]?.forEach { library ->
+    if (scope != null) libraries[sourceSetName]?.forEach { (library, provided) ->
       val data = LibraryDependencyData(module, library, LibraryLevel.MODULE)
       data.isExported = true
-      data.scope = scope
+      data.scope = if (provided) DependencyScope.PROVIDED else scope
       moduleNode.createChild(ProjectKeys.LIBRARY_DEPENDENCY, data)
     }
 
@@ -526,25 +562,52 @@ object ElideProjectModel {
       SourceSetType.Other -> ExternalSystemSourceType.EXCLUDED
     }
 
-    val contentRoots = ElideSourceRoots.collect(projectPath, sourceSet.paths).map { (root, paths) ->
+    val contentRoots = ElideSourceRoots.collect(projectPath, sourceSet.sourcePaths(projectPath, sourceSetName)).map { (root, paths) ->
       val data = ContentRootData(Constants.SYSTEM_ID, root)
       for (path in paths) data.storePath(sourceType, path)
 
       moduleNode.createChild(ProjectKeys.CONTENT_ROOT, data)
       data
+    }.toMutableList()
+
+    if (scope != null) for (generator in listOf("java", "kapt")) {
+      val generated = projectPath.resolve(".dev/jvm/generated-sources/$sourceSetName/$generator")
+      if (!generated.isDirectory()) continue
+      val path = generated.toCanonicalPath()
+      val data = contentRoots.asSequence().filter { path.isPathUnder(it.rootPath) }.maxByOrNull { it.rootPath.length }
+        ?: ContentRootData(Constants.SYSTEM_ID, path).also {
+          moduleNode.createChild(ProjectKeys.CONTENT_ROOT, it)
+          contentRoots.add(it)
+        }
+      data.storePath(
+        if (effectiveType == SourceSetType.Test) ExternalSystemSourceType.TEST_GENERATED else ExternalSystemSourceType.SOURCE_GENERATED,
+        path,
+      )
     }
 
     moduleNode.createChild(ModuleSdkData.KEY, ModuleSdkData(jdkName))
 
-    return SourceSetModel(project, sourceSetName, sourceSet, moduleNode, contentRoots.toMutableList())
+    return SourceSetModel(project, sourceSetName, sourceSet, moduleNode, contentRoots)
   }
 
-  private fun buildLibraryData(classpathEntry: String, projectPath: Path, librariesRoot: String): LibraryData {
+  private fun buildLibraryData(classpathEntry: String, projectPath: Path, workspaceRoot: Path, librariesRoot: String): LibraryData {
     val libraryName = parseLibraryName(classpathEntry, librariesRoot)
     val library = LibraryData(Constants.SYSTEM_ID, libraryName)
 
     val classesPath = projectPath.resolve(classpathEntry)
     library.addPath(LibraryPathType.BINARY, classesPath.pathString)
+
+    explodedLibraryCoordinate(classesPath.toString())?.let { coordinate ->
+      val (group, artifact, version) = coordinate.split(':', limit = 3)
+      val repositoryPath = "${group.replace('.', '/')}/$artifact/$version/$artifact-$version"
+      for (root in setOf(workspaceRoot, projectPath)) {
+        val base = root.resolve(librariesRoot).resolve(repositoryPath)
+        Path.of("$base$SUFFIX_SOURCES").takeIf { it.isRegularFile() }
+          ?.let { library.addPath(LibraryPathType.SOURCE, it.toString()) }
+        Path.of("$base$SUFFIX_JAVADOC").takeIf { it.isRegularFile() }
+          ?.let { library.addPath(LibraryPathType.DOC, it.toString()) }
+      }
+    }
 
     classesPath.parent?.resolve("${classesPath.nameWithoutExtension}$SUFFIX_SOURCES")
       ?.takeIf { it.isRegularFile() }
@@ -572,6 +635,13 @@ object ElideProjectModel {
    */
   internal fun parseLibraryName(classpathEntry: String, librariesRoot: String): String {
     val entry = classpathEntry.replace('\\', '/')
+    explodedLibraryCoordinate(entry)?.let { return it }
+    if (entry.endsWith("/android.jar") && "/platforms/android-" in entry) {
+      return "Android API ${entry.substringBeforeLast('/').substringAfterLast("android-")} platform"
+    }
+    if (entry.endsWith("/r-classes") && "/.dev/android/" in entry) {
+      return "Android resources (${entry.removeSuffix("/r-classes")})"
+    }
     val markers = listOf(
       librariesRoot.replace('\\', '/').let { if (it.endsWith('/')) it else "$it/" },
       DEFAULT_LIBRARIES_ROOT,
@@ -595,6 +665,16 @@ object ElideProjectModel {
     if (groupPath.isEmpty() || artifact.isEmpty() || version.isEmpty()) return generateFallbackLibraryName(entry)
 
     return "${groupPath.replace('/', '.')}:$artifact:$version"
+  }
+
+  internal fun explodedLibraryCoordinate(entry: String): String? {
+    val marker = "/.dev/android/libraries/"
+    val normalized = "/" + entry.replace('\\', '/').removePrefix("/")
+    val index = normalized.lastIndexOf(marker)
+    if (index < 0) return null
+    val parts = normalized.substring(index + marker.length).split('/')
+    if (parts.size < 4 || parts.any { it.isEmpty() }) return null
+    return "${parts.dropLast(3).joinToString(".")}:${parts[parts.size - 3]}:${parts[parts.size - 2]}"
   }
 
   /**

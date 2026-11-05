@@ -1,13 +1,17 @@
 {
   "manifestVersion": 2,
-  "elideVersion": "1.5.4",
+  "elideVersion": "1.6.3",
   "minPklVersion": "0.28.1",
   "entrypoint": "/v2/project.pkl",
   "source": "checkout",
   "modules": {
+    "Android.pkl": {
+      "bytes": 15044,
+      "sha256": "05bfd67a994dcc3a722d0588374c18e7f58d63cdef4d92547bd69e45757fadcd"
+    },
     "Artifacts.pkl": {
-      "bytes": 1225,
-      "sha256": "b3d282bfb9a80388be03bfba9822ee1f05c513047549f11c97dadca3f676f048"
+      "bytes": 1789,
+      "sha256": "7963aca1b840846d44de8dc1794a59e1b41f6bf2e8252b0f774de45292e8b525"
     },
     "Base.pkl": {
       "bytes": 1829,
@@ -17,45 +21,61 @@
       "bytes": 1644,
       "sha256": "696d3dc4b36c74209a927838b387ce5666a8dab94c168d0cb90c668f1922bdb5"
     },
+    "Coverage.pkl": {
+      "bytes": 2580,
+      "sha256": "c48721f268c759f014f2acf18a5f7a3b4b2ebe140013084f2f2787dc6c110180"
+    },
     "Dev.pkl": {
       "bytes": 1633,
       "sha256": "6963a482f47b013a066780f97d77074f67e3e3562f721f6a0c994f075d1f7a4e"
     },
     "Engine.pkl": {
-      "bytes": 405,
-      "sha256": "172f5b3de976fa702553b769490dbdf6dc574fbfc0ca7af424263b2551e1d0de"
+      "bytes": 1259,
+      "sha256": "721d07d5fbb7bd5eafa3da8dfcac0103f438585c2867a5016c4c2c3d3c4205c7"
+    },
+    "Extensions.pkl": {
+      "bytes": 1332,
+      "sha256": "472d2ce0e81e055e63f468f9bfb4c15fbdbcff5fe6585f17ae5fdbca06109ef2"
     },
     "Java.pkl": {
-      "bytes": 599,
-      "sha256": "834b2f1c256bfb5689b8ec695002b7b0b9acf138a8684199180ec194675245e5"
+      "bytes": 1338,
+      "sha256": "e5ad36e4d9602925046e0ebd7af70be6be84d865bb1cf1e8e1b71626577d71a1"
     },
     "JavaScript.pkl": {
       "bytes": 583,
       "sha256": "fd663436b3b606f973288591cc34a26edb95ae483b3ee9a32ca5022d6e6adf03"
     },
     "Jvm.pkl": {
-      "bytes": 13074,
-      "sha256": "36f62e4204ca3e6bc6d93418a5ea8030094f6324b5f589ffb1f43ca260758ed7"
+      "bytes": 18463,
+      "sha256": "beb91b17c9a45ec4c1199bdd63436cb924cb90a8b9ec57bc5ec09efcb1de128c"
     },
     "Kotlin.pkl": {
-      "bytes": 5428,
-      "sha256": "138ae601517015c43103c5e56b23d2ec57e9b9f6d71fd689dd8438ef2c8e3f37"
+      "bytes": 5778,
+      "sha256": "16b0314dc68e100a6e12f94542614899cd17aff3bb18a267dca02920485ca7ec"
     },
     "NativeImage.pkl": {
-      "bytes": 4706,
-      "sha256": "3c9d963a0421a013581d5e0f9d802c4bf3c727ce6b50518fcb383cf6bf2c792c"
+      "bytes": 5680,
+      "sha256": "ae41882839e393355f11a06a1702f7333454ec071cc8548ce68a85bbabab04b0"
+    },
+    "OpenTelemetry.pkl": {
+      "bytes": 7479,
+      "sha256": "2024fc1d6f9ab07dd4cba31e3b96f390c6fdf0a748b609f9175aba8846baea2a"
     },
     "project.pkl": {
-      "bytes": 12893,
-      "sha256": "0c02f299af4e2a8e0f6caa47f08ff85ae8ea3bc5797be1d6f460d10de70dac86"
+      "bytes": 27027,
+      "sha256": "2ddfd649cf874a20c2a4492411c972beff218fc10451164028dafb9852b633aa"
+    },
+    "Publishing.pkl": {
+      "bytes": 4973,
+      "sha256": "f44082fe02abafb6b6c89835c2113e2ccc45ad625a1ae51828ba81cd0ecda29e"
     },
     "Sources.pkl": {
-      "bytes": 1005,
-      "sha256": "1b5713b14a6f97ad64e2b149b400bfb8de515e7b3b0eed3f6876c579673f84df"
+      "bytes": 3202,
+      "sha256": "24bf734cd537e7ec0e45772b46ca31d942dcd95bf449d02e284e1752611481f2"
     },
     "Testing.pkl": {
-      "bytes": 1634,
-      "sha256": "c768d6702eae79c4a4edb75640f7ef8abb49355b84b37e217eac0aae9028c14b"
+      "bytes": 2583,
+      "sha256": "6b1625e6dd08bcbd6af22a8d236e73329c736a10511ea4c4a83b5a3c9bf08fff"
     },
     "Toolchain.pkl": {
       "bytes": 1023,

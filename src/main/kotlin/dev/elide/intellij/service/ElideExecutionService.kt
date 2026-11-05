@@ -13,12 +13,11 @@
 package dev.elide.intellij.service
 
 import com.intellij.execution.Executor
+import com.intellij.execution.ProgramRunnerUtil
 import com.intellij.execution.RunManager
 import com.intellij.execution.executors.DefaultRunExecutor
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.externalSystem.model.execution.ExternalSystemTaskExecutionSettings
-import com.intellij.openapi.externalSystem.model.execution.ExternalTaskExecutionInfo
-import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.project.Project
 import com.intellij.util.execution.ParametersListUtil
@@ -38,19 +37,8 @@ class ElideExecutionService(private val project: Project) {
     settings.externalProjectPath = externalProjectPath
     settings.externalSystemIdString = Constants.SYSTEM_ID.toString()
 
-    val taskInfo = ExternalTaskExecutionInfo(settings, executor?.id ?: DefaultRunExecutor.EXECUTOR_ID)
-
-    ExternalSystemUtil.runTask(
-      /* taskSettings = */ taskInfo.settings,
-      /* executorId = */ taskInfo.executorId,
-      /* project = */ project,
-      /* externalSystemId = */ Constants.SYSTEM_ID,
-      /* callback = */ null,
-      /* progressExecutionMode = */ ProgressExecutionMode.NO_PROGRESS_ASYNC,
-    )
-
     val configuration = ExternalSystemUtil.createExternalSystemRunnerAndConfigurationSettings(
-      /* taskSettings = */ taskInfo.settings,
+      /* taskSettings = */ settings,
       /* project = */ project,
       /* externalSystemId = */ Constants.SYSTEM_ID,
     ) ?: return
@@ -60,5 +48,8 @@ class ElideExecutionService(private val project: Project) {
 
     if (existingConfiguration == null) runManager.setTemporaryConfiguration(configuration)
     else runManager.selectedConfiguration = existingConfiguration
+
+    // runTask hard-codes ExternalSystemTaskDebugRunner, whose reverse JDWP handshake is not Elide's.
+    ProgramRunnerUtil.executeConfiguration(configuration, executor ?: DefaultRunExecutor.getRunExecutorInstance())
   }
 }

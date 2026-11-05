@@ -1,0 +1,26 @@
+{
+    "name": "build-extension-sample",
+    "version": "1.0.0",
+    "extensions": [
+        {
+            "@type": "elide.project.ExtensionSpec",
+            "from": "tools/tasks.ts",
+            "config": {
+                "greeting": "Hello"
+            }
+        },
+        {
+            "@type": "elide.project.BuildExtension.OfString",
+            "value": "tools/javascript.mjs"
+        }
+    ],
+    "artifacts": {
+        "tasks": {
+            "@type": "elide.extensions.ExtensionArchive",
+            "entrypoint": "tools/tasks.ts",
+            "srcs": [
+                "tools/**/*.ts"
+            ]
+        }
+    }
+}

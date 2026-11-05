@@ -1,0 +1,15 @@
+<idea-plugin>
+  <actions>
+    <group id="Elide.Android" text="Elide Android" popup="true">
+      <action id="Elide.Android.Tools" class="dev.elide.intellij.android.ElideAndroidToolsAction" text="Android Devices and Tools" description="Elide deployment, SDK, AVD, signing and mapping targets; native Android tooling shortcuts" icon="AllIcons.Actions.RunAnything"/>
+      <action id="Elide.Android.SelectTarget" class="dev.elide.intellij.android.ElideAndroidSelectTargetAction" text="Select Android Deployment Target"/>
+      <action id="Elide.Android.Run" class="dev.elide.intellij.android.ElideAndroidRunAction" text="Run Selected Android APK" icon="AllIcons.Actions.Execute"/>
+      <action id="Elide.Android.Debug" class="dev.elide.intellij.android.ElideAndroidDebugAction" text="Debug Selected Android APK" icon="AllIcons.Actions.StartDebugger"/>
+      <action id="Elide.Android.Environment" class="dev.elide.intellij.android.ElideAndroidEnvironmentAction" text="Inspect Android Environment (No Sync)"/>
+      <add-to-group group-id="ToolsMenu" anchor="last"/>
+    </group>
+    <reference ref="Elide.Android.Tools">
+      <add-to-group group-id="ExternalSystemView.ActionsToolbar.RunPanel" anchor="last"/>
+    </reference>
+  </actions>
+</idea-plugin>
