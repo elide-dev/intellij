@@ -21,6 +21,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileContentChangeEvent
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.openapi.wm.ToolWindowManager
@@ -32,8 +33,6 @@ import dev.elide.intellij.settings.ElideSettings
 import dev.elide.project.manifest.sourcePaths
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicLong
 
@@ -66,8 +65,12 @@ class ElideComposePreviewToolWindowFactory : ToolWindowFactory {
 class ComposePreviewService(private val project: Project) : Disposable {
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private val generation = AtomicLong()
+  private val lifecycle = AtomicLong()
+  private data class Refresh(val file: VirtualFile, val revision: Long, val lifecycle: Long, val build: Long, val debounce: Long)
+  private val refreshes = Channel<Refresh>(Channel.CONFLATED)
   @Volatile private var work: Job? = null
-  private val refreshMutex = Mutex()
+  @Volatile private var renderedRevision = -1L
+  private val changedSources = java.util.concurrent.ConcurrentHashMap.newKeySet<Path>()
   private var source: VirtualFile? = null
   @Volatile private var visible = false
   @Volatile private var backend: KomodoBackend? = null
@@ -79,7 +82,7 @@ class ComposePreviewService(private val project: Project) : Disposable {
   private var autoRefresh = true
   private var lastCards: List<ComposeCard> = emptyList()
   private val input = Channel<() -> Unit>(Channel.UNLIMITED)
-  private val pendingCards = java.util.concurrent.atomic.AtomicReference<Pair<KomodoBackend, List<ComposeCard>>?>()
+  private val pendingCards = java.util.concurrent.atomic.AtomicReference<Triple<KomodoBackend, Long, List<ComposeCard>>?>()
   private val cardsScheduled = java.util.concurrent.atomic.AtomicBoolean()
   private val view: ComposePreviewPanel = ComposePreviewPanel(project, object : ComposePreviewPanel.Callbacks {
     override fun refresh() = refreshPreview()
@@ -103,29 +106,51 @@ class ComposePreviewService(private val project: Project) : Disposable {
 
   init {
     Disposer.register(this, view)
+    scope.launch {
+      for (queued in refreshes) {
+        var request = queued
+        while (true) {
+          delay(request.debounce)
+          request = refreshes.tryReceive().getOrNull() ?: break
+        }
+        if (visible && request.revision == generation.get() && request.lifecycle == lifecycle.get()) {
+          val active = launch { refresh(request) }
+          work = active
+          active.join()
+          work = null
+        }
+      }
+    }
     scope.launch { for (action in input) try { action() } catch (failure: Exception) { ui { view.appendLog("Komodo input failed: ${failure.message}\n", true) } } }
     view.addHierarchyListener { event ->
       if (event.changeFlags and java.awt.event.HierarchyEvent.SHOWING_CHANGED.toLong() != 0L) {
-        if (view.isShowing) { visible = true; refreshPreview() } else deactivate()
+        if (view.isShowing) { visible = true; refreshPreview(rebuild = false) } else deactivate()
       }
     }
     EditorFactory.getInstance().eventMulticaster.addDocumentListener(object : DocumentListener {
       override fun documentChanged(event: DocumentEvent) {
         val file = FileDocumentManager.getInstance().getFile(event.document) ?: return
         if (visible && source != null && file.extension in listOf("kt", "java") && relevant(file.path)) {
-          invalidatePreview()
+          generation.incrementAndGet()
           ui {
             view.setStatus("Editor changed — previews are stale", stale = true)
-            if (autoRefresh) refreshPreview(350, rebuild = false)
+            if (autoRefresh) refreshPreview(120, rebuild = false)
           }
         }
       }
     }, this)
     project.messageBus.connect(this).subscribe(VirtualFileManager.VFS_CHANGES, object : BulkFileListener {
       override fun after(events: List<VFileEvent>) {
-        if (visible && source != null && events.any { relevant(it.path) }) {
-          invalidatePreview()
-          ui { if (autoRefresh) refreshPreview(350) else view.setStatus("Project changed — previews are stale", stale = true) }
+        val relevantEvents = events.filter { relevant(it.path) }
+        if (source != null && relevantEvents.isNotEmpty()) {
+          val rebuild = relevantEvents.any { it !is VFileContentChangeEvent || it.file.extension != "kt" }
+          if (rebuild) { buildRevision.incrementAndGet(); lifecycle.incrementAndGet(); work?.cancel() }
+          relevantEvents.filter { it is VFileContentChangeEvent && it.file.extension == "kt" }
+            .forEach { changedSources.add(Path.of(it.path).toAbsolutePath().normalize()) }
+          generation.incrementAndGet()
+          ui { if (visible) {
+            if (autoRefresh) refreshPreview(120, rebuild = false) else view.setStatus("Project changed — previews are stale", stale = true)
+          } }
         }
       }
     })
@@ -133,14 +158,14 @@ class ComposePreviewService(private val project: Project) : Disposable {
 
   private fun ui(action: () -> Unit) { ApplicationManager.getApplication().invokeLater { if (!project.isDisposed) action() } }
   private fun publishCards(session: KomodoBackend, cards: List<ComposeCard>) {
-    pendingCards.set(session to cards)
+    pendingCards.set(Triple(session, renderedRevision, cards))
     scheduleCards()
   }
   private fun scheduleCards() {
     if (!cardsScheduled.compareAndSet(false, true)) return
     ui {
-      pendingCards.getAndSet(null)?.let { (session, cards) ->
-        if (visible && backend === session) { lastCards = cards; view.showCards(cards) }
+      pendingCards.getAndSet(null)?.let { (session, revision, cards) ->
+        if (visible && backend === session && revision == generation.get()) { lastCards = cards; view.showCards(cards) }
       }
       cardsScheduled.set(false)
       if (pendingCards.get() != null) scheduleCards()
@@ -149,7 +174,7 @@ class ComposePreviewService(private val project: Project) : Disposable {
   private fun enqueueInput(action: (KomodoBackend) -> Unit) {
     val current = backend ?: return
     val revision = generation.get()
-    input.trySend { if (visible && backend === current && generation.get() == revision) action(current) }
+    input.trySend { if (visible && backend === current && renderedRevision == revision && generation.get() == revision) action(current) }
   }
   private fun relevant(path: String): Boolean = project.elideProjectIndex.entries.any { (root, _) ->
     val base = Path.of(root).toAbsolutePath().normalize()
@@ -160,13 +185,16 @@ class ComposePreviewService(private val project: Project) : Disposable {
     }
   }
   fun open(file: VirtualFile) {
-    if (source != file) { lastCards = emptyList(); view.clear(); selectedApplication = null }
+    val changed = source != file
+    if (changed) { lastCards = emptyList(); view.clear(); selectedApplication = null; changedSources.clear() }
     source = file
-    refreshPreview()
+    refreshPreview(rebuild = changed)
   }
   private fun invalidatePreview() {
     generation.incrementAndGet()
+    lifecycle.incrementAndGet()
     work?.cancel()
+    pendingCards.set(null)
     backend?.invalidate()
   }
   private fun cancelPreview(message: String) {
@@ -182,16 +210,20 @@ class ComposePreviewService(private val project: Project) : Disposable {
   private fun refreshPreview(debounce: Long = 0, rebuild: Boolean = true) {
     if (!visible) return
     val file = source ?: run { view.setStatus("Open a Kotlin file and choose Compose Preview."); return }
-    if (rebuild) buildRevision.incrementAndGet()
+    if (rebuild) { buildRevision.incrementAndGet(); lifecycle.incrementAndGet(); work?.cancel() }
     val revision = generation.incrementAndGet()
-    work?.cancel()
-    backend?.invalidate()
     view.setStatus("Refreshing ${file.name} with Komodo", busy = true, stale = true)
-    // Cancellation can skip queued jobs; serialize the actual work and its teardown, not a chain of joins.
-    work = scope.launch { refreshMutex.withLock {
-      delay(debounce)
+    refreshes.trySend(Refresh(file, revision, lifecycle.get(), buildRevision.get(), debounce))
+  }
+
+  /** Finish an in-flight source delta, then consume only the newest edit; typing must not kill the compiler. */
+  private suspend fun refresh(request: Refresh) {
+      val (file, revision, epoch, build) = request
       val job = currentCoroutineContext()
-      fun check() { job.ensureActive(); check(visible && !project.isDisposed && generation.get() == revision) { "Preview disposed" } }
+      fun check() {
+        job.ensureActive()
+        if (!visible || project.isDisposed || lifecycle.get() != epoch) throw CancellationException("Preview superseded")
+      }
       fun update(action: () -> Unit) = ui { if (generation.get() == revision) action() }
       fun log(text: String) = ui { view.appendLog(text) }
       try {
@@ -199,7 +231,6 @@ class ComposePreviewService(private val project: Project) : Disposable {
         require(TrustedProjects.isProjectTrusted(project)) { "Trust this project before running Compose previews; previews execute project code." }
         KomodoTransport.installation()
         update { view.showInstallAction(false) }
-        val build = buildRevision.get()
         val cachedCandidates = candidateCache
         val candidates = if (cachedCandidates?.first == build && cachedCandidates.second == file.path) cachedCandidates.third
           else ComposeInputResolver.applications(project, file.toNioPath()).also { check(); candidateCache = Triple(build, file.path, it) }
@@ -221,6 +252,15 @@ class ComposePreviewService(private val project: Project) : Disposable {
               }
             }?.let { it.toNioPath().toAbsolutePath().normalize() to document.text }
           }.toMap().toMutableMap().apply {
+            changedSources.forEach { path ->
+              val candidate = LocalFileSystem.getInstance().findFileByNioFile(path)
+              if (candidate != null && candidate.isValid && inputs.modules.any { module ->
+                  module.project.manifest.sources[module.sourceSet]?.sourcePaths(module.project.root, module.sourceSet)
+                    ?.any { ComposeInputResolver.matches(module.project.root, it, path) } == true
+                }) {
+                put(path, FileDocumentManager.getInstance().getDocument(candidate)?.text ?: String(candidate.contentsToByteArray(), candidate.charset))
+              }
+            }
             put(file.toNioPath().toAbsolutePath().normalize(), FileDocumentManager.getInstance().getDocument(file)?.text ?: String(file.contentsToByteArray(), file.charset))
           }
         }
@@ -231,14 +271,20 @@ class ComposePreviewService(private val project: Project) : Disposable {
         val home = settings?.jdkHome?.takeIf(String::isNotBlank) ?: ReadAction.compute<String?, RuntimeException> { ProjectRootManager.getInstance(project).projectSdk?.homePath } ?: System.getProperty("java.home")
         val session = backend ?: run {
           lateinit var created: KomodoBackend
-          created = KomodoBackend(inputs, runtime, file.toNioPath().toAbsolutePath().normalize(), home, ::log,
+          created = KomodoBackend(project, inputs, runtime, file.toNioPath().toAbsolutePath().normalize(), home, ::log,
             cardsChanged = { cards -> publishCards(created, cards) }, failed = { failure -> ui {
-              if (visible && backend === created) { created.invalidate(); view.setStatus("Komodo stopped: ${failure.message}", stale = true, failed = true); view.appendLog("${failure.message}\n", true) }
+              if (visible && backend === created) {
+                cancelPreview("Komodo stopped — retained images are stale")
+                view.setStatus("Komodo stopped: ${failure.message}", stale = true, failed = true)
+                view.appendLog("${failure.message}\n", true)
+              }
             } })
           created.also { backend = it }
         }
+        renderedRevision = -1
         session.refresh(buffers, ::check)
         check()
+        renderedRevision = revision
         update {
           lastCards = session.snapshot()
           view.showCards(lastCards)
@@ -247,12 +293,13 @@ class ComposePreviewService(private val project: Project) : Disposable {
         }
       } catch (cancelled: CancellationException) {
         backend?.close(); backend = null; backendKey = null
-        throw cancelled
+        job.ensureActive()
+      } catch (failure: KomodoCompilationFailure) {
+        update { view.setStatus("Preview failed: ${failure.message}", stale = true, failed = true); view.appendLog("${failure.message}\n", true) }
       } catch (failure: Throwable) {
         backend?.close(); backend = null; backendKey = null
         update { view.setStatus("Preview failed: ${failure.message}", stale = true, failed = true); view.appendLog("${failure.message}\n", true); view.showInstallAction(failure is KomodoUnavailable) }
       }
-    } }
   }
 
   private fun navigateSource(location: ComposeLayoutSource) {
@@ -282,7 +329,7 @@ class ComposePreviewService(private val project: Project) : Disposable {
     backend?.invalidate()
     val retired = backend
     backend = null
-    input.close(); scope.cancel()
+    input.close(); refreshes.close(); scope.cancel()
     com.intellij.util.concurrency.AppExecutorUtil.getAppExecutorService().execute { retired?.close() }
   }
 }

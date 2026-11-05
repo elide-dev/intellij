@@ -16,8 +16,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Keep the Komodo preview compiler alive across rapid Kotlin edits and compilation errors; Kotlin saves no longer
+  force a full Elide rebuild. Reuse unchanged source synchronization, preview discovery, and decoded frames.
+- Update Compose frames in place without rebuilding the gallery or inspector, retain images while rehosting previews,
+  and wait for all updated preview frames before completing an incremental refresh.
 - Compose layout inspection selects the enclosing source-bearing composable when layout wrappers share its bounds,
   instead of defaulting to internal reusable layout elements. Smaller child elements remain independently selectable.
+- Kotlin project sync enables the IDE's bundled Compose compiler plugin when `kotlin.features.compose` is enabled,
+  so native analysis resolves synthetic types such as `ComposableFunction1`; re-sync removes it when disabled.
+  Imported Kotlin compiler options now configure native analysis directly, including the declared JVM target.
 
 ### Added
 

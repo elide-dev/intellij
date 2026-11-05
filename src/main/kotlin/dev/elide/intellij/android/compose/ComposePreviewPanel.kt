@@ -222,6 +222,7 @@ internal class ComposePreviewPanel(project: Project, private val callbacks: Call
   }
 
   fun setStatus(text: String, busy: Boolean = false, stale: Boolean = false, failed: Boolean = false) {
+    val toolsChanged = this.busy != busy || this.stale != stale || this.failed != failed
     this.busy = busy
     this.stale = stale
     this.failed = failed
@@ -238,11 +239,18 @@ internal class ComposePreviewPanel(project: Project, private val callbacks: Call
       busy -> "Preparing previews. You can continue editing while Komodo builds and renders."
       else -> "No previews to display. Open a Kotlin file with @Preview composables, select its Android application, and refresh."
     }
-    cards.values.forEach { it.updateTools() }
+    if (toolsChanged) cards.values.forEach { it.updateTools() }
     if (failed) showLogs(true)
   }
 
   fun showCards(values: List<ComposeCard>) {
+    // Runtime frames normally keep the same card order; avoid touching the gallery hierarchy.
+    if (gallery.componentCount == values.size && values.indices.all {
+        (gallery.getComponent(it) as CardView).model.id == values[it].id
+      }) {
+      values.forEachIndexed { index, model -> (gallery.getComponent(index) as CardView).update(model) }
+      return
+    }
     val ids = values.mapTo(hashSetOf()) { it.id }
     val iterator = cards.iterator()
     var structureChanged = false
@@ -386,6 +394,7 @@ internal class ComposePreviewPanel(project: Project, private val callbacks: Call
     private val sourceButton = JButton("Open source")
     private val inspector = JPanel()
     private var nodesById = emptyMap<String, ComposeLayoutNode>()
+    private var initialized = false
     private var selectedId: String? = null
     private var hoveredId: String? = null
     private var updatingPicker = false
@@ -460,29 +469,43 @@ internal class ComposePreviewPanel(project: Project, private val callbacks: Call
         val point = SwingUtilities.convertPoint(viewport, event.point, canvas)
         wheel(event, point)
       }
-      installNodes()
+      update(model)
     }
 
     fun update(value: ComposeCard) {
+      if (initialized && model == value) return
       val previous = model
+      val firstUpdate = !initialized
+      val nodesChanged = firstUpdate || previous.nodes != value.nodes
+      val toolsChanged = firstUpdate || nodesChanged || previous.name != value.name ||
+        previous.error != value.error || previous.layoutError != value.layoutError ||
+        previous.live != value.live || previous.keyboard != value.keyboard ||
+        (previous.image == null) != (value.image == null)
       model = value
-      if (inputCard === this && !acceptsInput()) releaseInput()
-      title.text = value.name
-      title.toolTipText = value.name
-      configuration.text = value.configuration.replace('\n', ' ')
-      configuration.toolTipText = value.configuration
-      val message = value.error?.let { "${it.lineSequence().first().take(300)}\nSee Preview logs for full diagnostics." }.orEmpty()
+      initialized = true
+      if (inputCard === this && (!acceptsInput() || previous.keyboard && !value.keyboard)) releaseInput()
+      if (firstUpdate || previous.name != value.name) {
+        title.text = value.name
+        title.toolTipText = value.name
+      }
+      if (firstUpdate || previous.configuration != value.configuration) {
+        configuration.text = value.configuration.replace('\n', ' ')
+        configuration.toolTipText = value.configuration
+      }
+      val message = if (firstUpdate || previous.error != value.error) {
+        value.error?.let { "${it.lineSequence().first().take(300)}\nSee Preview logs for full diagnostics." }.orEmpty()
+      } else error.text
       if (error.text != message) {
         error.text = message
         error.isVisible = message.isNotEmpty()
         if (message.isNotEmpty()) appendLog("\n${value.name}: ${value.error}\n", error = true)
         revalidate()
       }
-      if (previous.nodes != value.nodes) installNodes()
-      val resized = previous.image?.width != value.image?.width || previous.image?.height != value.image?.height
-      if (resized || imageWidth == 0) resizeImage()
-      updateTools()
-      canvas.repaint()
+      if (nodesChanged) installNodes()
+      val resized = firstUpdate || previous.image?.width != value.image?.width || previous.image?.height != value.image?.height
+      if (resized) resizeImage()
+      if (toolsChanged) updateTools()
+      else if (previous.image !== value.image) canvas.repaint()
     }
 
     private fun installNodes() {

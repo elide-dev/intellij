@@ -12,6 +12,7 @@
  */
 package dev.elide.intellij.project
 
+import com.intellij.facet.FacetManager
 import com.intellij.openapi.externalSystem.model.DataNode
 import com.intellij.openapi.externalSystem.model.Key
 import com.intellij.openapi.externalSystem.model.project.ExternalProjectPojo
@@ -29,11 +30,14 @@ import dev.elide.intellij.project.model.ElideProjectInfo
 import dev.elide.intellij.service.elideProjectIndex
 import dev.elide.intellij.settings.ElideLocalSettings
 import java.nio.file.Path
+import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
+import org.jetbrains.kotlin.cli.common.arguments.parseCommandLineArguments
 import org.jetbrains.kotlin.config.CompilerSettings
+import org.jetbrains.kotlin.config.JvmTarget
 import org.jetbrains.kotlin.config.LanguageVersion
-import org.jetbrains.kotlin.idea.facet.KotlinFacet
-import org.jetbrains.kotlin.idea.facet.KotlinFacetConfigurationImpl
 import org.jetbrains.kotlin.idea.facet.KotlinFacetType
+import org.jetbrains.kotlin.idea.fir.extensions.KotlinK2BundledCompilerPlugins
+import org.jetbrains.kotlin.platform.jvm.JvmPlatforms
 
 /**
  * Data import service used to populate the [project index][dev.elide.intellij.service.ElideProjectIndexService]
@@ -123,17 +127,35 @@ class ElideProjectDataService : AbstractProjectDataService<ElideProjectData, Pro
 
       val facets = modelsProvider.getModifiableFacetModel(module)
       val kotlin = facets.getFacetByType(KotlinFacetType.TYPE_ID)
-        ?: KotlinFacet(module, module.name, KotlinFacetConfigurationImpl()).also { facets.addFacet(it) }
+        ?: FacetManager.getInstance(module).createFacet(KotlinFacetType.INSTANCE, module.name, null)
+          .also { facets.addFacet(it) }
 
       kotlin.configuration.settings.apply {
         useProjectSettings = false
         apiLevel = parseLanguageVersion(kotlinSettings.apiLevel)
         languageLevel = parseLanguageVersion(kotlinSettings.languageLevel)
 
-        compilerSettings = CompilerSettings().apply {
-          additionalArguments = kotlinSettings.compilerArguments.joinToString(" ")
+        compilerSettings = CompilerSettings()
+        compilerArguments = K2JVMCompilerArguments().apply {
+          parseCommandLineArguments(kotlinSettings.compilerArguments, this)
+          kotlinSettings.apiLevel?.let { apiVersion = it }
+          kotlinSettings.languageLevel?.let { languageVersion = it }
+          if (kotlinSettings.compose) {
+            // Match the IDE's analysis compiler, not the project's potentially older build compiler.
+            val existing = pluginClasspaths.orEmpty()
+            val bundled = KotlinK2BundledCompilerPlugins.COMPOSE_COMPILER_PLUGIN.bundledJarLocation.toString()
+            pluginClasspaths = Array(existing.size + 1) { index -> if (index < existing.size) existing[index] else bundled }
+          }
+        }.also { arguments ->
+          // Analysis reads the facet's platform separately from its compiler arguments.
+          targetPlatform = JvmPlatforms.jvmPlatformByTargetVersion(
+            arguments.jvmTarget?.let(JvmTarget::fromString) ?: JvmTarget.DEFAULT
+          )
         }
+        updateMergedArguments()
       }
+      // Existing facets are mutated in place; committing an unchanged facet model does not publish this change.
+      if (!facets.isNewFacet(kotlin)) FacetManager.getInstance(module).facetConfigurationChanged(kotlin)
     }
   }
 

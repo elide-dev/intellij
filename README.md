@@ -34,6 +34,9 @@ then install **Elide** from the marketplace tab. Plugin ZIPs are also attached t
 transitive local Pkl imports, or binary lockfiles prompt a reload. The **Elide** tool window shows linked projects,
 modules, and build targets, with Run and Debug actions. Sync batches compile/provided classpaths, attaches requested
 dependency classifiers, and imports generated sources without treating kapt stubs as source code.
+Kotlin import honors the manifest's compiler options, including its JVM target. Projects enabling
+`kotlin.features.compose` use the IDE's bundled Compose compiler plugin for native Kotlin analysis; disabling the
+feature and re-syncing removes it. This does not change the Compose or Kotlin versions used by Elide builds.
 
 **Multi-project workspaces.** A manifest declaring `workspace.members` is imported as one project: every member gets
 its own modules, source roots, classpath and JDK, and a member consuming a sibling's artifact with `project("name")`
@@ -115,9 +118,14 @@ The icon toolbar provides **Refresh**, **Cancel**, **Auto refresh**, **Fit previ
 Outside inspection mode, previews accept pointer and keyboard input; **F6** releases preview keyboard focus.
 The native IDE console preserves build/Komodo diagnostics across refreshes and opens on errors without taking focus.
 
-Auto refresh synchronizes unsaved Kotlin buffers without saving files or replacing normal build outputs.
-Compilation failures retain the last successful images, visibly marked stale. Hiding the tool window stops Komodo
-and removes its private session files. Java, generated-code, resource, and build-configuration changes require saving
+Auto refresh synchronizes unsaved Kotlin buffers without saving files or replacing normal build outputs. Kotlin edits
+and saves reuse the live compiler; rapid edits are coalesced without cancelling an in-flight compilation. Unchanged
+sources reuse rendered previews, and ordinary string edits reuse preview discovery. Frame-only updates repaint the
+affected canvas without rebuilding the gallery or resetting inspector selection and scroll position.
+Compilation failures retain the compiler and last successful images, visibly marked stale, so the next edit can recover.
+Rehosting previews retains existing images until replacement frames arrive. **Refresh** explicitly rebuilds project
+inputs. Hiding the tool window stops Komodo and removes its private session files. Java, generated-code, resource,
+and build-configuration changes require saving
 and refreshing/rebuilding. The preview compiler does not perform Hilt bytecode transforms. The current layoutlib host
 does not support wheel input; wheel scrolling remains available for the gallery.
 

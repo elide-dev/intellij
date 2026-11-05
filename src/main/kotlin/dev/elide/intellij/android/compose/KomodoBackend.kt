@@ -1,6 +1,10 @@
 package dev.elide.intellij.android.compose
 
 import com.google.gson.JsonObject
+import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.project.Project
+import com.intellij.psi.PsiErrorElement
+import com.intellij.psi.util.PsiTreeUtil
 import dev.elide.intellij.project.model.ElideSourceRoots
 import dev.elide.project.manifest.dependencies
 import dev.elide.project.manifest.projectArtifact
@@ -13,9 +17,20 @@ import java.util.Base64
 import java.util.Properties
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.imageio.ImageIO
+import org.jetbrains.kotlin.psi.KtAnnotationEntry
+import org.jetbrains.kotlin.psi.KtBlockExpression
+import org.jetbrains.kotlin.psi.KtClassOrObject
+import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtNamedFunction
+import org.jetbrains.kotlin.psi.KtProperty
+import org.jetbrains.kotlin.psi.KtPsiFactory
+import org.jetbrains.kotlin.psi.KtStringTemplateExpression
+
+internal class KomodoCompilationFailure(message: String) : IllegalStateException(message)
 
 /** One owned workspace compiler and live gallery. All operations run off the event-dispatch thread. */
 internal class KomodoBackend(
+  private val project: Project,
   private val inputs: ComposeInputs,
   private val runtime: ComposeRuntime,
   private val source: Path,
@@ -29,10 +44,17 @@ internal class KomodoBackend(
   private val transport = KomodoTransport(log, ::event, failed)
   private val lock = Any()
   private val cards = linkedMapOf<String, ComposeCard>()
+  private val framePngs = mutableMapOf<String, String>()
   private var previews = emptyList<JsonObject>()
   private var entries = emptyList<Map<String, Any?>>()
   private var texts = emptyMap<Path, String>()
   private val opened = mutableMapOf<Path, Int>()
+  private var synchronizedTexts = emptyMap<Path, String>()
+  private var discoveryTexts = emptyMap<Path, String>()
+  private var declarations = emptyMap<Path, String>()
+  private var discoveredDeclarations: Map<Path, String>? = null
+  private var rendered = false
+  @Volatile private var compileFailed = false
   @Volatile private var rejected = false
   private var started = false
   @Volatile private var acceptingFrames = false
@@ -49,6 +71,7 @@ internal class KomodoBackend(
     val names = modules.mapIndexed { i, m -> (m.project.root to m.sourceSet) to "preview_$i" }.toMap()
     val properties = Properties()
     properties.setProperty("modules", names.values.joinToString(","))
+    // This controls only CLI ModuleCache persistence; the workspace FIR/preview caches remain live.
     properties.setProperty("cache", "off")
     fun paths(values: List<String>): String {
       require(values.none { ',' in it || '\n' in it || '\r' in it }) { "Komodo cannot represent a project path containing a comma or newline" }
@@ -75,8 +98,7 @@ internal class KomodoBackend(
   }
 
   fun refresh(documents: Map<Path, String>, check: () -> Unit) {
-    invalidate()
-    blur()
+    check()
     for (path in documents.keys + setOf(source)) {
       require(path.isAbsolute && path == path.normalize() && inputs.modules.any { module ->
         module.project.manifest.sources[module.sourceSet]?.sourcePaths(module.project.root, module.sourceSet)?.any {
@@ -85,82 +107,110 @@ internal class KomodoBackend(
       }) { "Preview source is outside the selected application's source sets: $path" }
     }
     val current = linkedMapOf(source to (documents[source] ?: Files.readString(source)))
-    // Keep program files after saving: a later edit must never resurrect their old build bytecode.
-    for (file in texts.keys + documents.keys) {
+    // Keep saved program files, but remove deleted ones instead of resurrecting old build bytecode.
+    for (file in synchronizedTexts.keys + documents.keys) {
+      if (file == source) continue
+      if (file !in documents && !Files.isRegularFile(file)) continue
       require(file.toString().endsWith(".kt") || documents[file] == Files.readString(file)) { "Unsaved Java source is not supported by Komodo's Kotlin compiler: $file. Save and rebuild it before previewing; saved bytecode is not substituted for editor text." }
       if (file.toString().endsWith(".kt")) current[file] = documents[file] ?: Files.readString(file)
     }
+    if (rendered && !rejected && texts == current) {
+      acceptingFrames = true
+      acceptingInput = true
+      return
+    }
+    invalidate()
+    blur()
+    rendered = false
     if (!started) {
       transport.start(KomodoTransport.installation(), manifest(), javaHome, inputs.modules.first().project.buildRoot, check)
       synchronize(current, check)
       transport.connect(source, check)
       started = true
     } else synchronize(current, check)
-    val discovered = transport.request("komodo/previews", mapOf("textDocument" to mapOf("uri" to source.toUri().toString())), check).asJsonObject
-    val errors = discovered.getAsJsonArray("errors")
-    if (errors != null && errors.size() > 0) {
-      val diagnostics = errors.map { value ->
-        val diagnostic = value.asJsonObject
-        val line = diagnostic.getAsJsonObject("range")?.getAsJsonObject("start")?.get("line")?.asInt?.plus(1)
-        "$source${line?.let { ":$it" }.orEmpty()}: ${diagnostic.string("message").orEmpty()}"
-      }
-      diagnostics.forEach { log("$it\n") }
-      error("Komodo compilation failed: ${diagnostics.first()}")
+    declarations = current.mapValues { (path, text) ->
+      if (discoveryTexts[path] == text) declarations.getValue(path)
+      else ReadAction.compute<String, RuntimeException> { discoveryKey(KtPsiFactory(project).createFile(path.fileName.toString(), text)) }
     }
-    previews = discovered.getAsJsonArray("previews")?.map { it.asJsonObject }.orEmpty()
+    discoveryTexts = current
+    if (discoveredDeclarations != declarations) {
+      val discovered = transport.request("komodo/previews", mapOf("textDocument" to mapOf("uri" to source.toUri().toString())), check).asJsonObject
+      val errors = discovered.getAsJsonArray("errors")
+      if (errors != null && errors.size() > 0) {
+        val diagnostics = errors.map { value ->
+          val diagnostic = value.asJsonObject
+          val line = diagnostic.getAsJsonObject("range")?.getAsJsonObject("start")?.get("line")?.asInt?.plus(1)
+          "$source${line?.let { ":$it" }.orEmpty()}: ${diagnostic.string("message").orEmpty()}"
+        }
+        diagnostics.forEach { log("$it\n") }
+        throw KomodoCompilationFailure("Komodo compilation failed: ${diagnostics.first()}")
+      }
+      previews = discovered.getAsJsonArray("previews")?.map { it.asJsonObject }.orEmpty()
+      discoveredDeclarations = declarations
+    }
     val nextEntries = previewEntries(previews)
     val healthy = synchronized(lock) { cards.isNotEmpty() && cards.values.all { it.image != null && it.error == null } }
-    // Provider values are expanded when entries are hosted; a source delta alone cannot add/remove their scenes.
-    val providersChanged = texts != current && nextEntries.any { it["methodParameter"] != null }
-    if (healthy && !providersChanged && texts.keys == current.keys && entries == nextEntries && texts.isNotEmpty() && entries.isNotEmpty()) {
-      if (texts != current) {
-        acceptingFrames = false
-        rejected = false
-        val answer = transport.exchange(mapOf("command" to "sources", "files" to current.mapKeys { it.key.toString() }), 300_000, check) {
-          it.string("event") == "compile" || it.string("event") == "error"
+    if (healthy && !rejected && texts.keys == current.keys && entries == nextEntries && entries.isNotEmpty()) {
+      compileFailed = false
+      val answer = transport.exchange(mapOf("command" to "sources", "files" to current.mapKeys { it.key.toString() }), 300_000, check) {
+        it.string("event") == "compile" || it.string("event") == "error"
+      }
+      if (answer.string("event") == "compile" && answer.string("outcome") == "failure") {
+        throw KomodoCompilationFailure("Komodo could not compile the current editor buffers; see the log")
+      }
+      if (answer.string("event") == "compile") {
+        // Compile precedes delta application. The queued frame answers once per entry, not once per gallery.
+        val barrier = frameNanos + 1
+        val pending = synchronized(lock) { cards.keys.toMutableSet() }
+        val frames = linkedMapOf<String, JsonObject>()
+        val barrierAnswer = transport.exchange(mapOf("command" to "frame", "nanos" to barrier), 60_000, check) { message ->
+          if (message.string("event") == "frame" && message.get("nanos")?.asLong == barrier) {
+            message.string("entry")?.let { id -> if (pending.remove(id)) frames[id] = message }
+            pending.isEmpty()
+          } else message.string("event") == "error"
         }
-        if (answer.string("event") == "compile" && answer.string("outcome") == "failure") error("Komodo could not compile the current editor buffers; see the log")
-        if (answer.string("event") == "compile") {
-          // Compile precedes delta application. The queued frame is a render-thread barrier.
-          val barrier = frameNanos + 1
-          val barrierAnswer = transport.exchange(mapOf("command" to "frame", "nanos" to barrier), 60_000, check) {
-            it.string("event") == "frame" && it.get("nanos")?.asLong == barrier || it.string("event") == "error"
-          }
-          if (!rejected && barrierAnswer.string("event") == "frame") {
-            texts = current
+        if (!rejected && barrierAnswer.string("event") == "frame") {
+          // Providers may depend on any source body; expand them again after the persistent source update.
+          if (nextEntries.any { it["methodParameter"] != null }) host(nextEntries, check)
+          else synchronized(lock) {
             acceptingFrames = true
-            event(barrierAnswer)
-            transport.send(mapOf("command" to "frame"))
-            acceptingInput = true
-            return
+            frames.values.forEach(::event)
           }
+          texts = current
+          rendered = true
+          acceptingInput = true
+          return
         }
-      } else {
-        acceptingFrames = true
-        acceptingInput = true
-        transport.send(mapOf("command" to "frame"))
-        publish()
-        return
       }
     }
     configure(current, nextEntries, check)
+    texts = current
+    rendered = true
   }
 
   fun snapshot(): List<ComposeCard> = synchronized(lock) { cards.values.toList() }
 
   private fun synchronize(documents: Map<Path, String>, check: () -> Unit) {
-    val updates = documents.map { (path, text) ->
+    val removed = synchronizedTexts.keys - documents.keys
+    removed.forEach { path ->
+      transport.notify("textDocument/didClose", mapOf("textDocument" to mapOf("uri" to path.toUri().toString())))
+      opened.remove(path)
+    }
+    val updates = documents.filter { (path, text) -> synchronizedTexts[path] != text }.map { (path, text) ->
       val version = (opened[path] ?: 0) + 1
       val uri = path.toUri().toString()
       if (opened.put(path, version) == null) transport.notify("textDocument/didOpen", mapOf("textDocument" to mapOf("uri" to uri, "languageId" to "kotlin", "version" to version, "text" to text)))
       else transport.notify("textDocument/didChange", mapOf("textDocument" to mapOf("uri" to uri, "version" to version), "contentChanges" to listOf(mapOf("text" to text))))
       mapOf("uri" to uri, "version" to version, "text" to text)
     }
-    transport.request("komodo/preview/sync", mapOf("documents" to updates), check)
+    if (updates.isNotEmpty() || removed.isNotEmpty()) transport.request("komodo/preview/sync", mapOf("documents" to updates), check)
+    synchronizedTexts = documents
   }
 
   private fun configure(current: Map<Path, String>, nextEntries: List<Map<String, Any?>>, check: () -> Unit) {
     acceptingFrames = false
+    compileFailed = false
+    rejected = false
     val repositories = inputs.modules.flatMap { module ->
       val repository = module.project.manifest.dependencies.maven.localRepository ?: ".dev/dependencies/m2"
       listOf(module.project.root.resolve(repository), module.project.buildRoot.resolve(repository))
@@ -172,19 +222,26 @@ internal class KomodoBackend(
       "texts" to current.mapKeys { it.key.toString() }, "inlineSources" to inline, "compile" to mapOf("classPath" to overlay(inputs.compileClassPath).filterNot(own::contains))), 300_000, check) {
       it.string("event") == "configured" || it.string("event") == "error" && it.string("kind") == "configure"
     }
-    require(answer.string("event") == "configured") { answer.string("message") ?: "Komodo refused the current program" }
-    texts = current
+    if (answer.string("event") != "configured") {
+      val reason = answer.string("message") ?: "Komodo refused the current program"
+      if (compileFailed) throw KomodoCompilationFailure(reason)
+      error(reason)
+    }
+    host(nextEntries, check)
+  }
+
+  private fun host(nextEntries: List<Map<String, Any?>>, check: () -> Unit) {
+    acceptingFrames = false
     entries = nextEntries
-    synchronized(lock) { cards.clear() }
     val hosted = transport.exchange(mapOf("command" to "entries", "entries" to entries), 120_000, check) { it.string("event") == "entries" }
     require(hosted.has("hosted")) { "Komodo returned no hosted preview list" }
     val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(60)
     while (true) {
       check()
-      val pending = synchronized(lock) { cards.values.any { it.image == null && it.error == null } }
+      val pending = synchronized(lock) { cards.values.any { !it.live && it.error == null } }
       if (!pending) break
       if (System.nanoTime() >= deadline) {
-        synchronized(lock) { cards.replaceAll { _, card -> if (card.image == null && card.error == null) card.copy(error = "Komodo did not render a first frame within 60 seconds") else card } }
+        synchronized(lock) { cards.replaceAll { _, card -> if (!card.live && card.error == null) card.copy(error = "Komodo did not render a first frame within 60 seconds") else card } }
         break
       }
       Thread.sleep(25)
@@ -203,8 +260,15 @@ internal class KomodoBackend(
         synchronized(lock) {
           val old = cards.toMap()
           cards.clear()
-          message.getAsJsonArray("hosted")?.forEach { cards[it.asString] = base(it.asString) }
-          message.getAsJsonArray("refused")?.forEach { value -> cards[value.asString] = base(value.asString).copy(error = old[value.asString]?.error ?: "Komodo refused this preview or parameter provider; see the log") }
+          message.getAsJsonArray("hosted")?.forEach { value ->
+            val id = value.asString
+            cards[id] = rehost(base(id), old[id])
+          }
+          message.getAsJsonArray("refused")?.forEach { value ->
+            val id = value.asString
+            cards[id] = rehost(base(id), old[id]).copy(error = "Komodo refused this preview or parameter provider; see the log")
+          }
+          framePngs.keys.retainAll(cards.keys)
           acceptingFrames = true
         }
         publish()
@@ -213,23 +277,29 @@ internal class KomodoBackend(
         frameNanos = message.get("nanos")?.asLong ?: frameNanos
         if (!acceptingFrames) return
         val id = message.string("entry") ?: return
-        val previous = synchronized(lock) { cards[id] } ?: return
-        val rendered = frame(previous, message, "keyboard" in transport.features)
+        val (previous, png) = synchronized(lock) { (cards[id] ?: return) to framePngs[id] }
+        val rendered = frame(previous, message, "keyboard" in transport.features, png)
         synchronized(lock) {
           if (!acceptingFrames || cards[id] !== previous) return
+          framePngs[id] = message.string("png")!!
+          if (rendered == previous) return
           cards[id] = rendered
         }
         publish()
       }
-      "compile" -> message.getAsJsonArray("messages")?.forEach { value ->
-        val item = value.asJsonObject
-        log("${item.string("level")}: ${item.string("file").orEmpty()}:${item.get("line") ?: ""} ${item.string("text").orEmpty()}\n")
+      "compile" -> {
+        compileFailed = message.string("outcome") == "failure"
+        message.getAsJsonArray("messages")?.forEach { value ->
+          val item = value.asJsonObject
+          log("${item.string("level")}: ${item.string("file").orEmpty()}:${item.get("line") ?: ""} ${item.string("text").orEmpty()}\n")
+        }
       }
       "error" -> {
         if (message.get("restartRequired")?.asBoolean == true) rejected = true
         val reason = message.string("message") ?: message.toString()
         log("Komodo ${message.string("kind").orEmpty()}: $reason\n")
         message.string("entry")?.let { id ->
+          if (!acceptingFrames) return
           synchronized(lock) { cards[id] = (cards[id] ?: base(id)).copy(error = reason, live = false, nodes = emptyList()) }
           publish()
         }
@@ -241,7 +311,6 @@ internal class KomodoBackend(
   fun invalidate() {
     acceptingInput = false
     acceptingFrames = false
-    synchronized(lock) { cards.replaceAll { _, card -> card.copy(live = false, keyboard = false) } }
   }
   fun pointer(id: String, action: String, x: Int, y: Int, dx: Double, dy: Double) {
     if (!acceptingInput || action !in setOf("down", "up", "move", "scroll")) return
@@ -276,6 +345,37 @@ internal class KomodoBackend(
   }
 
   companion object {
+    /** Preserve all syntax except plain runtime string literals in block-bodied functions.
+     * Annotation arguments (including multiline ones), imports, constants and declarations remain exact.
+     * Incomplete syntax deliberately has no normalization, so fixing an error always rediscovers it.
+     */
+    internal fun discoveryKey(file: KtFile): String {
+      val text = file.text
+      if (PsiTreeUtil.findChildOfType(file, PsiErrorElement::class.java) != null) return text
+      val literals = PsiTreeUtil.collectElementsOfType(file, KtStringTemplateExpression::class.java).filter { literal ->
+        if (literal.hasInterpolation()) return@filter false
+        val function = PsiTreeUtil.getParentOfType(literal, KtNamedFunction::class.java) ?: return@filter false
+        val body = function.bodyExpression as? KtBlockExpression ?: return@filter false
+        if (!PsiTreeUtil.isAncestor(body, literal, true)) return@filter false
+        generateSequence(literal.parent) { it.parent }.takeWhile { it !== function }.none {
+          it is KtAnnotationEntry || it is KtProperty || it is KtClassOrObject
+        }
+      }.sortedBy { it.textRange.startOffset }
+      if (literals.isEmpty()) return text
+      return buildString(text.length) {
+        var offset = 0
+        literals.forEach { literal ->
+          append(text, offset, literal.textRange.startOffset)
+          append("\"<runtime-string>\"")
+          offset = literal.textRange.endOffset
+        }
+        append(text, offset, text.length)
+      }
+    }
+
+    internal fun rehost(base: ComposeCard, previous: ComposeCard?): ComposeCard =
+      base.copy(image = previous?.image, live = false, keyboard = false)
+
     internal fun previewEntries(previews: List<JsonObject>): List<Map<String, Any?>> = previews.map { preview ->
       val id = preview.string("previewId") ?: error("Komodo preview has no id")
       val parameters = preview.getAsJsonObject("previewParams") ?: JsonObject()
@@ -286,20 +386,24 @@ internal class KomodoBackend(
       }
       mapOf("id" to if (provider == null) "$id:0" else id, "previewId" to id, "method" to preview.string("methodFQN"), "parameters" to typed, "previewParams" to parameters, "methodParameter" to provider)
     }
-    internal fun frame(previous: ComposeCard, message: JsonObject, keyboard: Boolean): ComposeCard {
+    internal fun frame(previous: ComposeCard, message: JsonObject, keyboard: Boolean, previousPng: String? = null): ComposeCard {
       val width = message.get("width")?.asInt ?: 0
       val height = message.get("height")?.asInt ?: 0
       require(width in 1..16384 && height in 1..16384 && width.toLong() * height <= 32_000_000) { "Invalid Komodo frame dimensions" }
-      val bytes = Base64.getDecoder().decode(message.string("png") ?: error("Komodo frame has no PNG"))
-      val image = ImageIO.createImageInputStream(ByteArrayInputStream(bytes)).use { input ->
-        val readers = ImageIO.getImageReaders(input)
-        require(readers.hasNext()) { "Komodo returned an invalid PNG" }
-        val reader = readers.next()
-        try {
-          reader.input = input
-          require(reader.formatName.equals("png", true) && reader.getWidth(0) == width && reader.getHeight(0) == height) { "Komodo PNG dimensions do not match its frame" }
-          reader.read(0)
-        } finally { reader.dispose() }
+      val png = message.string("png") ?: error("Komodo frame has no PNG")
+      val image = if (png == previousPng && previous.image?.width == width && previous.image?.height == height) previous.image
+      else {
+        val bytes = Base64.getDecoder().decode(png)
+        ImageIO.createImageInputStream(ByteArrayInputStream(bytes)).use { input ->
+          val readers = ImageIO.getImageReaders(input)
+          require(readers.hasNext()) { "Komodo returned an invalid PNG" }
+          val reader = readers.next()
+          try {
+            reader.input = input
+            require(reader.formatName.equals("png", true) && reader.getWidth(0) == width && reader.getHeight(0) == height) { "Komodo PNG dimensions do not match its frame" }
+            reader.read(0)
+          } finally { reader.dispose() }
+        }
       }
       var layoutError = message.string("layoutError")
       val nodes = try {
