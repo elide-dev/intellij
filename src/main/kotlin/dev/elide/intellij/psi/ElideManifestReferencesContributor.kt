@@ -36,7 +36,9 @@ class ElideManifestReferencesContributor : PsiReferenceContributor() {
       .withParent(PklStringLiteral::class.java)!!
 
     override fun getReferencesByElement(element: PsiElement, context: ProcessingContext): Array<out PsiReference> {
-      return workspaceReferences(element as? PklStringContent ?: return PsiReference.EMPTY_ARRAY)
+      val content = element as? PklStringContent ?: return PsiReference.EMPTY_ARRAY
+      val workspace = workspaceReferences(content)
+      return if (workspace.isNotEmpty()) workspace else extensionReferences(content)
     }
   }
 

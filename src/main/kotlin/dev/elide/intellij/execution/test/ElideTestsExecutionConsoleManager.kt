@@ -49,6 +49,8 @@ import com.intellij.ui.SimpleTextAttributes
 import dev.elide.intellij.Constants
 import dev.elide.intellij.execution.ElideRunConfiguration
 import dev.elide.intellij.execution.build.elideSourceFilters
+import dev.elide.intellij.android.testing.ElideAndroidTestParser
+import dev.elide.intellij.execution.build.ElideBuildProgressRecord
 
 /**
  * Replaces the plain console of an `elide test` run with the IDE's test tree, decoding the TAP 13 stream the CLI
@@ -66,7 +68,8 @@ class ElideTestsExecutionConsoleManager :
     val executeTask = task as? ExternalSystemExecuteTaskTask ?: return false
     if (executeTask.externalSystemId != Constants.SYSTEM_ID) return false
 
-    return ElideRunConfiguration.emitsTap(executeTask.tasksToExecute)
+    return ElideRunConfiguration.emitsTap(executeTask.tasksToExecute) ||
+      ElideAndroidTestParser.targets(executeTask.tasksToExecute).isNotEmpty()
   }
 
   override fun attachExecutionConsole(
@@ -80,7 +83,8 @@ class ElideTestsExecutionConsoleManager :
       ?: return null
 
     val console = ElideTestsExecutionConsole(ElideTestConsoleProperties(configuration, environment.executor))
-    val session = console.startSession(environment.executionId)
+    val androidTargets = (task as? ExternalSystemExecuteTaskTask)?.tasksToExecute?.let(ElideAndroidTestParser::targets).orEmpty()
+    val session = console.startSession(environment.executionId, androidTargets)
     val testsRoot = console.resultsViewer.testsRootNode
 
     explainEmptyTree(console)
@@ -89,7 +93,10 @@ class ElideTestsExecutionConsoleManager :
       testsRoot.setHandler(handler)
       console.attachToProcess(handler)
       handler.addProcessListener(object : ProcessListener {
-        override fun processTerminated(event: ProcessEvent) = session.finish()
+        override fun processTerminated(event: ProcessEvent) {
+          console.finishOutput()
+          session.finish(event.exitCode)
+        }
       })
     }
 
@@ -159,7 +166,7 @@ class ElideTestsExecutionConsoleManager :
 
     project.getService(ExternalSystemRunConfigurationViewManager::class.java).addListener({ buildId, event ->
       if (buildId == taskId) {
-        if (!carriesTapStream(taskId, event)) buildWindow.onEvent(buildId, plain(quietened(event)))
+        if (!carriesTapStream(taskId, event)) plain(quietened(event))?.let { buildWindow.onEvent(buildId, it) }
         if (event is FinishBuildEvent) {
           raiseBuildWindowOnBuildFailure(project, event, testsRoot)
           Disposer.dispose(disposable)
@@ -184,14 +191,16 @@ class ElideTestsExecutionConsoleManager :
    * program itself writes, and it is not forwarded — so a build that reports every step it ran in the red the
    * Build window's console keeps for standard error reads as a build that went wrong.
    */
-  private fun plain(event: BuildEvent): BuildEvent {
+  private fun plain(event: BuildEvent): BuildEvent? {
     if (event !is OutputBuildEvent || event.outputType.isStdout) return event
+    val record = ElideBuildProgressRecord.parse(event.message.trimEnd('\r', '\n'))
+    val message = if (record != null) record.console() ?: return null else event.message
 
     return OutputBuildEventImpl(
       /* eventId = */ event.id,
       /* parentId = */ event.parentId,
       /* eventTime = */ event.eventTime,
-      /* message = */ event.message,
+      /* message = */ message,
       /* hint = */ null,
       /* description = */ event.description,
       /* outputType = */ ProcessOutputType.STDOUT,

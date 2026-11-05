@@ -13,16 +13,28 @@
 package dev.elide.intellij.ui
 
 import com.intellij.icons.AllIcons
+import com.intellij.execution.executors.DefaultDebugExecutor
 import com.intellij.ide.projectView.PresentationData
+import com.intellij.openapi.actionSystem.ActionUpdateThread
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.components.service
 import com.intellij.openapi.externalSystem.model.DataNode
+import com.intellij.openapi.externalSystem.model.ExternalSystemDataKeys
 import com.intellij.openapi.externalSystem.model.ProjectKeys
 import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil
 import com.intellij.openapi.externalSystem.util.Order
 import com.intellij.openapi.externalSystem.view.ExternalProjectsView
 import com.intellij.openapi.externalSystem.view.ExternalSystemNode
 import com.intellij.openapi.externalSystem.view.TaskNode
+import com.intellij.openapi.project.DumbAwareAction
+import com.intellij.openapi.project.Project
+import com.intellij.util.execution.ParametersListUtil
 import dev.elide.intellij.Constants
 import dev.elide.intellij.project.model.ElideBuildTasksData
+import dev.elide.intellij.project.model.ElideBuildTaskInfo
+import dev.elide.intellij.project.model.buildTargetName
+import dev.elide.intellij.service.ElideExecutionService
+import dev.elide.intellij.service.elideProjectIndex
 
 /**
  * The "Tasks" node of the Elide tool window, and the per-project nodes below it.
@@ -59,6 +71,56 @@ class ElideTasksNode(
       .map { ElideTasksNode(externalProjectsView, it) }
 
     return projects + ExternalSystemApiUtil.getChildren(tasksNode, ProjectKeys.TASK)
-      .map { TaskNode(externalProjectsView, it) }
+      .map { node ->
+        object : TaskNode(externalProjectsView, node) {
+          override fun getMenuId(): String = "Elide.TaskMenu"
+        }
+      }
+  }
+}
+
+/** Debug is only offered for targets the inspected build graph advertises as debugger-capable. */
+class ElideDebugTaskAction : DumbAwareAction() {
+  override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
+
+  override fun update(e: AnActionEvent) {
+    val project = e.project
+    val task = selectedTask(e)
+    e.presentation.isEnabledAndVisible = project != null && task != null && supportsTask(project, task)
+  }
+
+  override fun actionPerformed(e: AnActionEvent) {
+    val project = e.project ?: return
+    val task = selectedTask(e) ?: return
+    if (!supportsTask(project, task)) return
+    val data = task.data ?: return
+    project.service<ElideExecutionService>().execute(
+      ParametersListUtil.join(listOf(data.name)),
+      data.linkedExternalProjectPath,
+      DefaultDebugExecutor.getDebugExecutorInstance(),
+    )
+  }
+
+  private fun selectedTask(e: AnActionEvent): TaskNode? =
+    e.getData(ExternalSystemDataKeys.SELECTED_NODES)?.singleOrNull() as? TaskNode
+
+  private fun supportsTask(project: Project, task: TaskNode): Boolean {
+    val data = task.data ?: return false
+    return data.owner == Constants.SYSTEM_ID && supportsTask(
+      data.name,
+      project.elideProjectIndex[data.linkedExternalProjectPath]?.buildTasks.orEmpty(),
+    )
+  }
+
+  internal companion object {
+    internal fun supportsTask(taskName: String, tasks: List<ElideBuildTaskInfo>): Boolean {
+      val target = buildTargetName(taskName) ?: return false
+      return tasks.any { task ->
+        task.name == target && (
+          task.options.any { it.option.substringBefore('=') == "--debugger" } ||
+            task.name.substringAfterLast(':').startsWith("android-debug-")
+          )
+      }
+    }
   }
 }

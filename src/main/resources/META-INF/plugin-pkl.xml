@@ -2,6 +2,8 @@
   <resource-bundle>i18n.Strings</resource-bundle>
 
   <extensions defaultExtensionNs="com.intellij">
+    <defaultLiveTemplatesProvider implementation="dev.elide.intellij.authoring.ElidePklLiveTemplates"/>
+    <liveTemplateContext contextId="ELIDE_PKL" implementation="dev.elide.intellij.authoring.ElidePklTemplateContext"/>
     <runLineMarkerContributor language="Pkl"
                               implementationClass="dev.elide.intellij.execution.ElideManifestLineMarkerContributor"/>
     <psi.referenceContributor language="Pkl"

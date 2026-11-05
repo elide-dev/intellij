@@ -1,0 +1,9 @@
+<templateSet group="Elide JavaScript">
+  <template name="elide-build-extension" value="/** @param {ElideBuild} build */&#10;export default function ({ task }) {&#10;  task(&quot;$VALUE1$&quot;, { description: &quot;$VALUE2$&quot; }, (ctx) =&gt; {&#10;    ctx.log(&quot;Hello from&quot;, ctx.project.name);$END$&#10;  });&#10;}" description="Declare an Elide build extension with JSDoc API types" toReformat="true" toShortenFQNames="false">
+    <variable name="VALUE1" expression="" defaultValue="&quot;greet&quot;" alwaysStopAt="true" />
+    <variable name="VALUE2" expression="" defaultValue="&quot;Greet from the build&quot;" alwaysStopAt="true" />
+    <context>
+      <option name="ELIDE_JAVASCRIPT" value="true" />
+    </context>
+  </template>
+</templateSet>

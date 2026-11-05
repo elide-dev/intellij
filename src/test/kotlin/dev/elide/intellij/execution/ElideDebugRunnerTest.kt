@@ -89,12 +89,25 @@ class ElideDebugRunnerTest {
   }
 
   @Test fun `a run the cli cannot debug is left to the platform`() {
-    // `elide build` opens no JDWP server, and a guest entrypoint answers with CDP/DAP, which the Java debugger does
-    // not speak: this runner must decline both, or the action it offers cannot be delivered
-    val build = configuration("build app", Kind.Artifact, "app")
+    // A build with no explicit target opens no JDWP server; guest entrypoints answer with CDP/DAP.
+    val build = configuration("build", null, null)
     val guest = configuration("run src/main.js", Kind.Generic, "src/main.js")
 
     assertNull(ProgramRunner.getRunner(executor.id, build) as? ElideDebugRunner)
     assertNull(ProgramRunner.getRunner(executor.id, guest) as? ElideDebugRunner)
+  }
+
+  @Test fun `explicit build and workspace task configurations use the elide debugger`() {
+    assertIs<ElideDebugRunnableState>(debugState(configuration("build run", null, null)))
+    assertIs<ElideDebugRunnableState>(debugState(configuration(":core:run", null, null)))
+    assertIs<ElideDebugRunnableState>(debugState(configuration("build android-debug-apk", null, null)))
+  }
+
+  @Test fun `the announced port supports dynamically forwarded Android endpoints and TAP`() {
+    assertEquals("39427", ElideDebugRunnableState.announcedPort("Listening for transport dt_socket at address: 39427"))
+    assertEquals("5005", ElideDebugRunnableState.announcedPort("# out: Listening for transport dt_socket at address: 5005"))
+    assertNull(ElideDebugRunnableState.announcedPort("Build task completed"))
+    assertNull(ElideDebugRunnableState.announcedPort("Listening for transport dt_socket at address: 0"))
+    assertNull(ElideDebugRunnableState.announcedPort("Listening for transport dt_socket at address: 65536"))
   }
 }

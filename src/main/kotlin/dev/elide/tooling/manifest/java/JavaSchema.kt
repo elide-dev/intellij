@@ -54,6 +54,42 @@ public class JavaSettings() {
 }
 
 /**
+ * A named group of C headers compiled as Java FFM bindings.
+ */
+@Serializable
+@SerialName("elide.java.JavaNativeBinding")
+public data class JavaNativeBinding(
+  /**
+   * Header paths or globs, relative to the declaring project.
+   */
+  public val headers: List<String>,
+  /**
+   * Package for generated Java types.
+   */
+  public val packageName: String,
+  /**
+   * Class exposing the header's functions and constants.
+   */
+  public val headerClassName: String,
+  /**
+   * Header search directories, relative to the declaring project.
+   */
+  public val includeDirs: List<String> = emptyList(),
+  /**
+   * Preprocessor definitions passed to clang.
+   */
+  public val defines: List<String> = emptyList(),
+  /**
+   * Libraries looked up by the generated bindings at runtime.
+   */
+  public val libraries: List<String> = emptyList(),
+  /**
+   * Load libraries through System.loadLibrary at runtime.
+   */
+  public val useSystemLoadLibrary: Boolean = false,
+)
+
+/**
  * Selects the Java compiler variant used by the build system
  */
 @Serializable

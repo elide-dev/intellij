@@ -2,9 +2,35 @@
 @ModuleInfo { minPklVersion = "0.28.1" }
 module elide.engine
 
+/// Context lifecycle strategy. Prespawn initializes application replicas before serving readiness.
+typealias ContextTopology = "prespawn"
+
+/// Fixed context count or processor-based sizing, resolved once at startup.
+typealias ContextSpawn = Int(isPositive) | "auto"
+
+/// Application context sizing. Counts do not imply CPU affinity or JIT warming.
+class ContextSettings {
+  /// Number of contexts to spawn; auto subtracts reserve from available processors.
+  spawn: ContextSpawn = 1
+
+  /// Processor capacity left for other runtime work when spawn is auto.
+  reserve: Int(this >= 0) = 2
+
+  /// Lower bound on the resolved count.
+  min: Int(isPositive) = 1
+
+  /// Optional upper bound on the resolved count; must be at least min.
+  max: Int(isPositive)?
+}
+
 /// Configures the execution engine used by Elide when running this project.
 class EngineSettings {
-  /// Sets the maximum number of guest contexts to use when running the
-  /// application. Defaults to a sensible limit based on available processors.
+  /// Context lifecycle strategy.
+  topology: ContextTopology = "prespawn"
+
+  /// Application context sizing; omission spawns one context.
+  contexts: ContextSettings?
+
+  /// Deprecated fixed context count. Use contexts.spawn; do not specify both.
   maxContexts: Int?
 }

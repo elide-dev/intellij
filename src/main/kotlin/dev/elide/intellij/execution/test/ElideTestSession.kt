@@ -25,6 +25,13 @@ import com.intellij.execution.testframework.sm.runner.events.TestSuiteStartedEve
 import com.intellij.execution.testframework.sm.runner.events.TreeNodeEvent
 import dev.elide.intellij.Constants
 
+/** A test protocol bound to a single process and SM tree. */
+internal interface ElideTestOutputSession {
+  fun start()
+  fun output(text: String, stdout: Boolean)
+  fun finish(exitCode: Int? = null)
+}
+
 /**
  * Drives the IDE's test tree from the TAP 13 stream of one `elide test` run.
  *
@@ -40,7 +47,7 @@ import dev.elide.intellij.Constants
  * Every entry point is synchronised: standard output and standard error are drained by separate threads, and the
  * tree's event processor expects its events in stream order.
  */
-internal class ElideTestSession(private val processor: GeneralTestEventsProcessor) {
+internal class ElideTestSession(private val processor: GeneralTestEventsProcessor) : ElideTestOutputSession {
   private val parser = ElideTapParser()
 
   /** Tests announced by a `# start` comment that have not reported a result yet, keyed by start number. */
@@ -59,7 +66,7 @@ internal class ElideTestSession(private val processor: GeneralTestEventsProcesso
   private class SuiteNode(val name: String, val nodeId: String)
 
   /** Announce the run to the test tree; called once, before any output is fed in. */
-  @Synchronized fun start() {
+  @Synchronized override fun start() {
     processor.onStartTesting()
     processor.onTestsReporterAttached()
   }
@@ -70,7 +77,7 @@ internal class ElideTestSession(private val processor: GeneralTestEventsProcesso
    * Only standard output carries the TAP stream; standard error is where the CLI writes its build progress and
    * diagnostics, which belong to the build, not to a test.
    */
-  @Synchronized fun output(text: String, stdout: Boolean) {
+  @Synchronized override fun output(text: String, stdout: Boolean) {
     if (finished || !stdout) return
     parser.feed(text, ::accept)
   }
@@ -79,7 +86,7 @@ internal class ElideTestSession(private val processor: GeneralTestEventsProcesso
    * Close the run: decode whatever the stream left unterminated, close the suites still open, and let the tree
    * settle. Idempotent, because a failed run reports both a failure and an end.
    */
-  @Synchronized fun finish() {
+  @Synchronized override fun finish(exitCode: Int?) {
     if (finished) return
     parser.flush(::accept)
     finished = true

@@ -18,6 +18,7 @@ import com.intellij.build.events.BuildEvent
 import com.intellij.build.events.EventResult
 import com.intellij.build.events.MessageEvent
 import com.intellij.build.events.MessageEventResult
+import com.intellij.build.events.ProgressBuildEvent
 import com.intellij.build.events.impl.AbstractBuildEvent
 import com.intellij.build.events.impl.FailureResultImpl
 import com.intellij.build.events.impl.FinishEventImpl
@@ -39,9 +40,8 @@ import kotlin.io.path.invariantSeparatorsPathString
  *
  * Each step the CLI reports becomes a node under the run's root node, carrying the outcome the CLI gave it and the
  * diagnostics it printed on the way; the Build window shows that tree for a build, and the Run window's build view
- * for everything else. Nodes are opened and closed in one go, because the log announces a step only once it is
- * over, and their times are taken from the CLI's own clock rather than from when the line was read, so the
- * durations shown are the ones the CLI measured.
+ * for everything else. Structured records open nodes immediately and pair concurrent completions by task key.
+ * Older text-only CLIs report completed steps, whose start times are recovered from their measured durations.
  *
  * Only standard error is fed in: that is where the CLI writes this log, and it keeps a program that prints a
  * lookalike line on standard output from being mistaken for one.
@@ -60,6 +60,11 @@ internal class ElideBuildEventPublisher(
   private val publish: (BuildEvent) -> Unit,
 ) {
   private val parser = ElideBuildProgressParser()
+  private data class NodeId(val build: ExternalSystemTaskId, val task: String, val step: String? = null)
+  private data class RunningNode(val parent: Any, val message: String, val startedAt: Long, var total: Long = 0)
+  private val running = linkedMapOf<NodeId, RunningNode>()
+  private val finished = mutableSetOf<NodeId>()
+  private var totalTasks = 0L
 
   /**
    * The project directory with every symbolic link along it resolved, which is what the paths the diagnostics name
@@ -75,14 +80,17 @@ internal class ElideBuildEventPublisher(
   }
 
   /**
-   * Decodes one line of the CLI's standard error, publishing the events it completes, and reports whether the line
-   * was the CLI's own rather than something the program it ran wrote on the same stream.
+   * Publishes progress and returns human console text independently of the original record stream.
+   * Test adapters must receive the original line, not this rendered text.
    */
-  fun accept(line: String): Boolean {
+  fun accept(line: String): ElideBuildOutput {
     val decoded = parser.line(line)
+    decoded.record?.let {
+      publishRecord(it)
+      return ElideBuildOutput(claimed = true, text = it.console())
+    }
     decoded.step?.let(::publishStep)
-
-    return decoded.claimed
+    return ElideBuildOutput(decoded.claimed, line)
   }
 
   /**
@@ -93,6 +101,104 @@ internal class ElideBuildEventPublisher(
    */
   fun flush() {
     parser.flush().forEach { publishDiagnostic(it, taskId) }
+    closeRunning(System.currentTimeMillis(), failed = false)
+  }
+
+  private fun publishRecord(record: ElideBuildProgressRecord) {
+    val id = record.task?.let { NodeId(taskId, it, record.step) }
+    when (record.type) {
+      "task-started", "step-started" -> start(
+        id!!, record, record.time, record.message ?: record.step ?: record.task!!.substringAfterLast(':'),
+      )
+      "task-finished", "step-finished" -> {
+        if (id!! in finished) return
+        if (id !in running) start(id, record, record.time - (record.durationMillis ?: 0), record.step ?: record.task!!.substringAfterLast(':'))
+        // A task owns its steps, even when completion records arrive interleaved with another task.
+        if (id.step == null) {
+          running.keys.filter { it.task == id.task && it.step != null }.forEach {
+            finish(it, record.time, null, null, record.outcome == "failure")
+          }
+        }
+        finish(id, record.time, record.message, record.string("reason"), record.outcome == "failure", record.outcome == "skipped")
+      }
+      "task-progress", "step-progress" -> {
+        val node = running[id] ?: return
+        record.number("total")?.let { node.total = it }
+        publish(ElideProgressEvent(
+          id!!, node.parent, record.time,
+          listOfNotNull(record.message ?: node.message, record.string("detail")).joinToString(" · "),
+          node.total, record.number("progress") ?: 0, "",
+        ))
+      }
+      "build-started" -> totalTasks = record.number("plannedTasks") ?: 0
+      "build-configured" -> {
+        totalTasks = record.number("totalTasks")!!
+        publish(ElideProgressEvent(taskId, null, record.time, "Building", totalTasks, 0, "tasks"))
+      }
+      "build-progress" -> publish(ElideProgressEvent(
+        taskId, null, record.time, record.message ?: "Building", totalTasks, record.number("completedTasks") ?: 0, "tasks",
+      ))
+      "message" -> publishRecordMessage(record)
+      "build-finished" -> closeRunning(record.time, record.outcome == "failure")
+    }
+  }
+
+  private fun start(id: NodeId, record: ElideBuildProgressRecord, time: Long, message: String) {
+    if (id in running || id in finished) return
+    val parent = if (id.step == null) taskId else NodeId(taskId, id.task).also {
+      if (it !in running && it !in finished) start(it, record, time, id.task.substringAfterLast(':'))
+    }
+    val label = if (id.step == null) record.string("project")?.let { "[$it] $message" } ?: message else message
+    running[id] = RunningNode(parent, label, time, record.number("total") ?: 0)
+    publish(StartEventImpl(id, parent, time, label, null, null))
+  }
+
+  private fun finish(
+    id: NodeId,
+    time: Long,
+    message: String?,
+    reason: String?,
+    failed: Boolean,
+    skipped: Boolean = false,
+  ) {
+    val node = running.remove(id) ?: return
+    finished += id
+    publish(FinishEventImpl(
+      id, node.parent, time.coerceAtLeast(node.startedAt), message ?: node.message, reason, null,
+      when { failed -> FailureResultImpl(); skipped -> SkippedResultImpl(); else -> SuccessResultImpl() },
+    ))
+  }
+
+  private fun closeRunning(time: Long, failed: Boolean) {
+    // Children must close before their parents. Unfinished work is not a successful task.
+    running.keys.toList().asReversed().forEach { finish(it, time, null, null, failed, skipped = !failed) }
+  }
+
+  private fun publishRecordMessage(record: ElideBuildProgressRecord) {
+    val nodeId = record.task?.let { NodeId(taskId, it) }
+    val parent = nodeId ?: taskId
+    if (nodeId != null && nodeId !in running && nodeId !in finished) {
+      start(nodeId, record, record.time, nodeId.task.substringAfterLast(':'))
+    }
+    val text = record.string("text")!!
+    val level = record.string("level")!!
+    if (level == "output") {
+      if (parent != taskId) publish(output(record.console()!!, parent, record.time))
+      return
+    }
+    // Reuse the text diagnostic decoder: tool names, embedded locations, notes and excerpts retain one convention.
+    val diagnostics = ElideBuildProgressParser()
+    text.lineSequence().forEachIndexed { index, line ->
+      diagnostics.line(if (index == 0) "$level: ${line.removePrefix("$level: ")}" else line)
+    }
+    diagnostics.flush().forEach {
+      publishDiagnostic(it.copy(
+        file = record.string("file") ?: it.file,
+        line = record.number("line")?.takeIf { value -> value in 1..Int.MAX_VALUE.toLong() }?.toInt() ?: it.line,
+        column = record.number("column")?.takeIf { value -> value in 1..Int.MAX_VALUE.toLong() }?.toInt() ?: it.column,
+        elapsedMillis = record.time - startedAt,
+      ), parent)
+    }
   }
 
   private fun publishStep(step: ElideBuildStep) {
@@ -322,4 +428,19 @@ private class ElideDiagnosticEvent(
   override fun getNavigatable(project: Project): Navigatable? = position?.let { FileNavigatable(project, it) }
 
   override fun getResult(): MessageEventResult = MessageEventResult { kind }
+}
+
+/** Native progress updates reuse the task node's identity rather than creating another activity surface. */
+private class ElideProgressEvent(
+  id: Any,
+  parentId: Any?,
+  time: Long,
+  message: String,
+  private val total: Long,
+  private val progress: Long,
+  private val unit: String,
+) : AbstractBuildEvent(id, parentId, time, message, null, null), ProgressBuildEvent {
+  override fun getTotal(): Long = total
+  override fun getProgress(): Long = progress
+  override fun getUnit(): String = unit
 }

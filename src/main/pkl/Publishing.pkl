@@ -1,0 +1,160 @@
+/// Configures how `elide publish` publishes a project's artifacts.
+///
+/// In a workspace, a member inherits every setting of the root's `publishing` block except `maven.artifactId` and
+/// `maven.artifacts`; a setting the member declares overrides the inherited one.
+@ModuleInfo { minPklVersion = "0.28.1" }
+module elide.publishing
+
+import "Artifacts.pkl" as artifacts
+import "Base.pkl" as common
+import "Jvm.pkl" as jvm
+
+/// A Maven `groupId` or `artifactId`: segments of letters, digits, `_` and `-`, separated by single dots.
+typealias MavenIdentifier = String(matches(Regex(#"[A-Za-z0-9_\-]+(\.[A-Za-z0-9_\-]+)*"#)))
+
+/// A license the published package is offered under.
+class PomLicense {
+  /// License name, preferably an SPDX identifier such as `Apache-2.0`.
+  name: String
+
+  /// URL of the license text.
+  url: String?
+}
+
+/// A developer of the published package.
+class PomDeveloper {
+  /// Developer's identifier, such as a username.
+  id: String?
+
+  /// Developer's full name.
+  name: String?
+
+  /// Developer's email address.
+  email: String?
+
+  /// Developer's website.
+  url: String?
+
+  /// Organization the developer belongs to.
+  organization: String?
+
+  /// Website of the developer's organization.
+  organizationUrl: String?
+}
+
+/// Source control the published package is developed in.
+class PomScm {
+  /// URL of the browsable repository.
+  url: String?
+
+  /// Read-only connection, as Maven spells it (`scm:git:https://…`).
+  connection: String?
+
+  /// Read-write connection, as Maven spells it (`scm:git:ssh://…`).
+  developerConnection: String?
+
+  /// Tag of this release.
+  tag: String?
+}
+
+/// Organization that publishes the package.
+class PomOrganization {
+  /// Organization name.
+  name: String?
+
+  /// Organization website.
+  url: String?
+}
+
+/// Metadata written into the published POM.
+class PomMetadata {
+  /// Display name of the package.
+  name: String?
+
+  /// Description of the package; defaults to the project's `description`.
+  description: String?
+
+  /// Website of the package.
+  url: String?
+
+  /// Year the package was first released.
+  inceptionYear: String?
+
+  /// Licenses the package is offered under.
+  licenses: Listing<PomLicense> = new {}
+
+  /// Developers of the package.
+  developers: Listing<PomDeveloper> = new {}
+
+  /// Source control the package is developed in.
+  scm: PomScm?
+
+  /// Organization that publishes the package.
+  organization: PomOrganization?
+}
+
+/// Signs published files with the `gpg` binary.
+class GpgSigning {
+  /// Key to sign with, as `gpg --local-user` takes it; defaults to gpg's default key.
+  keyName: String?
+}
+
+/// How published files are signed.
+class MavenSigning {
+  /// Sign with the `gpg` binary.
+  gpg: GpgSigning?
+}
+
+/// How a Central Portal deployment is released once it passes validation.
+typealias CentralPublishingType = "USER_MANAGED" | "AUTOMATIC"
+
+/// Maven Central, through the Sonatype Central Publisher Portal. The Portal user token comes from the
+/// `ELIDE_MAVEN_<NAME>_USERNAME` and `ELIDE_MAVEN_<NAME>_PASSWORD` environment variables.
+class CentralPortal {
+  /// Portal to upload to; Sonatype's unless testing against another.
+  url: common.RepositoryUrl = "https://central.sonatype.com"
+
+  /// `USER_MANAGED` waits for the release to be confirmed in the Portal; `AUTOMATIC` releases it once
+  /// it passes validation.
+  publishingType: CentralPublishingType = "USER_MANAGED"
+}
+
+/// A repository `elide publish --to <name>` publishes to: a Maven repository, or Maven Central.
+typealias PublishingRepository = jvm.MavenRepository | CentralPortal
+
+/// Publishes the project's JARs as a Maven package.
+class MavenPublishing {
+  /// Maven group the package is published under; required to publish.
+  groupId: MavenIdentifier?
+
+  /// Maven artifact ID of the package; defaults to the project's name. Not inherited by workspace members.
+  artifactId: MavenIdentifier?
+
+  /// Local Maven repository `elide publish` installs into; defaults to `~/.m2/repository`.
+  localRepository: common.FilePath?
+
+  /// Names of the `artifacts` entries to publish; defaults to every `Jar`, `SourceJar` and `JavadocJar` artifact.
+  /// Not inherited by workspace members.
+  artifacts: Listing<artifacts.ArtifactName>(isDistinct)?
+
+  /// Metadata written into the published POM.
+  pom: PomMetadata = new {}
+
+  /// Remote repositories `elide publish --to <name>` publishes to, by name. Credentials come from the
+  /// `ELIDE_MAVEN_<NAME>_USERNAME` and `ELIDE_MAVEN_<NAME>_PASSWORD` environment variables.
+  repositories: Mapping<String, PublishingRepository> = new {
+    default = (repo) -> new jvm.MavenRepositorySpec {
+      name = repo
+    }
+  }
+
+  /// How published files are signed; a remote publish signs whenever this is set, and `signing {}`
+  /// alone signs with gpg's default key.
+  signing: MavenSigning?
+}
+
+/// Publishing settings, one block per package ecosystem.
+class PublishingSettings {
+  /// Publish the project's JARs as a Maven package.
+  maven: MavenPublishing?
+}

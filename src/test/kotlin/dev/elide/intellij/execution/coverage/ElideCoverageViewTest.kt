@@ -22,6 +22,7 @@ import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.testFramework.junit5.fixture.moduleFixture
 import com.intellij.testFramework.junit5.fixture.projectFixture
 import dev.elide.intellij.project.model.ElideProjectInfo
+import dev.elide.intellij.cancelPklPackageRefresh
 import dev.elide.intellij.service.elideProjectIndex
 import dev.elide.intellij.settings.ElideProjectSettings
 import dev.elide.intellij.settings.ElideSettings
@@ -32,6 +33,7 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.createParentDirectories
 import kotlin.io.path.writeText
 import kotlin.test.Test
+import kotlin.test.AfterTest
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -49,6 +51,8 @@ import kotlin.test.assertTrue
 class ElideCoverageViewTest {
   private val projectFixture = projectFixture()
   private val moduleFixture = projectFixture.moduleFixture()
+
+  @AfterTest fun stopPackageRefresh() = cancelPklPackageRefresh(projectFixture.get())
 
   @Test fun `the tool window shows the project's tree down to the covered file`() = runBlocking {
     val project = projectFixture.get()

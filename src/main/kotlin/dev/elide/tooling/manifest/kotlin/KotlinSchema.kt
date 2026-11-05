@@ -164,11 +164,6 @@ public data class KotlinCompilerJvmOptions(
 @SerialName("elide.kotlin.KotlinFeatureOptions")
 public data class KotlinFeatureOptions(
   /**
-   * Deprecated: KAPT is retired. This property is accepted for backward compatibility but is
-   * ignored — annotation processing now runs under `javac` after the Kotlin compile.
-   */
-  public val kapt: Boolean = true,
-  /**
    * Whether to enable Kotlin's test support features.
    */
   public val testing: Boolean = true,
@@ -200,6 +195,12 @@ public data class KotlinFeatureOptions(
    * Enable or disable the Metro dependency-injection compiler plugin.
    */
   public val metro: Boolean,
+  /**
+   * Enable or disable the Jetpack Compose compiler plugin. Off even under `defaultPlugins`: the
+   * Compose compiler aborts any module that lacks the Compose runtime on its classpath, whether or
+   * not the sources use `@Composable`, and Elide does not ship that runtime.
+   */
+  public val compose: Boolean = false,
   /**
    * Whether to enable Kotlin's reflection features.
    */
@@ -261,6 +262,11 @@ public data class KotlinSettings(
    * Configure options passed to Kotlin compiler plugins.
    */
   public val plugins: Map<String, Map<String, String>> = emptyMap(),
+  /**
+   * Run Maven annotation processors on Kotlin stubs with kapt. Disable when the declared processors
+   * apply only to Java sources; javac still runs them. Requires a toolchain with kapt when enabled.
+   */
+  public val annotationProcessing: Boolean = true,
 )
 
 /**
@@ -304,6 +310,10 @@ public sealed interface KotlinLanguageTargets {
   @Serializable
   @SerialName("elide.kotlin.KotlinLanguageTargets.V2_4")
   public data object V2_4 : KotlinLanguageTargets
+
+  @Serializable
+  @SerialName("elide.kotlin.KotlinLanguageTargets.V2_5")
+  public data object V2_5 : KotlinLanguageTargets
 
   @Serializable(with = OfString.Companion::class)
   @JvmInline

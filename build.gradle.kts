@@ -115,6 +115,8 @@ dependencies {
   // the JVM half of an `elide test --coverage` run is a JaCoCo execution file, which only class analysis turns into
   // the line coverage the IDE displays; the guest half is already LCOV, which the platform parses
   implementation(libs.jacoco.core)
+  // Syntax-only local import tracking must also work without the optional Pkl IDE plugin.
+  implementation(libs.pkl.parser)
 
   testImplementation(platform(libs.junit.bom))
   testImplementation(kotlin("test"))
@@ -129,12 +131,14 @@ dependencies {
     intellijIdea(libs.versions.intellij.target.ide.get())
     bundledPlugin("com.intellij.java")
     bundledPlugin("org.jetbrains.kotlin")
+    // Optional at runtime: JavaScript/TypeScript build-extension declarations and live templates.
+    bundledPlugin("JavaScript")
+    bundledPlugin("com.intellij.css")
     // `com.intellij.coverage`: the coverage engine, runner and LCOV reader behind "Run with Coverage", and the
     // `ProjectData` model both of them speak
     bundledModule("intellij.platform.coverage")
     bundledModule("intellij.platform.coverage.agent")
-    // the SM test runner the `elide test` tree is built on; a core class-path jar on the 261 compile target, a content
-    // module of the `intellij.testRunner.plugin` plugin from 262 (see `plugin-smRunner.xml`)
+    // The SM test runner is exposed through the optional test-runner plugin dependency on newer IDEs.
     bundledModule("intellij.platform.smRunner")
     plugin(id = "org.pkl", version = libs.versions.pkl.plugin.get())
     // the Pkl plugin depends on Markdown; without it the platform refuses to load Pkl in the test IDE, and with it
@@ -159,6 +163,8 @@ configurations.runtimeClasspath {
 tasks.test {
   useJUnitPlatform()
   classpath += pklStdlib
+  // Model tests must not register a developer's host JDK as an implicit JAVA_HOME import default.
+  environment("JAVA_HOME", "")
   // a failing test's exception is all CI gets to go on: the platform's uncaught-exception check reports work a
   // background thread left behind, which is unreadable without the stack trace
   testLogging { exceptionFormat = TestExceptionFormat.FULL }

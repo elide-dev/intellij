@@ -1,0 +1,16 @@
+<templateSet group="Elide TypeScript">
+  <template name="elide-build-extension" value="export default ({ task }: ElideBuild) =&gt; {&#10;  task(&quot;$VALUE1$&quot;, {&#10;    description: &quot;$VALUE2$&quot;,&#10;  }, (ctx) =&gt; {&#10;    ctx.log(&quot;Hello from&quot;, ctx.project.name);$END$&#10;  });&#10;};" description="Declare an Elide build extension with a typed task action" toReformat="true" toShortenFQNames="false">
+    <variable name="VALUE1" expression="" defaultValue="&quot;greet&quot;" alwaysStopAt="true" />
+    <variable name="VALUE2" expression="" defaultValue="&quot;Greet from the build&quot;" alwaysStopAt="true" />
+    <context>
+      <option name="ELIDE_TYPESCRIPT" value="true" />
+    </context>
+  </template>
+  <template name="elide-build-task" value="task(&quot;$VALUE1$&quot;, {&#10;  description: &quot;$VALUE2$&quot;,&#10;}, (ctx) =&gt; {&#10;  ctx.log(&quot;Hello from&quot;, ctx.project.name);$END$&#10;});" description="Declare a task inside an Elide build extension" toReformat="true" toShortenFQNames="false">
+    <variable name="VALUE1" expression="" defaultValue="&quot;greet&quot;" alwaysStopAt="true" />
+    <variable name="VALUE2" expression="" defaultValue="&quot;Greet from the build&quot;" alwaysStopAt="true" />
+    <context>
+      <option name="ELIDE_TYPESCRIPT" value="true" />
+    </context>
+  </template>
+</templateSet>

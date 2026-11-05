@@ -15,11 +15,15 @@ package dev.elide.intellij.execution.coverage
 import com.intellij.coverage.CoverageDataManager
 import com.intellij.coverage.CoverageSuite
 import com.intellij.openapi.application.PathManager
+import com.intellij.openapi.application.writeAction
+import com.intellij.openapi.vfs.VfsUtil
+import com.intellij.rt.coverage.data.LineCoverage
 import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.testFramework.junit5.fixture.moduleFixture
 import com.intellij.testFramework.junit5.fixture.projectFixture
 import com.intellij.testFramework.junit5.fixture.psiFileFixture
 import com.intellij.testFramework.junit5.fixture.sourceRootFixture
+import dev.elide.intellij.cancelPklPackageRefresh
 import dev.elide.intellij.execution.ElideExternalTaskConfigurationType
 import dev.elide.intellij.execution.ElideRunConfiguration
 import kotlinx.coroutines.delay
@@ -28,6 +32,7 @@ import kotlin.io.path.Path
 import kotlin.io.path.createParentDirectories
 import kotlin.io.path.writeText
 import kotlin.test.Test
+import kotlin.test.AfterTest
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -46,6 +51,9 @@ class ElideCoverageAttachTest {
   private val moduleFixture = projectFixture.moduleFixture()
   private val sourceRootFixture = moduleFixture.sourceRootFixture()
   private val sourceFileFixture = sourceRootFixture.psiFileFixture("app.ts", "export const answer = 42\n")
+
+  // Library-root discovery starts Pkl's package service even for non-Pkl source fixtures.
+  @AfterTest fun stopPackageRefresh() = cancelPklPackageRefresh(projectFixture.get())
 
   @Test fun `reports left by a run become the active coverage suite`() = runBlocking {
     val project = projectFixture.get()
@@ -110,6 +118,81 @@ class ElideCoverageAttachTest {
     val coverage = assertNotNull(suite.getCoverageData(manager), "the attached suite has no coverage data")
 
     assertEquals(7, assertNotNull(coverage.getClassData(sourceFile.path)).getLineData(1).hits)
+  }
+
+  @Test fun `current XML-only reports attach with instruction and branch coverage`() = runBlocking {
+    assertXmlCoverage("reports")
+  }
+
+  @Test fun `legacy XML-only reports attach with instruction and branch coverage`() = runBlocking {
+    assertXmlCoverage("artifacts")
+  }
+
+  private suspend fun assertXmlCoverage(directory: String) {
+    val project = projectFixture.get()
+    val sourceRoot = sourceRootFixture.get().virtualFile
+    val sourceFile = writeAction {
+      sourceRoot.createChildDirectory(this, "example").createChildData(this, "Example.kt").also {
+        VfsUtil.saveText(it, "package example\nfun example(value: Boolean) = if (value) 1 else 0\n")
+      }
+    }
+    val projectPath = assertNotNull(project.basePath)
+    val report = Path(projectPath).resolve(".dev/$directory/coverage/jvm/test/test.xml")
+    report.createParentDirectories()
+    report.writeText(
+      """
+      <report name="test"><package name="example"><sourcefile name="Example.kt">
+        <line nr="1" mi="0" ci="5" mb="0" cb="2"/>
+        <line nr="2" mi="3" ci="2" mb="1" cb="2"/>
+        <line nr="3" mi="5" ci="0" mb="2" cb="0"/>
+      </sourcefile></package></report>
+      """.trimIndent(),
+    )
+
+    ElideCoverageService.getInstance(project).attachExternalReports(projectPath)
+
+    val manager = CoverageDataManager.getInstance(project)
+    val suite = assertNotNull(manager.currentSuitesBundle).suites.single()
+    assertTrue(suite.isBranchCoverage)
+    val file = assertNotNull(assertNotNull(suite.getCoverageData(manager)).getClassData(sourceFile.path))
+    val covered = file.getLineData(1)
+    val partial = file.getLineData(2)
+    val missed = file.getLineData(3)
+    assertEquals(1, covered.hits)
+    assertEquals(LineCoverage.FULL.toInt(), covered.status)
+    assertEquals(2, covered.branchData.totalBranches)
+    assertEquals(2, covered.branchData.coveredBranches)
+    assertEquals(1, partial.hits)
+    assertEquals(LineCoverage.PARTIAL.toInt(), partial.status)
+    assertEquals(3, partial.branchData.totalBranches)
+    assertEquals(2, partial.branchData.coveredBranches)
+    assertEquals(0, missed.hits)
+    assertEquals(LineCoverage.NONE.toInt(), missed.status)
+    assertEquals(2, missed.branchData.totalBranches)
+    assertEquals(0, missed.branchData.coveredBranches)
+  }
+
+  @Test fun `LCOV records merge branch identities without doubling their totals`() = runBlocking {
+    val project = projectFixture.get()
+    val sourceFile = assertNotNull(sourceFileFixture.get().virtualFile)
+    val projectPath = assertNotNull(project.basePath)
+    val report = Path(projectPath).resolve(".dev/reports/coverage/js/lcov.info")
+    report.createParentDirectories()
+    report.writeText(
+      "SF:${sourceFile.path}\nDA:1,2\nBRDA:1,7,9,2\nBRDA:1,7,3,-\nend_of_record\n" +
+        "SF:${sourceFile.path}\nDA:1,1\nBRDA:1,7,3,1\nBRDA:1,7,9,0\nend_of_record\n",
+    )
+
+    ElideCoverageService.getInstance(project).attachExternalReports(projectPath)
+
+    val manager = CoverageDataManager.getInstance(project)
+    val suite = assertNotNull(manager.currentSuitesBundle).suites.single()
+    val data = assertNotNull(suite.getCoverageData(manager))
+    val line = assertNotNull(data.getClassData(sourceFile.path)).getLineData(1)
+    assertEquals(3, line.hits)
+    assertEquals(2, line.branchData.totalBranches)
+    assertEquals(2, line.branchData.coveredBranches)
+    assertEquals(LineCoverage.FULL.toInt(), line.status)
   }
 
   /** Waits for a suite matching [predicate] to become active, which the attach does off the calling thread. */

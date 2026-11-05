@@ -15,7 +15,9 @@ package dev.elide.intellij.project.model
 import com.intellij.util.execution.ParametersListUtil
 import com.intellij.util.xmlb.annotations.Attribute
 import com.intellij.util.xmlb.annotations.XCollection
+import com.intellij.util.xmlb.annotations.Tag
 import dev.elide.intellij.Constants
+import dev.elide.intellij.android.ElideAndroidInfo
 import dev.elide.intellij.cli.ElideCli
 
 /**
@@ -33,6 +35,7 @@ data class ElideProjectInfo(
   @XCollection val buildTasks: List<ElideBuildTaskInfo> = emptyList(),
   /** Artifacts of this project producing a runnable Native Image binary. */
   @XCollection val nativeImages: List<ElideNativeImageInfo> = emptyList(),
+  @Tag("android") val android: ElideAndroidInfo? = null,
   /**
    * Path of the workspace root this project is a member of, or `null` when it is not a member of one.
    *
@@ -66,6 +69,7 @@ data class ElideProjectInfo(
       },
       buildTasks = data.buildTasks,
       nativeImages = data.nativeImages,
+      android = data.android,
       workspaceRoot = data.workspaceRoot,
       members = data.members,
     )

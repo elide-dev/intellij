@@ -16,3 +16,27 @@ class JavaCompiler {
 
 /// Configures Java language features and settings.
 class JavaSettings {}
+
+/// A named group of C headers compiled as Java FFM bindings.
+class JavaNativeBinding {
+  /// Header paths or globs, relative to the declaring project.
+  headers: Listing<String>(!isEmpty)
+
+  /// Package for generated Java types.
+  packageName: String
+
+  /// Class exposing the header's functions and constants.
+  headerClassName: String
+
+  /// Header search directories, relative to the declaring project.
+  includeDirs: Listing<String> = new {}
+
+  /// Preprocessor definitions passed to clang.
+  defines: Listing<String> = new {}
+
+  /// Libraries looked up by the generated bindings at runtime.
+  libraries: Listing<String> = new {}
+
+  /// Load libraries through System.loadLibrary at runtime.
+  useSystemLoadLibrary: Boolean = false
+}

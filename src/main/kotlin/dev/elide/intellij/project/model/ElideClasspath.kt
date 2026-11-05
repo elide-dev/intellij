@@ -13,6 +13,9 @@
 
 package dev.elide.intellij.project.model
 
+import java.nio.file.Path
+import kotlin.io.path.exists
+
 /**
  * Classpath usages accepted by `elide classpath [<source-set>:]<usage>`.
  *
@@ -33,3 +36,16 @@ data class ElideClasspath(
   val usage: ElideClasspathUsage,
   val entries: List<String>,
 )
+
+/** Existing R directories still need a build when the CLI has lost the recorded target output. */
+internal fun androidResourceArtifactsToPrepare(
+  projectRoot: Path,
+  artifacts: Collection<String>,
+  providedEntries: Collection<String>? = null,
+): List<String> {
+  val listed = providedEntries?.mapTo(HashSet()) { projectRoot.resolve(it).toAbsolutePath().normalize() }
+  return artifacts.filter { artifact ->
+    val classes = projectRoot.resolve(".dev/android/$artifact/r-classes").toAbsolutePath().normalize()
+    !classes.exists() || (listed != null && classes !in listed)
+  }
+}

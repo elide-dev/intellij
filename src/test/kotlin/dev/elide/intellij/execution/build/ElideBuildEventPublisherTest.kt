@@ -19,6 +19,7 @@ import com.intellij.build.events.FileMessageEvent
 import com.intellij.build.events.FinishEvent
 import com.intellij.build.events.MessageEvent
 import com.intellij.build.events.OutputBuildEvent
+import com.intellij.build.events.ProgressBuildEvent
 import com.intellij.build.events.SkippedResult
 import com.intellij.build.events.StartEvent
 import com.intellij.build.events.SuccessResult
@@ -30,6 +31,8 @@ import dev.elide.intellij.Constants
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertIs
 import kotlin.test.assertIsNot
 import kotlin.test.assertTrue
@@ -185,6 +188,122 @@ class ElideBuildEventPublisherTest {
     val block = assertIs<OutputBuildEvent>(events.last())
     assertEquals(message.id, block.parentId)
     assertEquals(2, events.size)
+  }
+
+  @Test fun `structured tasks open immediately and concurrent finishes retain their identities`() {
+    val events = mutableListOf<BuildEvent>()
+    val publisher = ElideBuildEventPublisher(taskId, PROJECT_PATH, startedAt, events::add)
+    val rendered = publisher.accept("""{"type":"task-started","task":"a","time":1700000000010}""")
+    assertTrue(rendered.claimed)
+    assertFalse(rendered.text!!.startsWith("{"))
+    val a = assertIs<StartEvent>(events.single())
+    assertEquals(startedAt + 10, a.eventTime)
+    publisher.accept("""{"type":"task-started","task":"b","time":1700000000020}""")
+    val b = assertIs<StartEvent>(events.last())
+    assertTrue(a.id != b.id)
+    publisher.accept("""{"type":"task-finished","task":"b","outcome":"skipped","durationMs":30,"time":1700000000050}""")
+    val bEnd = assertIs<FinishEvent>(events.last())
+    assertEquals(b.id, bEnd.id)
+    assertEquals(startedAt + 50, bEnd.eventTime)
+    assertIs<SkippedResult>(bEnd.result)
+    publisher.accept("""{"type":"task-finished","task":"a","outcome":"success","durationMs":80,"time":1700000000090}""")
+    val aEnd = assertIs<FinishEvent>(events.last())
+    assertEquals(a.id, aEnd.id)
+    assertEquals(80L, aEnd.eventTime - a.eventTime)
+    publisher.flush()
+    assertEquals(4, events.size)
+  }
+
+  @Test fun `missing starts recover measured duration and repeated records do not duplicate nodes`() {
+    val events = mutableListOf<BuildEvent>()
+    val publisher = ElideBuildEventPublisher(taskId, PROJECT_PATH, startedAt, events::add)
+    val completion = """{"type":"task-finished","task":"a","outcome":"failure","durationMs":45,"time":1700000000090}"""
+    publisher.accept(completion)
+    publisher.accept(completion)
+    publisher.accept("""{"type":"task-started","task":"a","time":1700000000045}""")
+    publisher.flush()
+    assertEquals(2, events.size)
+    val start = assertIs<StartEvent>(events.first())
+    val finish = assertIs<FinishEvent>(events.last())
+    assertEquals(start.id, finish.id)
+    assertEquals(45L, finish.eventTime - start.eventTime)
+    assertIs<FailureResult>(finish.result)
+  }
+
+  @Test fun `structured steps and progress belong to the task that emitted them`() {
+    val events = mutableListOf<BuildEvent>()
+    val publisher = ElideBuildEventPublisher(taskId, PROJECT_PATH, startedAt, events::add)
+    publisher.accept("""{"type":"task-started","task":"a","time":1700000000000}""")
+    val task = assertIs<StartEvent>(events.last())
+    publisher.accept("""{"type":"step-started","task":"a","step":"download","total":10,"time":1700000000010}""")
+    val step = assertIs<StartEvent>(events.last())
+    assertEquals(task.id, step.parentId)
+    val rendered = publisher.accept("""{"type":"step-progress","task":"a","step":"download","progress":4,"time":1700000000020}""")
+    assertNull(rendered.text)
+    val progress = assertIs<ProgressBuildEvent>(events.last())
+    assertEquals(step.id, progress.id)
+    assertEquals(10L, progress.total)
+    assertEquals(4L, progress.progress)
+    publisher.accept("""{"type":"step-finished","task":"a","step":"download","time":1700000000030}""")
+    assertEquals(step.id, assertIs<FinishEvent>(events.last()).id)
+    publisher.accept("""{"type":"task-finished","task":"a","outcome":"success","time":1700000000040}""")
+    assertEquals(task.id, assertIs<FinishEvent>(events.last()).id)
+    publisher.flush()
+    assertEquals(5, events.size)
+  }
+
+  @Test fun `structured diagnostic keeps its owner source location notes and excerpt`() {
+    val events = mutableListOf<BuildEvent>()
+    val publisher = ElideBuildEventPublisher(taskId, PROJECT_PATH, startedAt, events::add)
+    publisher.accept("""{"type":"task-started","task":"a","time":1700000000000}""")
+    val owner = assertIs<StartEvent>(events.last())
+    publisher.accept("""{"type":"task-started","task":"b","time":1700000000001}""")
+    val record = """{"type":"message","task":"a","time":1700000000020,"level":"error","file":"src/App.kt","line":8,"column":3,"text":"kotlinc: Missing symbol\n  note\nIn file: src/App.kt:8:3\n\n→ 8 │ boom()"}"""
+    val rendered = publisher.accept(record)
+    assertTrue(rendered.text!!.contains("→ 8 │ boom()"))
+    val diagnostic = events.filterIsInstance<MessageEvent>().single()
+    assertEquals(owner.id, diagnostic.parentId)
+    assertEquals(MessageEvent.Kind.ERROR, diagnostic.kind)
+    assertEquals(startedAt + 20, diagnostic.eventTime)
+    val position = assertIs<FileNavigatable>(diagnostic.getNavigatable(projectFixture.get())).filePosition
+    assertEquals(7, position.startLine)
+    assertEquals(2, position.startColumn)
+    val output = events.filterIsInstance<OutputBuildEvent>()
+    assertEquals(listOf(diagnostic.id, owner.id), output.map { it.parentId })
+    assertTrue(output.all { plain(it.message).contains("→ 8 │ boom()") && it.message.contains("note") })
+  }
+
+  @Test fun `unknown and malformed records are unchanged program output without tree events`() {
+    val events = mutableListOf<BuildEvent>()
+    val publisher = ElideBuildEventPublisher(taskId, PROJECT_PATH, startedAt, events::add)
+    listOf(
+      """{"type":"future-event","time":1}""",
+      """{"type":"task-started","task":42,"time":1}""",
+      """{"type":"task-finished","task":"a","outcome":"unknown","time":1}""",
+      """{"type":"message","level":"error","text":{},"time":1}""",
+      """{"type":"task-started","task":"a","time":"1"}""",
+      """{"type":"task-started","task":"a","time":""",
+    ).forEach {
+      val output = publisher.accept(it)
+      assertFalse(output.claimed)
+      assertEquals(it, output.text)
+    }
+    publisher.flush()
+    assertTrue(events.isEmpty())
+  }
+
+  @Test fun `build failure closes all running children once before their parents`() {
+    val events = mutableListOf<BuildEvent>()
+    val publisher = ElideBuildEventPublisher(taskId, PROJECT_PATH, startedAt, events::add)
+    publisher.accept("""{"type":"task-started","task":"a","time":1700000000000}""")
+    publisher.accept("""{"type":"step-started","task":"a","step":"work","time":1700000000010}""")
+    publisher.accept("""{"type":"build-finished","outcome":"failure","time":1700000000100}""")
+    publisher.flush()
+    publisher.flush()
+    val starts = events.filterIsInstance<StartEvent>()
+    val finishes = events.filterIsInstance<FinishEvent>()
+    assertEquals(starts.map { it.id }.reversed(), finishes.map { it.id })
+    assertTrue(finishes.all { it.result is FailureResult && it.eventTime == startedAt + 100 })
   }
 
   private companion object {

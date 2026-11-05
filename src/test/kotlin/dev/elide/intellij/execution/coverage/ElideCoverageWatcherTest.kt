@@ -20,6 +20,7 @@ import com.intellij.testFramework.junit5.fixture.projectFixture
 import com.intellij.testFramework.junit5.fixture.psiFileFixture
 import com.intellij.testFramework.junit5.fixture.sourceRootFixture
 import dev.elide.intellij.Constants
+import dev.elide.intellij.cancelPklPackageRefresh
 import dev.elide.intellij.project.model.ElideProjectInfo
 import dev.elide.intellij.service.elideProjectIndex
 import dev.elide.intellij.settings.ElideProjectSettings
@@ -30,6 +31,7 @@ import kotlin.io.path.Path
 import kotlin.io.path.createParentDirectories
 import kotlin.io.path.writeText
 import kotlin.test.Test
+import kotlin.test.AfterTest
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -48,6 +50,8 @@ class ElideCoverageWatcherTest {
   private val moduleFixture = projectFixture.moduleFixture()
   private val sourceRootFixture = moduleFixture.sourceRootFixture()
   private val sourceFileFixture = sourceRootFixture.psiFileFixture("app.ts", "export const answer = 42\n")
+
+  @AfterTest fun stopPackageRefresh() = cancelPklPackageRefresh(projectFixture.get())
 
   @Test fun `a report appearing in a linked project attaches its coverage`() = runBlocking {
     val project = projectFixture.get()
@@ -97,10 +101,16 @@ class ElideCoverageWatcherTest {
     Unit
   }
 
-  /** Waits for the watcher's next check and the settling delay that follows it. */
+  /** The suite is published before annotation finishes; wait for its source-root coverage before disposing fixtures. */
   private suspend fun waitForSuite(manager: CoverageDataManager): CoverageSuite? {
+    val project = projectFixture.get()
+    val root = sourceRootFixture.get().virtualFile
+    val annotator = ElideCoverageAnnotator.getInstance(project)
     repeat(ATTACH_ATTEMPTS) {
-      manager.currentSuitesBundle?.suites?.firstOrNull()?.let { return it }
+      val bundle = manager.currentSuitesBundle
+      if (bundle != null && annotator.getDirCoverageInformationString(project, root, bundle, manager) != null) {
+        return bundle.suites.firstOrNull()
+      }
       delay(ATTACH_POLL_MILLIS)
     }
 

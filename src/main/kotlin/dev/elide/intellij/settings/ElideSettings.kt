@@ -45,8 +45,11 @@ class ElideSettings(
     val distributionChanged = old.elideDistributionType != new.elideDistributionType ||
             old.elideDistributionPath != new.elideDistributionPath
 
-    // only a distribution change invalidates the resolved model; everything else is cosmetic
-    if (distributionChanged) publisher.onDistributionChange(new.externalProjectPath)
+    // Build flags affect manifest evaluation; classifiers and the JDK affect the imported model.
+    if (distributionChanged || old.buildFlags != new.buildFlags ||
+      old.installClassifiers != new.installClassifiers || old.jdkHome != new.jdkHome) {
+      publisher.onDistributionChange(new.externalProjectPath)
+    }
   }
 
   override fun subscribe(

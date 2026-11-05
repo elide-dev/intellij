@@ -1,0 +1,16 @@
+<templateSet group="Elide Pkl">
+  <template name="elide-extension" value="extensions {&#10;  &quot;$VALUE1$&quot;&#10;}" description="Declare a local Elide build extension" toReformat="true" toShortenFQNames="false">
+    <variable name="VALUE1" expression="" defaultValue="&quot;tools/tasks.ts&quot;" alwaysStopAt="true" />
+    <context>
+      <option name="ELIDE_PKL" value="true" />
+    </context>
+  </template>
+  <template name="elide-extension-archive" value="[&quot;$VALUE1$&quot;] = new Extensions.ExtensionArchive {&#10;  entrypoint = &quot;$VALUE2$&quot;&#10;  srcs { &quot;$VALUE3$&quot; }&#10;}" description="Package a build extension (requires import &quot;elide:Extensions.pkl&quot; as Extensions)" toReformat="true" toShortenFQNames="false">
+    <variable name="VALUE1" expression="" defaultValue="&quot;tasks&quot;" alwaysStopAt="true" />
+    <variable name="VALUE2" expression="" defaultValue="&quot;tools/tasks.ts&quot;" alwaysStopAt="true" />
+    <variable name="VALUE3" expression="" defaultValue="&quot;tools/**/*.ts&quot;" alwaysStopAt="true" />
+    <context>
+      <option name="ELIDE_PKL" value="true" />
+    </context>
+  </template>
+</templateSet>

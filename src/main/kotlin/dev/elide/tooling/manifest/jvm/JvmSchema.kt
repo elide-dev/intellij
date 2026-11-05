@@ -6,9 +6,8 @@ import dev.elide.tooling.manifest.artifacts.Artifact
 import dev.elide.tooling.manifest.artifacts.ProjectArtifact
 import dev.elide.tooling.manifest.base.PackageVersion
 import dev.elide.tooling.manifest.java.JavaCompiler
-import dev.elide.tooling.manifest.sources.SourceSetSpec
-import dev.elide.tooling.manifest.sources.SourceSetType
-import dev.elide.tooling.manifest.testing.CoverageReport
+import dev.elide.tooling.manifest.java.JavaNativeBinding
+import dev.elide.tooling.manifest.sources.ResourceEntry
 import kotlin.Any
 import kotlin.Boolean
 import kotlin.Double
@@ -52,71 +51,6 @@ public data object JvmModule {
 }
 
 /**
- * Describes a source set containing JVM (Java/Kotlin) sources.
- */
-@Serializable(with = JvmSourceSetSpec.Companion::class)
-public class JvmSourceSetSpec(
-  type: SourceSetType = SourceSetType.Source,
-  dependsOn: List<String> = emptyList(),
-  paths: List<String> = emptyList(),
-  /**
-   * Resources to be included in JVM artifacts built from this source set.
-   */
-  public val resources: Map<String, String> = emptyMap(),
-) : SourceSetSpec(type=type, dependsOn=dependsOn, paths=paths) {
-  override fun equals(other: Any?): Boolean {
-    if (this === other) return true
-    if (!super.equals(other)) return false
-    other as JvmSourceSetSpec
-    if (this.resources != other.resources) return false
-    return true
-  }
-
-  override fun hashCode(): Int {
-    var result = super.hashCode()
-    result = 31 * result + this.resources.hashCode()
-    return result
-  }
-
-  public companion object : KSerializer<JvmSourceSetSpec> {
-    override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor("elide.jvm.JvmSourceSetSpec") {
-      element<SourceSetType>("type",isOptional=true)
-      element<List<String>>("dependsOn",isOptional=true)
-      element<List<String>>("paths",isOptional=true)
-      element<Map<String, String>>("resources",isOptional=true)
-    }
-
-    override fun serialize(encoder: Encoder, `value`: JvmSourceSetSpec) {
-      encoder.encodeStructure(descriptor) {
-        encodeSerializableElement(descriptor,0,serializer<SourceSetType>(),value.type)
-        encodeSerializableElement(descriptor,1,serializer<List<String>>(),value.dependsOn)
-        encodeSerializableElement(descriptor,2,serializer<List<String>>(),value.paths)
-        encodeSerializableElement(descriptor,3,serializer<Map<String, String>>(),value.resources)
-      }
-    }
-
-    override fun deserialize(decoder: Decoder): JvmSourceSetSpec = decoder.decodeStructure(descriptor) {
-      var type: SourceSetType = SourceSetType.Source
-      var dependsOn: List<String> = emptyList()
-      var paths: List<String> = emptyList()
-      var resources: Map<String, String> = emptyMap()
-      while (true) {
-        when (val index = decodeElementIndex(descriptor)) {
-          0 -> type=decodeSerializableElement(descriptor,0,serializer<SourceSetType>())
-          1 -> dependsOn=decodeSerializableElement(descriptor,1,serializer<List<String>>())
-          2 -> paths=decodeSerializableElement(descriptor,2,serializer<List<String>>())
-          3 -> resources=decodeSerializableElement(descriptor,3,serializer<Map<String, String>>())
-          CompositeDecoder.DECODE_DONE -> break
-          else -> error("""Unexpected index: $index""")
-        }
-      }
-      JvmSourceSetSpec(type,dependsOn,paths,resources)
-    }
-  }
-}
-
-/**
  * Options which apply to JARs.
  */
 @Serializable
@@ -137,25 +71,6 @@ public data class JarOptions(
 )
 
 /**
- * Abstract definition of a JAR resource.
- */
-public interface JarResource {
-  /**
-   * File path to be mounted as a resource within the JAR.
-   */
-  public val path: String
-
-  @Serializable
-  @SerialName("elide.jvm.JarResource.Impl")
-  public data class Impl(
-    /**
-     * File path to be mounted as a resource within the JAR.
-     */
-    override val path: String,
-  ) : JarResource
-}
-
-/**
  * Describes a JAR output artifact.
  */
 @Serializable
@@ -174,13 +89,19 @@ public open class Jar(
    */
   public val main: String? = null,
   /**
-   * Which source set to build this JAR from.
+   * Which source sets to build this JAR from; empty packages every non-test source set.
    */
   public val sources: List<String> = emptyList(),
   /**
-   * Which resources to add to the JAR.
+   * JARs of other workspace projects whose contents this JAR also packages, each built first;
+   * written `project("name")`. Their manifests are dropped in favor of this JAR's own.
    */
-  public val resources: Map<String, String> = emptyMap(),
+  public val from: List<ProjectArtifact> = emptyList(),
+  /**
+   * Resources to add to the JAR on top of those its source sets ship; same shape as a source
+   * set's own, including the in-place `new { from = …; into = … }` form.
+   */
+  public val resources: List<ResourceEntry> = emptyList(),
   /**
    * Keys and values to include in the JAR's manifest.
    */
@@ -206,6 +127,7 @@ public open class Jar(
     if (this.name != other.name) return false
     if (this.main != other.main) return false
     if (this.sources != other.sources) return false
+    if (this.from != other.from) return false
     if (this.resources != other.resources) return false
     if (this.manifest != other.manifest) return false
     if (this.manifestFile != other.manifestFile) return false
@@ -220,6 +142,7 @@ public open class Jar(
     result = 31 * result + (this.name?.hashCode() ?: 0)
     result = 31 * result + (this.main?.hashCode() ?: 0)
     result = 31 * result + this.sources.hashCode()
+    result = 31 * result + this.from.hashCode()
     result = 31 * result + this.resources.hashCode()
     result = 31 * result + this.manifest.hashCode()
     result = 31 * result + (this.manifestFile?.hashCode() ?: 0)
@@ -240,7 +163,7 @@ public open class SourceJar(
    */
   override val dependsOn: List<String> = emptyList(),
   /**
-   * Which source set to build this JAR from.
+   * Which source sets to package sources from; empty takes every non-test source set.
    */
   public val sources: List<String> = emptyList(),
   /**
@@ -290,7 +213,7 @@ public open class JavadocJar(
    */
   override val dependsOn: List<String> = emptyList(),
   /**
-   * Which source set to build this JAR from.
+   * Which source sets to document; empty takes every non-test source set.
    */
   public val sources: List<String> = emptyList(),
   /**
@@ -313,6 +236,10 @@ public open class JavadocJar(
    * Title for the documentation.
    */
   public val docTitle: String? = null,
+  /**
+   * Tool that generates the documentation; `auto` picks Dokka when the sources include Kotlin.
+   */
+  public val generator: JavadocGenerator = JavadocGenerator.Auto,
 ) : Artifact {
   override fun equals(other: Any?): Boolean {
     if (this === other) return true
@@ -325,6 +252,7 @@ public open class JavadocJar(
     if (this.excludes != other.excludes) return false
     if (this.windowTitle != other.windowTitle) return false
     if (this.docTitle != other.docTitle) return false
+    if (this.generator != other.generator) return false
     return true
   }
 
@@ -337,6 +265,103 @@ public open class JavadocJar(
     result = 31 * result + this.excludes.hashCode()
     result = 31 * result + (this.windowTitle?.hashCode() ?: 0)
     result = 31 * result + (this.docTitle?.hashCode() ?: 0)
+    result = 31 * result + this.generator.hashCode()
+    return result
+  }
+}
+
+/**
+ * Options which apply to a JVM application distribution.
+ */
+@Serializable
+@SerialName("elide.jvm.JvmApplicationOptions")
+public data class JvmApplicationOptions(
+  /**
+   * Whether to generate the POSIX shell start script.
+   */
+  public val unixStartScript: Boolean = true,
+  /**
+   * Whether to generate the Windows batch start script.
+   */
+  public val windowsStartScript: Boolean = true,
+  /**
+   * Archives to build from the installed distribution, alongside it.
+   */
+  public val archives: List<ApplicationArchive> = emptyList(),
+)
+
+/**
+ * Describes a runnable, self-contained JVM application.
+ *
+ * The artifact installs a distribution tree — start scripts under [executableDir], every runtime
+ * JAR under `lib/` — and, when [JvmApplicationOptions.archives] asks for them, `zip`/`tar.gz`
+ * archives of that tree. This mirrors Gradle's `application` plugin: `installDist`, `startScripts`
+ * and `distZip`/`distTar` in one artifact.
+ */
+@Serializable
+@SerialName("elide.jvm.JvmApplication")
+public open class JvmApplication(
+  /**
+   * Other artifacts this artifact depends on.
+   */
+  override val dependsOn: List<String> = emptyList(),
+  /**
+   * JAR artifacts making up the application's own code; empty packages this project's default JAR
+   * artifacts.
+   */
+  public val from: List<String> = emptyList(),
+  /**
+   * Name of the application: the distribution directory and the start-script filenames. Defaults
+   * to the artifact's name.
+   */
+  public val name: String? = null,
+  /**
+   * Main class the start scripts launch. Defaults to the project's `jvm.main`.
+   */
+  public val entrypoint: String? = null,
+  /**
+   * JVM options baked into the generated start scripts.
+   */
+  public val defaultJvmArgs: List<String> = emptyList(),
+  /**
+   * Directory within the distribution holding the start scripts.
+   */
+  public val executableDir: String = "bin",
+  /**
+   * Extra files copied into the distribution root; same shape as a source set's resources,
+   * including the in-place `new { from = …; into = … }` form.
+   */
+  public val contents: List<ResourceEntry> = emptyList(),
+  /**
+   * Options for the distribution.
+   */
+  public val options: JvmApplicationOptions = JvmApplicationOptions(),
+) : Artifact {
+  override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (other == null || javaClass != other.javaClass) return false
+    other as JvmApplication
+    if (this.dependsOn != other.dependsOn) return false
+    if (this.from != other.from) return false
+    if (this.name != other.name) return false
+    if (this.entrypoint != other.entrypoint) return false
+    if (this.defaultJvmArgs != other.defaultJvmArgs) return false
+    if (this.executableDir != other.executableDir) return false
+    if (this.contents != other.contents) return false
+    if (this.options != other.options) return false
+    return true
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.name.hashCode()
+    result = 31 * result + this.dependsOn.hashCode()
+    result = 31 * result + this.from.hashCode()
+    result = 31 * result + (this.name?.hashCode() ?: 0)
+    result = 31 * result + (this.entrypoint?.hashCode() ?: 0)
+    result = 31 * result + this.defaultJvmArgs.hashCode()
+    result = 31 * result + this.executableDir.hashCode()
+    result = 31 * result + this.contents.hashCode()
+    result = 31 * result + this.options.hashCode()
     return result
   }
 }
@@ -469,6 +494,14 @@ public data class MavenRepositoryCredentials(
    * Password used for authentication with the remote repository.
    */
   public val password: String? = null,
+  /**
+   * NTLM domain; setting either NTLM field selects connection-bound NTLM authentication.
+   */
+  public val ntlmDomain: String? = null,
+  /**
+   * NTLM workstation name, when required by the repository.
+   */
+  public val ntlmWorkstation: String? = null,
 )
 
 /**
@@ -581,6 +614,20 @@ public data class MavenDependencies(
    */
   public val exclusions: List<MavenPackageDependency> = emptyList(),
   /**
+   * Local files which stand in for Maven coordinates on every classpath that would carry them.
+   *
+   * The coordinate is resolved and downloaded as usual — its version, its place in the graph and
+   * its transitive dependencies are unchanged — but the artifact handed to compiles, the runtime,
+   * annotation processors and tests is the file named here. This is how a patched or stripped copy
+   * of a published artifact is used without dropping the coordinate from the graph.
+   *
+   * A key of `group:artifact` matches every version; `group:artifact:version` matches one. Paths
+   * are resolved against the directory of the manifest declaring them, and a workspace member sees
+   * its workspace root's substitutions under its own. A file produced by the build needs the task
+   * that writes it ordered ahead of whatever reads the classpath.
+   */
+  public val substitutions: Map<String, String> = emptyMap(),
+  /**
    * A suite of extra Maven repositories.
    */
   public val repositories: Map<String, MavenRepository> = emptyMap(),
@@ -628,6 +675,32 @@ public data class SpringDependencies(
 )
 
 /**
+ * Micronaut core modules, all versioned with Micronaut Core (not the platform BOM).
+ */
+@Serializable
+@SerialName("elide.jvm.MicronautDependencies")
+public data class MicronautDependencies(
+  public val version: PackageVersion,
+  public val modules: List<String> = emptyList(),
+  public val testModules: List<String> = emptyList(),
+  public val packages: List<String>,
+  public val testPackages: List<String>,
+  public val processors: List<String>,
+)
+
+/**
+ * Optional application configuration, rendered by Pkl without a framework-specific key allowlist.
+ */
+@Serializable
+@SerialName("elide.jvm.MicronautConfiguration")
+public data class MicronautConfiguration(
+  /**
+   * Rendered classpath resource. Elide supplies the matching Micronaut Jackson Core loader.
+   */
+  public val applicationJson: String,
+)
+
+/**
  * Controls features related to JVM support in Elide projects.
  */
 @Serializable
@@ -641,6 +714,10 @@ public data class JvmFeatures(
    * Whether auto-modules are enabled (JDK 9+ modulepath handling).
    */
   public val automodules: Boolean = true,
+  /**
+   * Provide GraalVM SDK APIs (`org.graalvm.nativeimage`, `word`, `collections`) at compile time.
+   */
+  public val graalvm: Boolean = false,
 )
 
 /**
@@ -661,6 +738,35 @@ public data class JavaLanguage(
    * Configuration for the Java compiler.
    */
   public val compiler: JavaCompiler = JavaCompiler(),
+  /**
+   * Java compiler settings for individual source sets, keyed by source set name; each layers over
+   * the settings above for that source set alone.
+   */
+  public val sourceSets: Map<String, JavaSourceSetSettings> = emptyMap(),
+  /**
+   * Named C header groups; each is selected by one source set or explicitly by the CLI.
+   */
+  public val bindings: Map<String, JavaNativeBinding> = emptyMap(),
+)
+
+/**
+ * Java compiler settings for one source set, layered over the project's `jvm.java` settings.
+ */
+@Serializable
+@SerialName("elide.jvm.JavaSourceSetSettings")
+public data class JavaSourceSetSettings(
+  /**
+   * The release version for this source set; `"auto"` keeps the project's `jvm.java.release`.
+   */
+  public val release: JvmTargetLevel = JvmTargetLevel.Auto,
+  /**
+   * Flags passed to the Java compiler after the project's `jvm.java.compiler.flags`.
+   */
+  public val flags: List<String> = emptyList(),
+  /**
+   * Named binding groups owned by this source set; dependents inherit their classes.
+   */
+  public val bindings: List<String> = emptyList(),
 )
 
 /**
@@ -669,6 +775,10 @@ public data class JavaLanguage(
 @Serializable
 @SerialName("elide.jvm.JvmSettings")
 public data class JvmSettings(
+  /**
+   * Optional generated application.json; omit to supply configuration through resources.
+   */
+  public val micronaut: MicronautConfiguration? = null,
   /**
    * Entrypoint class for this project as an application.
    */
@@ -705,60 +815,6 @@ public data class JvmSettings(
    * Controls whether debug info (`-g`) is emitted during compilation. Defaults to true.
    */
   public val debug: Boolean = true,
-)
-
-public interface JvmCoverageReport : CoverageReport
-
-/**
- * Coverage report in HTML format.
- */
-@Serializable
-@SerialName("elide.jvm.HtmlCoverageReport")
-public data class HtmlCoverageReport(
-  /**
-   * Name for this report; typically the format name by default.
-   */
-  override val name: String,
-) : JvmCoverageReport
-
-/**
- * Coverage report in XML format.
- */
-@Serializable
-@SerialName("elide.jvm.XmlCoverageReport")
-public data class XmlCoverageReport(
-  /**
-   * Name for this report; typically the format name by default.
-   */
-  override val name: String,
-) : JvmCoverageReport
-
-/**
- * Coverage report in CSV format.
- */
-@Serializable
-@SerialName("elide.jvm.CsvCoverageReport")
-public data class CsvCoverageReport(
-  /**
-   * Name for this report; typically the format name by default.
-   */
-  override val name: String,
-) : JvmCoverageReport
-
-/**
- * Structured settings for configuring test coverage.
- */
-@Serializable
-@SerialName("elide.jvm.JvmCoverageSettings")
-public data class JvmCoverageSettings(
-  /**
-   * Whether coverage is active. Off by default: enable it here, or pass `--coverage`.
-   */
-  public val enabled: Boolean = false,
-  /**
-   * Coverage reports to be generated.
-   */
-  public val reports: List<JvmCoverageReport> = emptyList(),
 )
 
 /**
@@ -919,6 +975,48 @@ public typealias JarManifestValue = String
  * Class name for a JVM class, which is a string.
  */
 public typealias JvmClass = String
+
+/**
+ * Which tool generates a [JavadocJar]'s documentation.
+ *
+ * - `auto`: Dokka when the documented sources include Kotlin, `javadoc` otherwise.
+ * - `javadoc`: the JDK's `javadoc`, which documents only the Java sources.
+ * - `dokka`: Dokka, which documents Kotlin and Java alike.
+ */
+@Serializable
+@SerialName("elide.jvm.JavadocGenerator")
+public enum class JavadocGenerator {
+  @SerialName("auto")
+  Auto,
+  @SerialName("javadoc")
+  Javadoc,
+  @SerialName("dokka")
+  Dokka,
+}
+
+/**
+ * Archive formats a JVM application distribution can be packaged as.
+ */
+@Serializable
+@SerialName("elide.jvm.ApplicationArchive")
+public enum class ApplicationArchive {
+  @SerialName("zip")
+  Zip,
+  @SerialName("tar")
+  Tar,
+}
+
+/**
+ * Name of an application distribution: a file name that also names a directory, so the two
+ * relative path names are out — the build wipes and rewrites the directory it resolves to.
+ */
+public typealias ApplicationName = String
+
+/**
+ * A directory within a distribution: `/`-separated segments, none of them `.` or `..`, and never
+ * absolute, so what it names stays inside the tree the archives carry.
+ */
+public typealias DistributionDirectory = String
 
 /**
  * Maven packages can be specified structurally, as coordinate strings, as local JAR paths, or as

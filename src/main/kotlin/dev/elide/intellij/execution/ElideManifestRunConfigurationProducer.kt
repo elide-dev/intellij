@@ -25,6 +25,7 @@ import com.intellij.psi.PsiElement
 import dev.elide.intellij.execution.nativeimage.ElideNativeImageRunConfiguration
 import dev.elide.intellij.project.model.ElideEntrypointInfo
 import dev.elide.intellij.project.model.fullCommandLine
+import dev.elide.intellij.psi.artifactBuildTarget
 import dev.elide.intellij.psi.manifestDeclaresEntrypoint
 import dev.elide.intellij.psi.moduleMappingKey
 import dev.elide.intellij.psi.resolvedText
@@ -123,7 +124,7 @@ class ElideManifestRunConfigurationProducer :
       ElideEntrypointInfo.Kind.Generic -> element.getParentOfType<PklObjectElement>(true)?.expr?.resolvedText()
       // the artifact name is read off the mapping key alone: an artifact declaration carries mappings of its own
       // (`resources`, `manifest`), and the nearest enclosing entry inside one of those names a file, not an artifact
-      ElideEntrypointInfo.Kind.Artifact -> element.moduleMappingKey("artifacts")?.keyExpr?.resolvedText()
+      ElideEntrypointInfo.Kind.Artifact -> element.moduleMappingKey("artifacts")?.artifactBuildTarget()
       // manifests declare no per-test entrypoints; JvmTest configurations come from the JUnit gutter producer only
       ElideEntrypointInfo.Kind.JvmTest -> return null
     } ?: return null

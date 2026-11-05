@@ -13,6 +13,7 @@
 package dev.elide.intellij.project.model
 
 import dev.elide.project.manifest.projectName
+import dev.elide.project.manifest.resolveSources
 import dev.elide.tooling.manifest.project.ProjectModule
 import java.nio.file.Path
 
@@ -28,6 +29,7 @@ data class ElideResolvedProject(
   val root: Path,
   val manifest: ProjectModule,
   val classpaths: Map<String, ElideClasspath> = emptyMap(),
+  val providedClasspaths: Map<String, ElideClasspath> = emptyMap(),
 ) {
   companion object {
     /** Returns the project the [manifest] at [root] describes, named the way Elide names it. */
@@ -38,7 +40,7 @@ data class ElideResolvedProject(
     ): ElideResolvedProject = ElideResolvedProject(
       name = manifest.projectName(root.fileName?.toString() ?: root.toString()),
       root = root,
-      manifest = manifest,
+      manifest = manifest.resolveSources(root),
       classpaths = classpaths,
     )
   }
