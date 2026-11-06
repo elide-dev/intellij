@@ -93,11 +93,41 @@ class KomodoProtocolTest {
   }
 
   @Test fun `JSON lines decode UTF8 and reject truncated or oversized frames`() {
-    val input = ByteArrayInputStream("{\"message\":\"é 😀\"}\r\n".toByteArray())
-    assertEquals("{\"message\":\"é 😀\"}", KomodoTransport.line(input))
-    assertNull(KomodoTransport.line(input))
-    assertFailsWith<IllegalStateException> { KomodoTransport.line(ByteArrayInputStream("partial".toByteArray())) }
-    assertFailsWith<IllegalArgumentException> { KomodoTransport.line(ByteArrayInputStream("12345\n".toByteArray()), 4) }
+    val input = KomodoTransport.ProtocolInput(ByteArrayInputStream("{\"message\":\"é 😀\"}\r\n".toByteArray()))
+    assertEquals("{\"message\":\"é 😀\"}", input.line())
+    assertNull(input.line())
+    assertFailsWith<IllegalStateException> { KomodoTransport.ProtocolInput(ByteArrayInputStream("partial".toByteArray())).line() }
+    assertFailsWith<IllegalArgumentException> { KomodoTransport.ProtocolInput(ByteArrayInputStream("12345\n".toByteArray())).line(4) }
+  }
+
+  @Test fun `buffered protocol lines preserve coalesced messages UTF8 boundaries and LSP bodies`() {
+    val text = "x".repeat(8191) + "é 😀" + "y".repeat(8192)
+    val input = KomodoTransport.ProtocolInput(ByteArrayInputStream("$text\r\nnext\n".toByteArray()))
+    assertEquals(text, input.line())
+    assertEquals("next", input.line())
+    assertNull(input.line())
+    val body = """{"message":"é 😀"}""".toByteArray()
+    val rpc = KomodoTransport.ProtocolInput(ByteArrayInputStream(
+      "Content-Length: ${body.size}\r\n\r\n".toByteArray() + body + "after\n".toByteArray()))
+    assertEquals("Content-Length: ${body.size}", rpc.line(8192))
+    assertEquals("", rpc.line(8192))
+    assertTrue(body.contentEquals(rpc.readNBytes(body.size)))
+    assertEquals("after", rpc.line())
+    assertNull(rpc.line())
+  }
+
+  @Test fun `protocol byte limits hold across refills and allow exactly the maximum`() {
+    for (size in listOf(0, 1, 8191, 8192, 8193, 16384)) {
+      val text = "x".repeat(size)
+      val input = KomodoTransport.ProtocolInput(ByteArrayInputStream("$text\n".toByteArray()))
+      assertEquals(text, input.line(size))
+      if (size > 0) assertFailsWith<IllegalArgumentException> {
+        KomodoTransport.ProtocolInput(ByteArrayInputStream("$text\n".toByteArray())).line(size - 1)
+      }
+      if (size > 0) assertFailsWith<IllegalStateException> {
+        KomodoTransport.ProtocolInput(ByteArrayInputStream(text.toByteArray())).line(size)
+      }
+    }
   }
 
   @Test fun `layout source matching uses Compose absolute package hashes and unknown sentinel`() {

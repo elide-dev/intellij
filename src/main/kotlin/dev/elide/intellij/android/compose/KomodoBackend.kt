@@ -48,6 +48,7 @@ internal class KomodoBackend(
   private var previews = emptyList<JsonObject>()
   private var entries = emptyList<Map<String, Any?>>()
   private var texts = emptyMap<Path, String>()
+  private var sourceTexts = emptyMap<Path, String>()
   private val opened = mutableMapOf<Path, Int>()
   private var synchronizedTexts = emptyMap<Path, String>()
   private var discoveryTexts = emptyMap<Path, String>()
@@ -61,7 +62,6 @@ internal class KomodoBackend(
   @Volatile private var acceptingInput = false
   private val held = mutableSetOf<String>()
   private val pressed = mutableMapOf<String, Pair<Int, Int>>()
-  @Volatile private var frameNanos = 0L
   private val own = inputs.projectClassPath.toSet()
   private val overlays by lazy { ComposeArtifacts.overlays(inputs, inputs.projectClassPath.associateWith { Path.of(it) }, directory) }
   private fun overlay(paths: List<String>): List<String> = paths.flatMap { path -> overlays[path]?.map(Path::toString) ?: listOf(path) }.distinct()
@@ -152,35 +152,41 @@ internal class KomodoBackend(
     val healthy = synchronized(lock) { cards.isNotEmpty() && cards.values.all { it.image != null && it.error == null } }
     if (healthy && !rejected && texts.keys == current.keys && entries == nextEntries && entries.isNotEmpty()) {
       compileFailed = false
-      val answer = transport.exchange(mapOf("command" to "sources", "files" to current.mapKeys { it.key.toString() }), 300_000, check) {
-        it.string("event") == "compile" || it.string("event") == "error"
-      }
-      if (answer.string("event") == "compile" && answer.string("outcome") == "failure") {
-        throw KomodoCompilationFailure("Komodo could not compile the current editor buffers; see the log")
+      val frames = linkedMapOf<String, JsonObject>()
+      var compiled = false
+      val changed = current.filter { (path, text) -> sourceTexts[path] != text }
+      // The daemon retains omitted sources, including the text of a failed compile.
+      sourceTexts = current
+      val answer = transport.exchange(mapOf("command" to "sources", "files" to changed.mapKeys { it.key.toString() }), 300_000, check) { message ->
+        when (message.string("event")) {
+          "compile" -> {
+            compiled = message.string("outcome") == "success"
+            !compiled
+          }
+          "frame" -> {
+            if (compiled) message.string("entry")?.let { frames[it] = message }
+            false
+          }
+          "reload" -> compiled
+          "error" -> true
+          else -> false
+        }
       }
       if (answer.string("event") == "compile") {
-        // Compile precedes delta application. The queued frame answers once per entry, not once per gallery.
-        val barrier = frameNanos + 1
-        val pending = synchronized(lock) { cards.keys.toMutableSet() }
-        val frames = linkedMapOf<String, JsonObject>()
-        val barrierAnswer = transport.exchange(mapOf("command" to "frame", "nanos" to barrier), 60_000, check) { message ->
-          if (message.string("event") == "frame" && message.get("nanos")?.asLong == barrier) {
-            message.string("entry")?.let { id -> if (pending.remove(id)) frames[id] = message }
-            pending.isEmpty()
-          } else message.string("event") == "error"
+        throw KomodoCompilationFailure("Komodo could not compile the current editor buffers; see the log")
+      }
+      if (!rejected && answer.string("event") == "reload") {
+        // Reload follows delta application and its frames. Requesting another frame would rasterize
+        // and encode every card twice. Providers still need their values expanded after a body edit.
+        if (nextEntries.any { it["methodParameter"] != null }) host(nextEntries, check)
+        else synchronized(lock) {
+          acceptingFrames = true
+          frames.values.forEach(::event)
         }
-        if (!rejected && barrierAnswer.string("event") == "frame") {
-          // Providers may depend on any source body; expand them again after the persistent source update.
-          if (nextEntries.any { it["methodParameter"] != null }) host(nextEntries, check)
-          else synchronized(lock) {
-            acceptingFrames = true
-            frames.values.forEach(::event)
-          }
-          texts = current
-          rendered = true
-          acceptingInput = true
-          return
-        }
+        texts = current
+        rendered = true
+        acceptingInput = true
+        return
       }
     }
     configure(current, nextEntries, check)
@@ -199,8 +205,7 @@ internal class KomodoBackend(
     val updates = documents.filter { (path, text) -> synchronizedTexts[path] != text }.map { (path, text) ->
       val version = (opened[path] ?: 0) + 1
       val uri = path.toUri().toString()
-      if (opened.put(path, version) == null) transport.notify("textDocument/didOpen", mapOf("textDocument" to mapOf("uri" to uri, "languageId" to "kotlin", "version" to version, "text" to text)))
-      else transport.notify("textDocument/didChange", mapOf("textDocument" to mapOf("uri" to uri, "version" to version), "contentChanges" to listOf(mapOf("text" to text))))
+      opened[path] = version
       mapOf("uri" to uri, "version" to version, "text" to text)
     }
     if (updates.isNotEmpty() || removed.isNotEmpty()) transport.request("komodo/preview/sync", mapOf("documents" to updates), check)
@@ -216,6 +221,7 @@ internal class KomodoBackend(
       listOf(module.project.root.resolve(repository), module.project.buildRoot.resolve(repository))
     }.toSet()
     val inline = ComposeClasspath.sourceArchives(inputs.compileClassPath, repositories)
+    sourceTexts = current
     val answer = transport.exchange(mapOf("command" to "configure", "host" to "layoutlib", "namespace" to inputs.namespace,
       "resourceApkPath" to inputs.resourceApkPath, "classPath" to overlay(inputs.classPath).filterNot(own::contains), "projectClassPath" to inputs.projectClassPath,
       "layoutlib" to runtime.layoutlib.toString(), "rendererClassPath" to runtime.classpath.map(Path::toString), "sources" to current.keys.map(Path::toString),
@@ -274,7 +280,6 @@ internal class KomodoBackend(
         publish()
       }
       "frame" -> {
-        frameNanos = message.get("nanos")?.asLong ?: frameNanos
         if (!acceptingFrames) return
         val id = message.string("entry") ?: return
         val (previous, png) = synchronized(lock) { (cards[id] ?: return) to framePngs[id] }

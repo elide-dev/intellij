@@ -119,9 +119,11 @@ Outside inspection mode, previews accept pointer and keyboard input; **F6** rele
 The native IDE console preserves build/Komodo diagnostics across refreshes and opens on errors without taking focus.
 
 Auto refresh synchronizes unsaved Kotlin buffers without saving files or replacing normal build outputs. Kotlin edits
-and saves reuse the live compiler; rapid edits are coalesced without cancelling an in-flight compilation. Unchanged
-sources reuse rendered previews, and ordinary string edits reuse preview discovery. Frame-only updates repaint the
-affected canvas without rebuilding the gallery or resetting inspector selection and scroll position.
+start immediately when the compiler is idle; edits arriving during compilation are coalesced to the newest revision
+without cancelling the live compiler. Only changed buffers are transmitted. Unchanged sources reuse rendered previews,
+and ordinary string edits reuse preview discovery. Refreshes use the frames Komodo produces while applying the source
+update rather than requesting a second render of every card. Frame-only updates repaint the affected canvas without
+rebuilding the gallery or resetting inspector selection and scroll position.
 Compilation failures retain the compiler and last successful images, visibly marked stale, so the next edit can recover.
 Rehosting previews retains existing images until replacement frames arrive. **Refresh** explicitly rebuilds project
 inputs. Hiding the tool window stops Komodo and removes its private session files. Java, generated-code, resource,

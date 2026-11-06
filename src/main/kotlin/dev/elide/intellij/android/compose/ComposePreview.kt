@@ -66,7 +66,7 @@ class ComposePreviewService(private val project: Project) : Disposable {
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private val generation = AtomicLong()
   private val lifecycle = AtomicLong()
-  private data class Refresh(val file: VirtualFile, val revision: Long, val lifecycle: Long, val build: Long, val debounce: Long)
+  private data class Refresh(val file: VirtualFile, val revision: Long, val lifecycle: Long, val build: Long)
   private val refreshes = Channel<Refresh>(Channel.CONFLATED)
   @Volatile private var work: Job? = null
   @Volatile private var renderedRevision = -1L
@@ -107,12 +107,9 @@ class ComposePreviewService(private val project: Project) : Disposable {
   init {
     Disposer.register(this, view)
     scope.launch {
-      for (queued in refreshes) {
-        var request = queued
-        while (true) {
-          delay(request.debounce)
-          request = refreshes.tryReceive().getOrNull() ?: break
-        }
+      // The conflated channel already coalesces edits while the compiler is busy. Start immediately
+      // when idle, including when an in-flight compilation finishes with a newer edit waiting.
+      for (request in refreshes) {
         if (visible && request.revision == generation.get() && request.lifecycle == lifecycle.get()) {
           val active = launch { refresh(request) }
           work = active
@@ -134,7 +131,7 @@ class ComposePreviewService(private val project: Project) : Disposable {
           generation.incrementAndGet()
           ui {
             view.setStatus("Editor changed — previews are stale", stale = true)
-            if (autoRefresh) refreshPreview(120, rebuild = false)
+            if (autoRefresh) refreshPreview(rebuild = false)
           }
         }
       }
@@ -149,7 +146,7 @@ class ComposePreviewService(private val project: Project) : Disposable {
             .forEach { changedSources.add(Path.of(it.path).toAbsolutePath().normalize()) }
           generation.incrementAndGet()
           ui { if (visible) {
-            if (autoRefresh) refreshPreview(120, rebuild = false) else view.setStatus("Project changed — previews are stale", stale = true)
+            if (autoRefresh) refreshPreview(rebuild = false) else view.setStatus("Project changed — previews are stale", stale = true)
           } }
         }
       }
@@ -207,13 +204,13 @@ class ComposePreviewService(private val project: Project) : Disposable {
   }
   fun deactivate() { visible = false; cancelPreview("Paused while preview is hidden — images are stale") }
 
-  private fun refreshPreview(debounce: Long = 0, rebuild: Boolean = true) {
+  private fun refreshPreview(rebuild: Boolean = true) {
     if (!visible) return
     val file = source ?: run { view.setStatus("Open a Kotlin file and choose Compose Preview."); return }
     if (rebuild) { buildRevision.incrementAndGet(); lifecycle.incrementAndGet(); work?.cancel() }
     val revision = generation.incrementAndGet()
     view.setStatus("Refreshing ${file.name} with Komodo", busy = true, stale = true)
-    refreshes.trySend(Refresh(file, revision, lifecycle.get(), buildRevision.get(), debounce))
+    refreshes.trySend(Refresh(file, revision, lifecycle.get(), buildRevision.get()))
   }
 
   /** Finish an in-flight source delta, then consume only the newest edit; typing must not kill the compiler. */
