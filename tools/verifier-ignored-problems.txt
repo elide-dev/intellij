@@ -1,0 +1,15 @@
+// Problems the IntelliJ Plugin Verifier reports that this plugin does not act on. Format, one per line:
+//
+//   <plugin id>:<plugin version>:<regex matched against the problem's short description>
+//
+// An empty id or version matches any.
+//
+// The SM test runner (`intellij.platform.smRunner`) is reachable from `dev.elide.testRunner`, the optional content
+// module that owns `dev.elide.intellij.execution.test`, and from nowhere else in the plugin. The verifier resolves
+// the classes of a same-jar content module against the main module's class path, so it only sees that dependency on
+// an IDE whose other plugins happen to re-export the module: IntelliJ IDEA 253 to 263 do, Android Studio does not,
+// because its Kotlin plugin keeps the module inside a content module of its own. The IDE itself resolves the
+// dependency on Android Studio -- its plugin set resolution does not exclude `dev.elide.testRunner` -- but the test
+// tree is unverified there and `elide test` support in Android Studio is deferred; see `docs/PLATFORM_APIS.md`.
+::Access to unresolved class com\.intellij\.execution\.testframework\..*
+::Package 'com\.intellij\.execution\.testframework\..*' is not found

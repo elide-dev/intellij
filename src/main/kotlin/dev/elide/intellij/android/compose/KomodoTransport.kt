@@ -47,15 +47,31 @@ internal class KomodoTransport(private val log: (String) -> Unit, private val ev
       if (!Files.isRegularFile(root.resolve("plugins/kotlin-compose-compiler-plugin.jar"))) throw KomodoUnavailable("The Komodo installation at $root is missing plugins/kotlin-compose-compiler-plugin.jar. Reinstall the complete standalone distribution.")
       return launcher
     }
+  }
 
-    internal fun line(input: InputStream, maximum: Int = LIMIT): String? {
+  /** Scan buffered bytes in bulk; large PNG lines must not take two synchronized calls per byte. */
+  internal class ProtocolInput(input: InputStream) : BufferedInputStream(input) {
+    fun line(maximum: Int = LIMIT): String? {
       val bytes = ByteArrayOutputStream()
       while (true) {
-        val next = input.read()
-        if (next < 0) { if (bytes.size() == 0) return null; error("Truncated Komodo protocol line") }
-        if (next == 10) return bytes.toString(StandardCharsets.UTF_8).removeSuffix("\r")
+        // Refill through BufferedInputStream so readNBytes can also consume an LSP body.
+        val first = read()
+        if (first < 0) {
+          if (bytes.size() == 0) return null
+          error("Truncated Komodo protocol line")
+        }
+        if (first == 10) return bytes.toString(StandardCharsets.UTF_8).removeSuffix("\r")
         require(bytes.size() < maximum) { "Komodo protocol line exceeds $maximum bytes" }
-        bytes.write(next)
+        bytes.write(first)
+        val start = pos
+        while (pos < count && buf[pos] != 10.toByte()) pos++
+        val length = pos - start
+        require(length <= maximum - bytes.size()) { "Komodo protocol line exceeds $maximum bytes" }
+        bytes.write(buf, start, length)
+        if (pos < count) {
+          pos++
+          return bytes.toString(StandardCharsets.UTF_8).removeSuffix("\r")
+        }
       }
     }
   }
@@ -74,11 +90,11 @@ internal class KomodoTransport(private val log: (String) -> Unit, private val ev
     }
     AppExecutorUtil.getAppExecutorService().execute {
       try {
-        val input = BufferedInputStream(child.inputStream)
+        val input = ProtocolInput(child.inputStream)
         while (!stopped.get()) {
           var length = -1
           while (true) {
-            val header = line(input, 8192) ?: error("Komodo exited (check the preview log)")
+            val header = input.line(8192) ?: error("Komodo exited (check the preview log)")
             if (header.isEmpty()) break
             if (header.startsWith("Content-Length:", true)) length = header.substringAfter(':').trim().toInt()
           }
@@ -134,9 +150,9 @@ internal class KomodoTransport(private val log: (String) -> Unit, private val ev
     previewOutput!!.write((token + "\n").toByteArray(StandardCharsets.UTF_8)); previewOutput!!.flush()
     AppExecutorUtil.getAppExecutorService().execute {
       try {
-        val input = BufferedInputStream(connection.getInputStream())
+        val input = ProtocolInput(connection.getInputStream())
         while (!stopped.get()) {
-          val text = line(input) ?: error("Komodo preview connection closed")
+          val text = input.line() ?: error("Komodo preview connection closed")
           if (text.isBlank()) continue
           val message = JsonParser.parseString(text).asJsonObject
           event(message)

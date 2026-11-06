@@ -1,0 +1,30 @@
+<!--
+  ~ Copyright (c) 2024-2025 Elide Technologies, Inc.
+  ~
+  ~ Licensed under the MIT license (the "License"); you may not use this file except in compliance
+  ~ with the License. You may obtain a copy of the License at
+  ~
+  ~   https://opensource.org/license/mit/
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+  ~ an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+  ~ License for the specific language governing permissions and limitations under the License.
+  -->
+
+<!--
+  Content module of the Elide plugin holding the test tree of an `elide test` run, which is the only part of the
+  plugin built on the SM test runner. A module dependency is the one way to reach that runner's classes from 262 on,
+  where they live in a content module of another plugin, and 253 cannot load the module at all, so the dependency is
+  confined to this module and the module is declared optional in `plugin.xml`. See `docs/PLATFORM_APIS.md`.
+-->
+<idea-plugin package="dev.elide.intellij.execution.test">
+  <dependencies>
+    <module name="intellij.platform.smRunner"/>
+  </dependencies>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <!-- renders `elide test` runs as a test tree, decoding the CLI's TAP 13 stream -->
+    <externalSystemExecutionConsoleManager
+            implementation="dev.elide.intellij.execution.test.ElideTestsExecutionConsoleManager"/>
+  </extensions>
+</idea-plugin>

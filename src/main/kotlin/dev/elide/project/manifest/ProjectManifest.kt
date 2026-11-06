@@ -261,6 +261,7 @@ fun KotlinCompilerJvmOptions.collect(): Sequence<String> = sequence {
   if (verbose) yield("-verbose")
   apiVersion.explicitOrNull()?.let { yield("-api-version=${it.argValue}") }
   languageVersion.explicitOrNull()?.let { yield("-language-version=${it.argValue}") }
+  jvmTarget.majorVersionOrNull()?.let { yield("-jvm-target=${if (it == 8) "1.8" else it.toString()}") }
   if (includeRuntime) yield("-include-runtime")
   if (noStdlib) yield("-no-stdlib")
 

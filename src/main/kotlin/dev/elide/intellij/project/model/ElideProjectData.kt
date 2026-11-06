@@ -55,6 +55,7 @@ data class ElideProjectData(
     val apiLevel: String? = null,
     val languageLevel: String? = null,
     val compilerArguments: List<String> = emptyList(),
+    val compose: Boolean = false,
   ) : Serializable
 
   companion object {
@@ -87,6 +88,7 @@ data class ElideProjectData(
             apiLevel = kotlin.apiLevel.explicitOrNull()?.argValue,
             languageLevel = kotlin.languageLevel.explicitOrNull()?.argValue,
             compilerArguments = kotlin.compilerOptions.collect().toList(),
+            compose = kotlin.features.compose,
           )
         },
         entrypoints = manifest.entrypoint.orEmpty(),

@@ -90,6 +90,25 @@ Project linking and re-sync use `ExternalSystemUtil.linkExternalProject(settings
 `ExternalSystemUtil.refreshProject(path, ImportSpec)`; build output is streamed with
 `ExternalSystemTaskNotificationListener.onTaskOutput(id, text, ProcessOutputType)`.
 
+Kotlin facets use `K2JVMCompilerArguments` populated through `parseCommandLineArguments`, followed by
+`updateMergedArguments`, so native analysis sees structured compiler options, not just a command-line string.
+`JvmPlatforms.jvmPlatformByTargetVersion` also sets the facet's target platform from the parsed JVM target:
+compiler arguments alone do not update the native analysis module's platform.
+When `kotlin.features.compose` is enabled, `KotlinK2BundledCompilerPlugins.COMPOSE_COMPILER_PLUGIN` supplies
+the IDE-compatible compiler plugin jar through `bundledJarLocation`. The build's Kotlin/Compose compiler jars are
+not loaded into IDE analysis: the bundled plugin must match the IDE's compiler. Re-sync replaces the compiler
+arguments, removing the Compose plugin when the feature is disabled. Facets are created through
+`FacetManager.createFacet(KotlinFacetType.INSTANCE, …)` so Kotlin supplies its workspace-model bridge rather than
+a manually constructed legacy facet. Existing facets publish `facetConfigurationChanged` after updating their
+settings, keeping native analysis and compiler-plugin caches in sync.
+
+This path was exercised in IDEA `263.6800.24`: native Analysis API lookup of
+`androidx.compose.runtime.internal.ComposableFunction1` changed from unresolved to resolved after importing the
+Compose-enabled facet, with the same Compose 1.7.8 runtime and Kotlin 2.2.21 standard-library roots. The native
+analysis module's JVM target changed from the default 1.8 to the manifest's 17. Regression coverage also asks the
+native compiler-plugin provider to load and remove the Compose FIR registrar across re-sync and checks the
+analysis module's JVM target.
+
 `ElideExecutionService` creates an external-system run configuration and dispatches it through
 `ProgramRunnerUtil.executeConfiguration`. `ExternalSystemUtil.runTask` hard-codes the generic external-system runner
 for Debug, bypassing Elide's delayed JDWP attach and waiting for the opposite handshake. The regular run-configuration
@@ -105,6 +124,12 @@ using LSP document synchronization/discovery and authenticated loopback JSONL li
 IDEA's Kotlin tooling. The preview surface uses native `ActionToolbar`, toggle actions, and `ConsoleView` controls;
 layout inspection and input operate on Komodo's measured nodes and live frames. Normal Elide compiler records supply
 the Android platform/compiler classpath, and Maven source archives supply Compose inline-source mappings.
+Refresh requests use a conflated coroutine channel: ordinary edits finish the active source update, then apply the
+latest editor buffers; explicit rebuilds, cancellation, and lifecycle changes retire active work. Kotlin content-save
+events do not invalidate build inputs. `KtPsiFactory` under a read action computes conservative discovery keys that
+ignore plain runtime string literals but preserve annotations, imports, constants, and declarations. Komodo frame
+barriers cover every hosted card. Swing cards retain their identity and repaint only changed canvases for frame-only
+updates; unchanged PNGs reuse decoded images.
 
 `ElideProjectSettingsControl` builds the distribution path field from `TextFieldWithBrowseButton` plus
 `installFileCompletionAndBrowseDialog` instead of the experimental `Row.textFieldWithBrowseButton` shorthand;

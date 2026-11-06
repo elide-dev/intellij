@@ -21,6 +21,8 @@ import kotlin.io.path.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * Pins the payload attached to the resolved project node.
@@ -71,6 +73,40 @@ class ElideProjectDataTest {
       ),
       kotlin.compilerArguments,
     )
+  }
+
+  @Test fun `Compose and JVM target survive manifest decoding and project payload creation`() {
+    fun kotlinSettings(compose: Boolean, target: Int): ElideProjectData.KotlinFacetData {
+      val manifest = ElideManifests.parse(
+        """
+        {
+          "name": "compose",
+          "kotlin": {
+            "features": {
+              "compose": $compose,
+              "serialization": false,
+              "coroutines": false,
+              "atomicfu": false,
+              "powerAssert": false,
+              "metro": false
+            },
+            "compilerOptions": {
+              "jvmTarget": { "@type": "elide.jvm.JvmTargetLevel.OfInt", "value": $target }
+            }
+          }
+        }
+        """.trimIndent(),
+      )
+      val workspace = ElideResolvedWorkspace.of(Path("/projects/compose"), manifest)
+      return assertNotNull(ElideProjectData.from(workspace.root, workspace).kotlin)
+    }
+
+    val enabled = kotlinSettings(compose = true, target = 17)
+    assertTrue(enabled.compose)
+    assertTrue("-jvm-target=17" in enabled.compilerArguments)
+    val disabled = kotlinSettings(compose = false, target = 8)
+    assertFalse(disabled.compose)
+    assertTrue("-jvm-target=1.8" in disabled.compilerArguments)
   }
 
   @Test fun `round trips through java serialization`() {
